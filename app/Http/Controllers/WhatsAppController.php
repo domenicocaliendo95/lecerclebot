@@ -134,8 +134,8 @@ class WhatsAppController extends Controller
 
         return [
             'next_state' => 'ONBOARD_LIVELLO',
-            'message'    => "Nessun problema! Come definiresti il tuo livello?",
-            'buttons'    => ['🌱 Neofita', '🎾 Dilettante', '⚡ Intermedio', '🏆 Avanzato'],
+            'message'    => "Nessun problema! Come definiresti il tuo livello?\n\n1. Neofita\n2. Dilettante\n3. Intermedio\n4. Avanzato\n\nRispondi con il numero:",
+            'buttons'    => [],
             'data'       => ['is_fit' => false],
         ];
     }
@@ -143,24 +143,23 @@ class WhatsAppController extends Controller
     private function handleOnboardLivello(BotSession $session, string $input): array
     {
         $levelMap = [
-            'btn_0' => [1, 'Neofita'],
-            'btn_1' => [2, 'Dilettante'],
-            'btn_2' => [3, 'Intermedio'],
-            'btn_3' => [4, 'Avanzato'],
+            '1' => [1, 'Neofita'],
+            '2' => [2, 'Dilettante'],
+            '3' => [3, 'Intermedio'],
+            '4' => [4, 'Avanzato'],
         ];
 
         $data = [];
 
-        if (isset($levelMap[$input])) {
-            // Livello da pulsante
-            [$level, $label] = $levelMap[$input];
+        if (isset($levelMap[trim($input)])) {
+            [$level, $label] = $levelMap[trim($input)];
             $data = ['self_level' => $level];
         } else {
-            // Classifica FIT da testo
+            // Classifica FIT
             if (!preg_match('/^(NC|[1-4]\.[1-5])$/i', trim($input))) {
                 return [
                     'next_state' => 'ONBOARD_LIVELLO',
-                    'message'    => "⚠️ Classifica non valida.\n\nInserisci la classifica FIT nel formato corretto (es. 4.1, 3.3, 2.5, NC):",
+                    'message'    => "⚠️ Valore non valido.\n\nSe sei tesserato FIT inserisci la classifica (es. 4.1, 3.3, NC).\nAltrimenti rispondi con 1, 2, 3 o 4:",
                     'buttons'    => [],
                     'data'       => [],
                 ];
