@@ -3,22 +3,24 @@
 namespace App\Http\Controllers;
 
 use App\Models\BotSession;
+use App\Models\User;
 use App\Services\WhatsAppService;
+use App\Services\GeminiService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 
 class WhatsAppController extends Controller
 {
     private WhatsAppService $wa;
+    private GeminiService $gemini;
 
-    public function __construct(WhatsAppService $wa)
+    public function __construct(WhatsAppService $wa, GeminiService $gemini)
     {
-        $this->wa = $wa;
+        $this->wa     = $wa;
+        $this->gemini = $gemini;
     }
 
-    /**
-     * Verifica webhook Meta (GET)
-     */
     public function verify(Request $request): Response
     {
         $mode      = $request->query('hub_mode');
@@ -32,14 +34,9 @@ class WhatsAppController extends Controller
         return response('Forbidden', 403);
     }
 
-    /**
-     * Riceve messaggi WhatsApp (POST)
-     */
     public function handle(Request $request): Response
     {
-        $data = $request->all();
-
-        // Estrai il messaggio
+        $data    = $request->all();
         $message = data_get($data, 'entry.0.changes.0.value.messages.0');
 
         if (!$message) {
@@ -49,23 +46,55 @@ class WhatsAppController extends Controller
         $from  = $message['from'];
         $input = $this->parseInput($message);
 
+        if (empty($input)) {
+            return response('OK', 200);
+        }
+
         // Recupera o crea la sessione
         $session = BotSession::firstOrCreate(
             ['phone' => $from],
             ['state' => 'NEW', 'data' => []]
         );
 
-        // Esegui la state machine
-        $result = $this->dispatch($session, $input);
+        // Costruisci la history della conversazione
+        $history = $session->data['history'] ?? [];
 
-        // Aggiorna la sessione
-        $session->update([
-            'state' => $result['next_state'],
-            'data'  => array_merge($session->data ?? [], $result['data'] ?? []),
+        // System prompt
+        $systemPrompt = $this->buildSystemPrompt($session);
+
+        // Chiama Gemini
+        $reply = $this->gemini->chat($systemPrompt, $history, $input);
+
+        // Estrai JSON dalla risposta
+        $result = $this->parseGeminiResponse($reply);
+
+        // Aggiorna la history
+        $history[] = ['role' => 'user',  'content' => $input];
+        $history[] = ['role' => 'model', 'content' => $result['message']];
+
+        // Mantieni max 20 turni in history
+        if (count($history) > 40) {
+            $history = array_slice($history, -40);
+        }
+
+        // Aggiorna sessione
+        $newData = array_merge($session->data ?? [], [
+            'history' => $history,
+            'state'   => $result['next_state'] ?? $session->state,
         ]);
 
-        // Invia la risposta
-        if (!empty($result['buttons'])) {
+        if (!empty($result['profile'])) {
+            $newData['profile'] = array_merge($newData['profile'] ?? [], $result['profile']);
+            $this->saveUserProfile($from, $newData['profile']);
+        }
+
+        $session->update([
+            'state' => $result['next_state'] ?? $session->state,
+            'data'  => $newData,
+        ]);
+
+        // Invia risposta
+        if (!empty($result['buttons']) && count($result['buttons']) <= 3) {
             $this->wa->sendButtons($from, $result['message'], $result['buttons']);
         } else {
             $this->wa->sendText($from, $result['message']);
@@ -74,9 +103,102 @@ class WhatsAppController extends Controller
         return response('OK', 200);
     }
 
-    /**
-     * Estrai il testo o l'ID del pulsante dal messaggio
-     */
+    private function buildSystemPrompt(BotSession $session): string
+    {
+        $profile = $session->data['profile'] ?? [];
+        $state   = $session->state;
+
+        return <<<PROMPT
+Sei il bot di Le Cercle Tennis Club, un circolo tennistico a San Gennaro Vesuviano (NA).
+Parli sempre in italiano, con tono amichevole e diretto.
+Il tuo obiettivo è aiutare l'utente a prenotare un campo da tennis e trovare un avversario.
+
+STATO CORRENTE: {$state}
+PROFILO UTENTE: {$this->formatProfile($profile)}
+
+FLUSSO DA SEGUIRE:
+1. NEW: Dai il benvenuto e chiedi se è tesserato FIT.
+2. ONBOARD_FIT: Raccogli classifica FIT (es. 4.1, 3.3, NC) oppure livello autodichiarato (neofita/dilettante/intermedio/avanzato).
+3. ONBOARD_ETA: Chiedi l'età.
+4. ONBOARD_SLOT: Chiedi la fascia oraria preferita (mattina/pomeriggio/sera).
+5. SCEGLI_DATA: Chiedi quando vuole giocare e mostra slot disponibili.
+6. ATTESA_MATCH: Informa che stai cercando un avversario.
+
+REGOLE IMPORTANTI:
+- Fai UNA sola domanda alla volta.
+- Sii breve e diretto — massimo 3 righe per messaggio.
+- Non inventare slot o disponibilità.
+- Se l'utente scrive qualcosa di non pertinente, riporta gentilmente al flusso.
+
+RISPOSTA: Rispondi SEMPRE e SOLO con un oggetto JSON valido in questo formato:
+{
+  "message": "testo da inviare all'utente",
+  "next_state": "NEW|ONBOARD_FIT|ONBOARD_ETA|ONBOARD_SLOT|SCEGLI_DATA|ATTESA_MATCH|CONFERMATO",
+  "buttons": ["pulsante1", "pulsante2"],
+  "profile": {"chiave": "valore"}
+}
+
+Il campo "buttons" è opzionale e può avere massimo 3 elementi.
+Il campo "profile" contiene i dati raccolti in questo turno (es. {"is_fit": true, "fit_rating": "4.1"}).
+PROMPT;
+    }
+
+    private function formatProfile(array $profile): string
+    {
+        if (empty($profile)) return "Nessun dato ancora raccolto.";
+
+        $lines = [];
+        if (isset($profile['is_fit']))     $lines[] = "Tesserato FIT: " . ($profile['is_fit'] ? 'sì' : 'no');
+        if (isset($profile['fit_rating'])) $lines[] = "Classifica: " . $profile['fit_rating'];
+        if (isset($profile['self_level'])) $lines[] = "Livello autodichiarato: " . $profile['self_level'];
+        if (isset($profile['age']))        $lines[] = "Età: " . $profile['age'];
+        if (isset($profile['slot']))       $lines[] = "Fascia oraria: " . $profile['slot'];
+
+        return implode(', ', $lines);
+    }
+
+    private function parseGeminiResponse(string $reply): array
+    {
+        // Rimuovi markdown code blocks se presenti
+        $clean = preg_replace('/```json\s*|\s*```/', '', $reply);
+        $clean = trim($clean);
+
+        $decoded = json_decode($clean, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded['message'])) {
+            Log::warning('Gemini non ha risposto in JSON', ['reply' => $reply]);
+            return [
+                'message'    => $reply,
+                'next_state' => null,
+                'buttons'    => [],
+                'profile'    => [],
+            ];
+        }
+
+        return $decoded;
+    }
+
+    private function saveUserProfile(string $phone, array $profile): void
+    {
+        try {
+            User::updateOrCreate(
+                ['phone' => $phone],
+                [
+                    'name'            => ($profile['name'] ?? 'Giocatore ') . substr($phone, -4),
+                    'email'           => $phone . '@lecercleclub.it',
+                    'password'        => bcrypt(\Str::random(16)),
+                    'is_fit'          => $profile['is_fit'] ?? false,
+                    'fit_rating'      => $profile['fit_rating'] ?? null,
+                    'self_level'      => $profile['self_level'] ?? null,
+                    'elo_rating'      => 1200,
+                    'preferred_slots' => isset($profile['slot']) ? [$profile['slot']] : [],
+                ]
+            );
+        } catch (\Exception $e) {
+            Log::error('Errore salvataggio profilo', ['error' => $e->getMessage()]);
+        }
+    }
+
     private function parseInput(array $message): string
     {
         return match($message['type']) {
@@ -86,241 +208,5 @@ class WhatsAppController extends Controller
             'text'        => data_get($message, 'text.body', ''),
             default       => '',
         };
-    }
-
-    /**
-     * State machine — smista all'handler corretto
-     */
-    private function dispatch(BotSession $session, string $input): array
-    {
-        return match($session->state) {
-            'NEW'            => $this->handleNew($session, $input),
-            'ONBOARD_FIT'    => $this->handleOnboardFit($session, $input),
-            'ONBOARD_LIVELLO'=> $this->handleOnboardLivello($session, $input),
-            'ONBOARD_ETA'    => $this->handleOnboardEta($session, $input),
-            'ONBOARD_SLOT'   => $this->handleOnboardSlot($session, $input),
-            'SCEGLI_DATA'    => $this->handleScegliData($session, $input),
-            'SCEGLI_SLOT'    => $this->handleScegliSlot($session, $input),
-            'CONFERMA_SLOT'  => $this->handleConfermaSlot($session, $input),
-            'ATTESA_MATCH'   => $this->handleAttesaMatch($session, $input),
-            'SCELTA_PAGAMENTO' => $this->handleSceltaPagamento($session, $input),
-            'FEEDBACK'       => $this->handleFeedback($session, $input),
-            default          => $this->handleNew($session, $input),
-        };
-    }
-
-    // ── HANDLERS ─────────────────────────────────────────
-
-    private function handleNew(BotSession $session, string $input): array
-    {
-        return [
-            'next_state' => 'ONBOARD_FIT',
-            'message'    => "Ciao! 👋 Benvenuto a Le Cercle Tennis Club.\n\nSono il bot del circolo e ti aiuto a trovare un avversario e prenotare il campo.\n\nSei tesserato FIT?",
-            'buttons'    => ['✅ Sì, sono tesserato', '❌ No, non sono tesserato'],
-            'data'       => [],
-        ];
-    }
-
-    private function handleOnboardFit(BotSession $session, string $input): array
-    {
-        if ($input === 'btn_0') {
-            return [
-                'next_state' => 'ONBOARD_LIVELLO',
-                'message'    => "Perfetto! Qual è la tua classifica FIT?\n\nInserisci la classifica (es. 4.1, 3.3, 2.5, NC):",
-                'buttons'    => [],
-                'data'       => ['is_fit' => true],
-            ];
-        }
-
-        return [
-            'next_state' => 'ONBOARD_LIVELLO',
-            'message'    => "Nessun problema! Come definiresti il tuo livello?\n\n1. Neofita\n2. Dilettante\n3. Intermedio\n4. Avanzato\n\nRispondi con il numero:",
-            'buttons'    => [],
-            'data'       => ['is_fit' => false],
-        ];
-    }
-
-    private function handleOnboardLivello(BotSession $session, string $input): array
-    {
-        $levelMap = [
-            '1' => [1, 'Neofita'],
-            '2' => [2, 'Dilettante'],
-            '3' => [3, 'Intermedio'],
-            '4' => [4, 'Avanzato'],
-        ];
-
-        $data = [];
-
-        if (isset($levelMap[trim($input)])) {
-            [$level, $label] = $levelMap[trim($input)];
-            $data = ['self_level' => $level];
-        } else {
-            // Classifica FIT
-            if (!preg_match('/^(NC|[1-4]\.[1-5])$/i', trim($input))) {
-                return [
-                    'next_state' => 'ONBOARD_LIVELLO',
-                    'message'    => "⚠️ Valore non valido.\n\nSe sei tesserato FIT inserisci la classifica (es. 4.1, 3.3, NC).\nAltrimenti rispondi con 1, 2, 3 o 4:",
-                    'buttons'    => [],
-                    'data'       => [],
-                ];
-            }
-            $data = ['fit_rating' => strtoupper(trim($input))];
-        }
-
-        return [
-            'next_state' => 'ONBOARD_ETA',
-            'message'    => "Ottimo! Quanti anni hai?\n\nInserisci la tua età:",
-            'buttons'    => [],
-            'data'       => $data,
-        ];
-    }
-
-    private function handleOnboardEta(BotSession $session, string $input): array
-    {
-        $age = intval($input);
-
-        if ($age < 10 || $age > 90) {
-            return [
-                'next_state' => 'ONBOARD_ETA',
-                'message'    => "⚠️ Età non valida.\n\nInserisci la tua età in anni (es. 35):",
-                'buttons'    => [],
-                'data'       => [],
-            ];
-        }
-
-        return [
-            'next_state' => 'ONBOARD_SLOT',
-            'message'    => "Perfetto! Quando preferisci giocare di solito?",
-            'buttons'    => ['🌅 Mattina', '☀️ Pomeriggio', '🌙 Sera', '🎾 Qualsiasi'],
-            'data'       => ['age' => $age],
-        ];
-    }
-
-    private function handleOnboardSlot(BotSession $session, string $input): array
-    {
-        $slotMap = [
-            'btn_0' => 'morning',
-            'btn_1' => 'afternoon',
-            'btn_2' => 'evening',
-            'btn_3' => 'any',
-        ];
-
-        $slot = $slotMap[$input] ?? 'any';
-
-        // Salva il profilo completo nel DB
-        $sessionData = $session->data ?? [];
-        $user = \App\Models\User::updateOrCreate(
-            ['phone' => $session->phone],
-            [
-                'name'            => 'Giocatore ' . substr($session->phone, -4),
-                'is_fit'          => $sessionData['is_fit'] ?? false,
-                'fit_rating'      => $sessionData['fit_rating'] ?? null,
-                'self_level'      => $sessionData['self_level'] ?? null,
-                'elo_rating'      => 1200,
-                'preferred_slots' => [$slot],
-                'email'           => $session->phone . '@lecercleclub.it',
-                'password'        => bcrypt(\Str::random(16)),
-            ]
-        );
-
-        return [
-            'next_state' => 'SCEGLI_DATA',
-            'message'    => "✅ Profilo salvato!\n\nQuando vuoi giocare?\n\nInserisci una data (es. domani, lunedì, 25 marzo) o scrivi *oggi* per vedere i prossimi slot disponibili:",
-            'buttons'    => [],
-            'data'       => ['user_id' => $user->id, 'preferred_slot' => $slot],
-        ];
-    }
-
-    private function handleScegliData(BotSession $session, string $input): array
-    {
-        // Per ora mostriamo slot fittizi — integreremo Google Calendar dopo
-        $slots = [
-            'Oggi 18:00 — €12.00',
-            'Oggi 20:00 — €15.00',
-            'Domani 09:00 — €10.00',
-            'Domani 18:00 — €12.00',
-            'Domani 20:00 — €15.00',
-        ];
-
-        return [
-            'next_state' => 'SCEGLI_SLOT',
-            'message'    => "Ecco i prossimi slot disponibili:\n\n" . collect($slots)->map(fn($s, $i) => ($i+1).". $s")->implode("\n"),
-            'buttons'    => array_slice($slots, 0, 3),
-            'data'       => ['available_slots' => $slots],
-        ];
-    }
-
-    private function handleScegliSlot(BotSession $session, string $input): array
-    {
-        $slots = $session->data['available_slots'] ?? [];
-        $index = intval(str_replace('btn_', '', $input));
-        $slot  = $slots[$index] ?? $slots[0];
-
-        return [
-            'next_state' => 'CONFERMA_SLOT',
-            'message'    => "Hai scelto: *{$slot}*\n\nConfermi la prenotazione?",
-            'buttons'    => ['✅ Confermo', '🔄 Scegli altro slot'],
-            'data'       => ['chosen_slot' => $slot],
-        ];
-    }
-
-    private function handleConfermaSlot(BotSession $session, string $input): array
-    {
-        if ($input === 'btn_1') {
-            return [
-                'next_state' => 'SCEGLI_DATA',
-                'message'    => "Nessun problema! Quando vorresti giocare?",
-                'buttons'    => [],
-                'data'       => [],
-            ];
-        }
-
-        $slot = $session->data['chosen_slot'] ?? 'slot selezionato';
-
-        return [
-            'next_state' => 'ATTESA_MATCH',
-            'message'    => "✅ Perfetto! Ho confermato il tuo slot: *{$slot}*\n\nSto cercando un avversario compatibile per te. Ti avviso appena qualcuno accetta! 🎾",
-            'buttons'    => [],
-            'data'       => [],
-        ];
-    }
-
-    private function handleAttesaMatch(BotSession $session, string $input): array
-    {
-        return [
-            'next_state' => 'ATTESA_MATCH',
-            'message'    => "Sto ancora cercando un avversario per te. Ti avviso appena qualcuno accetta! 🎾",
-            'buttons'    => [],
-            'data'       => [],
-        ];
-    }
-
-    private function handleSceltaPagamento(BotSession $session, string $input): array
-    {
-        if ($input === 'btn_0') {
-            return [
-                'next_state' => 'CONFERMATO',
-                'message'    => "🔗 Ecco il link per pagare online:\n\n[Link Stripe — disponibile a breve]\n\nHai tempo fino a 24h prima del match.",
-                'buttons'    => [],
-                'data'       => ['payment' => 'online'],
-            ];
-        }
-
-        return [
-            'next_state' => 'CONFERMATO',
-            'message'    => "💵 Perfetto! Pagherai di persona al circolo prima del match.\n\nA presto in campo! 🎾",
-            'buttons'    => [],
-            'data'       => ['payment' => 'in_person'],
-        ];
-    }
-
-    private function handleFeedback(BotSession $session, string $input): array
-    {
-        return [
-            'next_state' => 'SCEGLI_DATA',
-            'message'    => "Grazie per il feedback! Il risultato è stato registrato. 🏆\n\nVuoi prenotare un altro campo?",
-            'buttons'    => ['🎾 Sì, prenota', '❌ No, grazie'],
-            'data'       => [],
-        ];
     }
 }
