@@ -117,8 +117,9 @@ STATO CORRENTE: {$state}
 PROFILO UTENTE: {$this->formatProfile($profile)}
 
 FLUSSO DA SEGUIRE:
-1. NEW: Dai il benvenuto e chiedi se è tesserato FIT.
-2. ONBOARD_FIT: Raccogli classifica FIT (es. 4.1, 3.3, NC) oppure livello autodichiarato (neofita/dilettante/intermedio/avanzato).
+1. NEW: Dai il benvenuto e chiedi se è tesserato FIT. Pulsanti: ["Sì", "No"]
+2a. Se ha risposto SÌ a FIT: chiedi la classifica FIT (es. 4.1, 3.3, 2.5, NC). NON chiedere il livello autodichiarato.
+2b. Se ha risposto NO a FIT: chiedi il livello autodichiarato con questi 4 valori: neofita, dilettante, intermedio, avanzato.
 3. ONBOARD_ETA: Chiedi l'età.
 4. ONBOARD_SLOT: Chiedi la fascia oraria preferita (mattina/pomeriggio/sera).
 5. SCEGLI_DATA: Chiedi quando vuole giocare e mostra slot disponibili.
