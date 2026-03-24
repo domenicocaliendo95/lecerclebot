@@ -14,7 +14,7 @@ class GeminiService
     public function __construct()
     {
         $this->apiKey = env('GEMINI_KEY');
-        $this->apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+        $this->apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
     }
 
     public function chat(string $systemPrompt, array $history, string $userMessage): string
