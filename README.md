@@ -1,58 +1,117 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Refactoring WhatsApp Bot — Le Cercle Tennis Club
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+## Architettura
 
-## About Laravel
-
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```
+WhatsAppController          ← Sottile: valida webhook, estrae input, delega
+    │
+    └─▶ BotOrchestrator     ← Coordina: sessione, side-effects, invio messaggi
+            │
+            ├─▶ StateHandler        ← Macchina a stati DETERMINISTICA
+            │       │
+            │       └─▶ TextGenerator   ← UNICO punto AI (Gemini)
+            │                              Solo per: riformulare testi + parsare date
+            │
+            ├─▶ CalendarService     ← Verifica disponibilità
+            ├─▶ UserProfileService  ← Persistenza utente
+            └─▶ WhatsAppService     ← Invio messaggi
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+## Cosa è cambiato e perché
 
-## Contributing
+### 1. L'AI NON decide più le transizioni di stato
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+**Prima:** Gemini riceveva un mega-prompt con tutte le regole e restituiva un JSON con
+`next_state`, `buttons`, `profile`. Se il JSON era malformato o lo stato inventato,
+il bot si rompeva.
 
-## Code of Conduct
+**Dopo:** La macchina a stati è nell'enum `BotState` con transizioni esplicite.
+`StateHandler` gestisce ogni stato con un metodo dedicato. L'AI fa solo due cose:
+- Riformula i messaggi per variare il tono (con fallback al template fisso)
+- Interpreta date in linguaggio naturale ("domani alle 5", "sabato pomeriggio")
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 2. Enum `BotState` con transizioni validate
 
-## Security Vulnerabilities
+Ogni stato dichiara le sue transizioni lecite. Se l'orchestrator tenta una
+transizione non valida, rimane nello stato corrente. Zero sorprese.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 3. `BotResponse` come DTO immutabile
 
-## License
+Ogni handler restituisce un `BotResponse` con:
+- Il testo del messaggio
+- Il nuovo stato
+- I pulsanti opzionali (max 3 per i limiti di WhatsApp)
+- Flag per side-effects: `needsCalendarCheck()`, `needsBookingCreation()`, etc.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+L'orchestrator legge i flag e agisce di conseguenza.
+
+### 4. Persona del tennista famoso
+
+Ad ogni nuova sessione, `BotPersona::pickRandom()` sceglie un nome casuale
+(Jannik, Carlos, Daniil, Rafa, Roger, Novak, Matteo, ecc.) e lo salva in sessione.
+Tutti i messaggi vengono riformulati dall'AI come se parlasse quel tennista.
+
+### 5. Controller sottile
+
+Il controller fa solo tre cose:
+1. Verifica il webhook Meta
+2. Estrae il messaggio dal payload
+3. Chiama `$orchestrator->process()`
+
+Rispondi SEMPRE 200 a Meta, anche in caso di errore interno (evita retry infiniti).
+
+### 6. Niente più `env()` nel codice
+
+L'originale usava `env('WHATSAPP_VERIFY_TOKEN')` nel controller.
+Ora tutto passa da `config('services.whatsapp.verify_token')`.
+Vedi `config/services_additions.php` per le chiavi da aggiungere.
+
+### 7. Parsing input robusto
+
+- **Nome:** sanitizzato con regex (solo lettere/spazi/apostrofi), min 2 max 60 chars
+- **Classifica FIT:** accetta formati come "4.1", "NC", "terza categoria"
+- **Età:** estrae il primo numero, valida range 5-99
+- **Fascia oraria:** normalizza sinonimi (mattino→mattina, serale→sera, ecc.)
+- **Sì/No:** pattern matching multilingua con varianti italiane
+
+### 8. ELO iniziale stimato
+
+`UserProfileService` mappa classifica FIT → ELO iniziale con una tabella realistica
+(NC→1100, 4.1→1300, 3.1→1550, ecc.) anziché dare 1200 a tutti.
+
+### 9. Error handling pervasivo
+
+- Ogni metodo che chiama servizi esterni è wrappato in try/catch
+- Errori loggati con contesto (phone, input, stato)
+- L'utente riceve sempre un messaggio, anche in caso di errore catastrofico
+- La transazione DB copre tutte le operazioni di sessione
+
+## File prodotti
+
+```
+app/
+├── Http/Controllers/
+│   └── WhatsAppController.php          ← Controller sottile
+├── Models/
+│   └── BotSession.php                  ← Model con helper per dati/history
+└── Services/
+    ├── GeminiService.php               ← Client Gemini con generate() e chat()
+    └── Bot/
+        ├── BotState.php                ← Enum con transizioni validate
+        ├── BotPersona.php              ← Nomi tennisti + saluti
+        ├── BotResponse.php             ← DTO risposta
+        ├── BotOrchestrator.php         ← Coordinatore principale
+        ├── StateHandler.php            ← Macchina a stati deterministica
+        ├── TextGenerator.php           ← Unico punto AI (rephrase + date parsing)
+        └── UserProfileService.php      ← Persistenza profilo utente
+
+config/
+└── services_additions.php              ← Chiavi config da aggiungere
+```
+
+## Come integrare
+
+1. Copia i file nelle rispettive cartelle del progetto Laravel
+2. Aggiungi le chiavi di `config/services_additions.php` al tuo `config/services.php`
+3. Registra il binding nell'AppServiceProvider se necessario (Laravel risolve automaticamente le dipendenze via constructor injection)
+4. Aggiorna le route per puntare al nuovo controller (l'API è identica)

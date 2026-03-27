@@ -35,4 +35,18 @@ return [
         ],
     ],
 
+    'whatsapp' => [
+        'verify_token' => env('WHATSAPP_VERIFY_TOKEN'),
+        'api_token'    => env('WHATSAPP_API_TOKEN'),
+        'phone_id'     => env('WHATSAPP_PHONE_NUMBER_ID'),
+        'api_version'  => env('WHATSAPP_API_VERSION', 'v21.0'),
+    ],
+
+    'gemini' => [
+        'api_key'  => env('GEMINI_API_KEY'),
+        'model'    => env('GEMINI_MODEL', 'gemini-2.0-flash'),
+        'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
+        'timeout'  => (int) env('GEMINI_TIMEOUT', 15),
+    ],
+
 ];

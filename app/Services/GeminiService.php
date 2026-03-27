@@ -5,93 +5,115 @@ namespace App\Services;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Client per le API Gemini.
+ *
+ * Due modalità:
+ * - generate(): prompt singolo, per riformulazione testi e parsing date
+ * - chat(): conversazione multi-turno (mantenuta per retrocompatibilità)
+ */
 class GeminiService
 {
     private string $apiKey;
-    private string $apiUrl;
+    private string $model;
+    private string $baseUrl;
+    private int    $timeoutSeconds;
 
     public function __construct()
     {
-        $this->apiKey = env('GEMINI_KEY');
-        // TORNATO ALLA TUA VERSIONE ORIGINALE! (gemini-2.5-flash su v1beta)
-        $this->apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        $this->apiKey         = config('services.gemini.api_key');
+        $this->model          = config('services.gemini.model', 'gemini-2.0-flash');
+        $this->baseUrl        = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta');
+        $this->timeoutSeconds = config('services.gemini.timeout', 15);
     }
 
+    /**
+     * Genera una risposta da un prompt singolo.
+     * Usato per riformulazione testi e parsing date.
+     */
+    public function generate(string $prompt): string
+    {
+        $url = "{$this->baseUrl}/models/{$this->model}:generateContent?key={$this->apiKey}";
+
+        $response = Http::timeout($this->timeoutSeconds)
+            ->retry(2, 500, throw: false)
+            ->post($url, [
+                'contents' => [
+                    ['parts' => [['text' => $prompt]]],
+                ],
+                'generationConfig' => [
+                    'temperature'    => 0.7,
+                    'maxOutputTokens' => 300,
+                ],
+            ]);
+
+        if (!$response->successful()) {
+            Log::error('Gemini API error', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+
+            throw new \RuntimeException("Gemini API error: HTTP {$response->status()}");
+        }
+
+        $text = data_get($response->json(), 'candidates.0.content.parts.0.text', '');
+
+        if (empty($text)) {
+            throw new \RuntimeException('Gemini returned empty response');
+        }
+
+        return $text;
+    }
+
+    /**
+     * Chat multi-turno con system prompt.
+     * Mantenuto per retrocompatibilità.
+     */
     public function chat(string $systemPrompt, array $history, string $userMessage): string
     {
+        $url = "{$this->baseUrl}/models/{$this->model}:generateContent?key={$this->apiKey}";
+
         $contents = [];
-        $lastRole = null;
 
-        // 1. Costruiamo la history in modo infallibile
-        foreach ($history as $turn) {
-            $content = $turn['content'] ?? $turn['text'] ?? '';
+        // System instruction come primo messaggio
+        $contents[] = [
+            'role'  => 'user',
+            'parts' => [['text' => "[SYSTEM]\n{$systemPrompt}\n[/SYSTEM]"]],
+        ];
+        $contents[] = [
+            'role'  => 'model',
+            'parts' => [['text' => 'Capito, seguirò le istruzioni.']],
+        ];
 
-            // Saltiamo messaggi vuoti e i vecchi messaggi di errore del bot per non confonderlo
-            if (empty(trim($content)) || str_contains($content, 'Spiacente') || str_contains($content, 'Mi dispiace') || str_contains($content, 'Errore tecnico')) {
-                continue;
-            }
-
-            // Normalizziamo in 'model' e 'user'
-            $role = (isset($turn['role']) && ($turn['role'] === 'assistant' || $turn['role'] === 'model')) ? 'model' : 'user';
-
-            // GEMINI CRASHA CON RUOLI CONSECUTIVI: Accorpiamo se il ruolo è uguale al precedente
-            if ($role === $lastRole) {
-                $lastIndex = count($contents) - 1;
-                $contents[$lastIndex]['parts'][0]['text'] .= "\n" . $content;
-            } else {
-                $contents[] = [
-                    'role' => $role,
-                    'parts' => [['text' => $content]]
-                ];
-                $lastRole = $role;
-            }
-        }
-
-        // 2. Aggiunta dell'ultimo messaggio utente (accorpato se anche l'ultimo nella history era 'user')
-        if ($lastRole === 'user') {
-            $lastIndex = count($contents) - 1;
-            $contents[$lastIndex]['parts'][0]['text'] .= "\n" . $userMessage;
-        } else {
+        // History
+        foreach ($history as $entry) {
+            $role = $entry['role'] === 'user' ? 'user' : 'model';
             $contents[] = [
-                'role' => 'user',
-                'parts' => [['text' => $userMessage]]
+                'role'  => $role,
+                'parts' => [['text' => $entry['content']]],
             ];
         }
 
-        try {
-            // Sintassi corretta (snake_case) per le API REST di Google
-            $payload = [
-                'system_instruction' => [
-                    'parts' => [['text' => $systemPrompt]]
-                ],
-                'contents' => $contents,
+        // Messaggio corrente
+        $contents[] = [
+            'role'  => 'user',
+            'parts' => [['text' => $userMessage]],
+        ];
+
+        $response = Http::timeout($this->timeoutSeconds)
+            ->retry(2, 500, throw: false)
+            ->post($url, [
+                'contents'         => $contents,
                 'generationConfig' => [
                     'temperature'     => 0.7,
-                    'maxOutputTokens' => 2000,
-                    'response_mime_type' => 'application/json',
+                    'maxOutputTokens' => 500,
                 ],
-            ];
+            ]);
 
-            $response = Http::withHeaders([
-                'Content-Type' => 'application/json',
-            ])->post($this->apiUrl . '?key=' . $this->apiKey, $payload);
-
-            if (!$response->successful()) {
-                Log::error('Gemini API Error Detail', [
-                    'status' => $response->status(),
-                    'payload' => $payload,
-                    'error' => $response->json()
-                ]);
-                return "Spiacente, errore di comunicazione (Code: " . $response->status() . ")";
-            }
-
-            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
-
-            return $text ?? "Errore: Risposta vuota.";
-
-        } catch (\Exception $e) {
-            Log::error('Gemini Exception', ['message' => $e->getMessage()]);
-            return "Errore imprevisto di connessione.";
+        if (!$response->successful()) {
+            throw new \RuntimeException("Gemini API error: HTTP {$response->status()}");
         }
+
+        return data_get($response->json(), 'candidates.0.content.parts.0.text', '');
     }
 }
