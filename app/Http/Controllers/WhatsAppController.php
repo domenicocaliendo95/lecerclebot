@@ -66,7 +66,7 @@ class WhatsAppController extends Controller
         // Costruisci la history della conversazione
         $history = $session->data['history'] ?? [];
 
-        // Verifica disponibilità Calendar solo quando l'utente ha indicato giorno/ora
+        // Verifica disponibilità Calendar se lo stato è già VERIFICA_SLOT
         $calendarInfo = null;
         if ($session->state === 'VERIFICA_SLOT') {
             try {
@@ -80,9 +80,7 @@ class WhatsAppController extends Controller
         $systemPrompt = $this->buildSystemPrompt($session, $isRegistered, $existingUser, $calendarInfo);
 
         // Chiama Gemini
-        $reply = $this->gemini->chat($systemPrompt, $history, $input);
-
-        // Estrai JSON dalla risposta
+        $reply  = $this->gemini->chat($systemPrompt, $history, $input);
         $result = $this->parseGeminiResponse($reply);
 
         // Aggiorna la history
@@ -110,11 +108,34 @@ class WhatsAppController extends Controller
             'data'  => $newData,
         ]);
 
-        // Invia risposta
+        // Invia prima risposta
         if (!empty($result['buttons']) && count($result['buttons']) <= 3) {
             $this->wa->sendButtons($from, $result['message'], $result['buttons']);
         } else {
             $this->wa->sendText($from, $result['message']);
+        }
+
+        // Se Gemini ha richiesto verifica slot, eseguila subito nello stesso turno
+        if (($result['next_state'] ?? '') === 'VERIFICA_SLOT' && !empty($result['requested_slot'])) {
+            try {
+                $calendarInfo2  = $this->calendar->checkUserRequest($result['requested_slot']);
+                $session->refresh();
+                $systemPrompt2  = $this->buildSystemPrompt($session, $isRegistered, $existingUser, $calendarInfo2);
+                $history[]      = ['role' => 'user', 'content' => 'sistema: verifica disponibilità completata'];
+                $reply2         = $this->gemini->chat($systemPrompt2, $history, 'Comunica all\'utente la disponibilità del calendario.');
+                $result2        = $this->parseGeminiResponse($reply2);
+
+                $session->update(['state' => $result2['next_state'] ?? $session->state]);
+
+                if (!empty($result2['buttons']) && count($result2['buttons']) <= 3) {
+                    $this->wa->sendButtons($from, $result2['message'], $result2['buttons']);
+                } else {
+                    $this->wa->sendText($from, $result2['message']);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Calendar check error', ['message' => $e->getMessage()]);
+                $this->wa->sendText($from, 'Scusa, ho avuto un problema nel verificare la disponibilità. Riprova tra un momento.');
+            }
         }
 
         return response('OK', 200);
@@ -234,13 +255,23 @@ PROMPT;
 
     private function parseGeminiResponse(string $reply): array
     {
-        // Rimuovi markdown code blocks se presenti
         $clean = preg_replace('/```json\s*|\s*```/', '', $reply);
         $clean = trim($clean);
 
+        // Prova a completare JSON troncato
         $decoded = json_decode($clean, true);
 
         if (json_last_error() !== JSON_ERROR_NONE || !isset($decoded['message'])) {
+            // Prova a estrarre solo il campo message con regex
+            if (preg_match('/"message"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $clean, $matches)) {
+                return [
+                    'message'    => stripslashes($matches[1]),
+                    'next_state' => null,
+                    'buttons'    => [],
+                    'profile'    => [],
+                ];
+            }
+
             Log::warning('Gemini non ha risposto in JSON', ['reply' => $reply]);
             return [
                 'message'    => $reply,

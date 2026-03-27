@@ -66,9 +66,9 @@ class GeminiService
                 ],
                 'contents' => $contents,
                 'generationConfig' => [
-                    'temperature' => 0.7,
-                    'maxOutputTokens' => 1000,
-                    'response_mime_type' => 'application/json', // Forza l'output JSON
+                    'temperature'     => 0.7,
+                    'maxOutputTokens' => 2000,
+                    'response_mime_type' => 'application/json',
                 ],
             ];
 
