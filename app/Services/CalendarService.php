@@ -89,6 +89,97 @@ class CalendarService
     }
 
     /**
+     * Verifica se un orario richiesto dall'utente è disponibile
+     * e restituisce alternative se non lo è.
+     */
+    public function checkUserRequest(string $userInput): array
+    {
+        // Per ora usiamo Carbon per parsare la data dall'input
+        // In futuro Gemini può estrarre la data strutturata
+        try {
+            $requested = Carbon::parse($userInput, 'Europe/Rome');
+        } catch (\Exception $e) {
+            // Se non riesce a parsare, prende il prossimo slot libero
+            $requested = Carbon::now('Europe/Rome')->addDay()->setHour(18)->setMinute(0);
+        }
+
+        $requestedEnd = $requested->copy()->addHour();
+
+        // Recupera eventi del giorno
+        $startOfDay = $requested->copy()->startOfDay();
+        $endOfDay   = $requested->copy()->endOfDay();
+
+        $events = $this->calendar->events->listEvents($this->calendarId, [
+            'timeMin'      => $startOfDay->toRfc3339String(),
+            'timeMax'      => $endOfDay->toRfc3339String(),
+            'singleEvents' => true,
+            'orderBy'      => 'startTime',
+        ]);
+
+        $busySlots = [];
+        foreach ($events->getItems() as $event) {
+            $start = Carbon::parse($event->getStart()->getDateTime() ?? $event->getStart()->getDate(), 'Europe/Rome');
+            $end   = Carbon::parse($event->getEnd()->getDateTime()   ?? $event->getEnd()->getDate(), 'Europe/Rome');
+            $busySlots[] = ['start' => $start, 'end' => $end];
+        }
+
+        // Verifica se lo slot richiesto è libero
+        $isFree = true;
+        foreach ($busySlots as $busy) {
+            if ($requested < $busy['end'] && $requestedEnd > $busy['start']) {
+                $isFree = false;
+                break;
+            }
+        }
+
+        if ($isFree) {
+            return [
+                'available' => true,
+                'slot' => [
+                    'start'    => $requested,
+                    'end'      => $requestedEnd,
+                    'label'    => $requested->isoFormat('ddd D MMM · HH:mm'),
+                    'price'    => $this->getPrice($requested),
+                    'datetime' => $requested->toIso8601String(),
+                ],
+            ];
+        }
+
+        // Trova alternative nello stesso giorno
+        $alternatives = [];
+        $cursor = $startOfDay->copy()->setHour(8);
+
+        while ($cursor <= $endOfDay->copy()->setHour(21) && count($alternatives) < 3) {
+            $cursorEnd = $cursor->copy()->addHour();
+            $free = true;
+
+            foreach ($busySlots as $busy) {
+                if ($cursor < $busy['end'] && $cursorEnd > $busy['start']) {
+                    $free = false;
+                    break;
+                }
+            }
+
+            if ($free && $cursor->isAfter(Carbon::now('Europe/Rome'))) {
+                $alternatives[] = [
+                    'start'    => $cursor->copy(),
+                    'end'      => $cursorEnd->copy(),
+                    'label'    => $cursor->isoFormat('HH:mm'),
+                    'price'    => $this->getPrice($cursor),
+                    'datetime' => $cursor->toIso8601String(),
+                ];
+            }
+
+            $cursor->addHour();
+        }
+
+        return [
+            'available'    => false,
+            'alternatives' => $alternatives,
+        ];
+    }
+
+    /**
      * Crea un evento nel calendario per la prenotazione confermata.
      */
     public function createBookingEvent(string $title, Carbon $start, Carbon $end, string $description = ''): string
