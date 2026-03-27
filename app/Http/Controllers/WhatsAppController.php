@@ -217,6 +217,21 @@ Il campo "requested_slot" va popolato con il testo dell'orario richiesto dall'ut
 PROMPT;
     }
 
+    private function formatProfile(array $profile): string
+    {
+        if (empty($profile)) return "Nessun dato ancora raccolto.";
+
+        $lines = [];
+        if (isset($profile['name']))       $lines[] = "Nome: " . $profile['name'];
+        if (isset($profile['is_fit']))     $lines[] = "Tesserato FIT: " . ($profile['is_fit'] ? 'sì' : 'no');
+        if (isset($profile['fit_rating'])) $lines[] = "Classifica: " . $profile['fit_rating'];
+        if (isset($profile['self_level'])) $lines[] = "Livello: " . $profile['self_level'];
+        if (isset($profile['age']))        $lines[] = "Età: " . $profile['age'];
+        if (isset($profile['slot']))       $lines[] = "Fascia oraria: " . $profile['slot'];
+
+        return implode(', ', $lines);
+    }
+
     private function parseGeminiResponse(string $reply): array
     {
         // Rimuovi markdown code blocks se presenti
