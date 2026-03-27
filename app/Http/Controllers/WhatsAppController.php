@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BotSession;
 use App\Models\User;
+use App\Services\CalendarService;
 use App\Services\WhatsAppService;
 use App\Services\GeminiService;
 use Illuminate\Http\Request;
@@ -15,12 +16,14 @@ class WhatsAppController extends Controller
     private WhatsAppService $wa;
     private GeminiService $gemini;
 
-    public function __construct(WhatsAppService $wa, GeminiService $gemini)
-    {
-        $this->wa     = $wa;
-        $this->gemini = $gemini;
-    }
+    private CalendarService $calendar;
 
+    public function __construct(WhatsAppService $wa, GeminiService $gemini, CalendarService $calendar)
+    {
+        $this->wa       = $wa;
+        $this->gemini   = $gemini;
+        $this->calendar = $calendar;
+    }
     public function verify(Request $request): Response
     {
         $mode      = $request->query('hub_mode');
@@ -59,8 +62,16 @@ class WhatsAppController extends Controller
         // Costruisci la history della conversazione
         $history = $session->data['history'] ?? [];
 
-        // System prompt
-        $systemPrompt = $this->buildSystemPrompt($session);
+        $slots = [];
+        if (in_array($session->state, ['SCEGLI_DATA', 'SCEGLI_SLOT', 'NEW', 'PROFILO'])) {
+            try {
+                $slots = $this->calendar->getFreeSlots(5);
+            } catch (\Exception $e) {
+                \Log::error('Calendar error', ['message' => $e->getMessage()]);
+            }
+        }
+
+        $systemPrompt = $this->buildSystemPrompt($session, $slots);
 
         // Chiama Gemini
         $reply = $this->gemini->chat($systemPrompt, $history, $input);
@@ -103,44 +114,69 @@ class WhatsAppController extends Controller
         return response('OK', 200);
     }
 
-    private function buildSystemPrompt(BotSession $session): string
+    private function buildSystemPrompt(BotSession $session, array $slots = []): string
     {
-        $profile = $session->data['profile'] ?? [];
-        $state   = $session->state;
+        $profile  = $session->data['profile'] ?? [];
+        $state    = $session->state;
+
+        $slotsText = empty($slots)
+            ? "Nessuno slot disponibile al momento."
+            : collect($slots)->map(fn($s, $i) => ($i+1).". {$s['label']} — €{$s['price']}")->implode("\n");
 
         return <<<PROMPT
 Sei il bot di Le Cercle Tennis Club, un circolo tennistico a San Gennaro Vesuviano (NA).
 Parli sempre in italiano, con tono amichevole e diretto.
-Il tuo obiettivo è aiutare l'utente a prenotare un campo da tennis e trovare un avversario.
+Il tuo obiettivo è aiutare l'utente a prenotare un campo da tennis.
 
 STATO CORRENTE: {$state}
 PROFILO UTENTE: {$this->formatProfile($profile)}
 
+SLOT DISPONIBILI (reali, dal calendario del circolo):
+{$slotsText}
+
 FLUSSO DA SEGUIRE:
-1. NEW: Dai il benvenuto e chiedi se è tesserato FIT. Pulsanti: ["Sì", "No"]
-2a. Se ha risposto SÌ a FIT: chiedi la classifica FIT (es. 4.1, 3.3, 2.5, NC). NON chiedere il livello autodichiarato.
-2b. Se ha risposto NO a FIT: chiedi il livello autodichiarato con questi 4 valori: neofita, dilettante, intermedio, avanzato.
-3. ONBOARD_ETA: Chiedi l'età.
-4. ONBOARD_SLOT: Chiedi la fascia oraria preferita (mattina/pomeriggio/sera).
-5. SCEGLI_DATA: Chiedi quando vuole giocare e mostra slot disponibili.
-6. ATTESA_MATCH: Informa che stai cercando un avversario.
+
+1. NEW: Dai il benvenuto e chiedi cosa vuole fare. Pulsanti (max 3):
+   - "Ho già un avversario"
+   - "Trovami un avversario"
+   - "Noleggio sparapalline"
+
+2a. Se "Ho già un avversario" o "Noleggio sparapalline":
+   Vai direttamente a SCEGLI_DATA. Non raccogliere profilo tennistico.
+
+2b. Se "Trovami un avversario":
+   - Chiedi se è tesserato FIT. Pulsanti: ["Sì", "No"]
+   - Se SÌ: chiedi la classifica FIT (es. 4.1, 3.3, NC).
+   - Se NO: chiedi il livello. Pulsanti: ["Neofita", "Dilettante", "Avanzato"]
+   - Poi chiedi l'età (testo libero).
+   - Poi chiedi la fascia oraria. Pulsanti: ["Mattina", "Pomeriggio", "Sera"]
+   - Poi vai a SCEGLI_DATA.
+
+3. SCEGLI_DATA: Mostra gli slot disponibili qui sopra e chiedi quale preferisce.
+   USA ESATTAMENTE gli slot nella lista SLOT DISPONIBILI — non inventarne altri.
+
+4. ATTESA_MATCH: Informa che stai cercando un avversario compatibile.
+
+CORREZIONI DATI:
+- Se l'utente dice di aver sbagliato un dato, aggiorna il campo nel profile e conferma.
+- Puoi tornare a uno stato precedente se l'utente lo chiede.
 
 REGOLE IMPORTANTI:
 - Fai UNA sola domanda alla volta.
 - Sii breve e diretto — massimo 3 righe per messaggio.
-- Non inventare slot o disponibilità.
-- Se l'utente scrive qualcosa di non pertinente, riporta gentilmente al flusso.
+- Non inventare slot — usa SOLO quelli nella lista sopra.
+- Se l'utente ha già un profilo salvato e scrive qualcosa di generico, chiedi direttamente se vuole prenotare.
 
-RISPOSTA: Rispondi SEMPRE e SOLO con un oggetto JSON valido in questo formato:
+RISPOSTA: Rispondi SEMPRE e SOLO con un oggetto JSON valido:
 {
   "message": "testo da inviare all'utente",
-  "next_state": "NEW|ONBOARD_FIT|ONBOARD_ETA|ONBOARD_SLOT|SCEGLI_DATA|ATTESA_MATCH|CONFERMATO",
+  "next_state": "NEW|ONBOARD_FIT|ONBOARD_ETA|ONBOARD_SLOT|SCEGLI_DATA|SCEGLI_SLOT|ATTESA_MATCH|CONFERMATO",
   "buttons": ["pulsante1", "pulsante2"],
-  "profile": {"chiave": "valore"}
+  "profile": {"chiave": "valore"},
+  "chosen_slot": null
 }
 
-Il campo "buttons" è opzionale e può avere massimo 3 elementi.
-Il campo "profile" contiene i dati raccolti in questo turno (es. {"is_fit": true, "fit_rating": "4.1"}).
+Il campo "chosen_slot" va popolato con l'oggetto slot scelto dall'utente (copia dall'elenco sopra).
 PROMPT;
     }
 
