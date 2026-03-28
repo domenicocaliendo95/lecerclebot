@@ -257,15 +257,19 @@ class StateHandler
 
     private function handleScegliQuando(BotSession $session, string $input): BotResponse
     {
-        // Usiamo l'AI per interpretare la data/ora in linguaggio naturale
+        // Parser locale deterministico + fallback AI
         $parsed = $this->textGenerator->parseDateTime($input);
 
         if ($parsed === null) {
+            Log::info('Date parse failed for input', ['input' => $input, 'state' => 'SCEGLI_QUANDO']);
+
             return BotResponse::make(
                 $this->textGenerator->rephrase('data_non_capita', $session->persona()),
                 BotState::SCEGLI_QUANDO,
             );
         }
+
+        Log::info('Date parsed successfully', ['input' => $input, 'result' => $parsed]);
 
         $session->mergeData([
             'requested_date'     => $parsed['date'],      // Y-m-d

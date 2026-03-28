@@ -99,11 +99,182 @@ class TextGenerator
     /**
      * Interpreta una data/ora in linguaggio naturale.
      *
+     * Strategia: parser locale deterministico PRIMA, Gemini solo come fallback.
+     *
      * @return array{date: string, time: string, friendly: string}|null
      */
     public function parseDateTime(string $input): ?array
     {
-        $today = now()->format('Y-m-d');
+        $result = $this->parseDateTimeLocal($input);
+
+        if ($result !== null) {
+            return $result;
+        }
+
+        // Fallback AI solo per input davvero complessi
+        return $this->parseDateTimeWithAi($input);
+    }
+
+    /**
+     * Parser LOCALE deterministico per date/ore in italiano.
+     * Gestisce: oggi, domani, dopodomani, giorni della settimana,
+     * date esplicite (28 marzo, 28/03), orari (alle 15, alle 9:30).
+     */
+    private function parseDateTimeLocal(string $input): ?array
+    {
+        $clean = mb_strtolower(trim($input));
+        $now   = now();
+
+        $date = null;
+        $time = null;
+
+        /* ─── 1. Estrai la DATA ─── */
+
+        // "oggi"
+        if (preg_match('/\boggi\b/', $clean)) {
+            $date = $now->copy();
+        }
+        // "domani"
+        elseif (preg_match('/\bdomani\b/', $clean)) {
+            $date = $now->copy()->addDay();
+        }
+        // "dopodomani"
+        elseif (preg_match('/\bdopodomani\b/', $clean)) {
+            $date = $now->copy()->addDays(2);
+        }
+        // Giorno della settimana: "lunedì", "martedì prossimo", ecc.
+        else {
+            $giorni = [
+                'lunedi' => 1, 'lunedì' => 1,
+                'martedi' => 2, 'martedì' => 2,
+                'mercoledi' => 3, 'mercoledì' => 3,
+                'giovedi' => 4, 'giovedì' => 4,
+                'venerdi' => 5, 'venerdì' => 5,
+                'sabato' => 6,
+                'domenica' => 0,
+            ];
+
+            foreach ($giorni as $nome => $dayOfWeek) {
+                if (str_contains($clean, $nome)) {
+                    $date = $now->copy()->next($dayOfWeek);
+                    // Se il giorno è oggi e l'utente non ha detto "prossimo",
+                    // usa oggi (a meno che non sia già passato)
+                    if ($now->dayOfWeek === $dayOfWeek && !str_contains($clean, 'prossim')) {
+                        $date = $now->copy();
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Data esplicita: "28 marzo", "28/03", "28-03", "28/3"
+        if ($date === null) {
+            $mesi = [
+                'gennaio' => 1, 'febbraio' => 2, 'marzo' => 3, 'aprile' => 4,
+                'maggio' => 5, 'giugno' => 6, 'luglio' => 7, 'agosto' => 8,
+                'settembre' => 9, 'ottobre' => 10, 'novembre' => 11, 'dicembre' => 12,
+            ];
+
+            // "28 marzo" o "28 mar"
+            foreach ($mesi as $nomeMese => $numMese) {
+                $abbr = mb_substr($nomeMese, 0, 3);
+                if (preg_match('/\b(\d{1,2})\s*(?:' . preg_quote($nomeMese) . '|' . preg_quote($abbr) . ')\b/', $clean, $m)) {
+                    $day = (int) $m[1];
+                    $year = $now->year;
+                    $candidate = $now->copy()->setDate($year, $numMese, min($day, 31));
+                    if ($candidate->lt($now->copy()->startOfDay())) {
+                        $candidate->addYear();
+                    }
+                    $date = $candidate;
+                    break;
+                }
+            }
+        }
+
+        // "28/03", "28-03", "28/3/2026"
+        if ($date === null && preg_match('/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/', $clean, $m)) {
+            $day   = (int) $m[1];
+            $month = (int) $m[2];
+            $year  = isset($m[3]) ? (int) $m[3] : $now->year;
+            if ($year < 100) $year += 2000;
+
+            if ($month >= 1 && $month <= 12 && $day >= 1 && $day <= 31) {
+                $candidate = $now->copy()->setDate($year, $month, $day);
+                if ($candidate->lt($now->copy()->startOfDay()) && !isset($m[3])) {
+                    $candidate->addYear();
+                }
+                $date = $candidate;
+            }
+        }
+
+        /* ─── 2. Estrai l'ORA ─── */
+
+        // "alle 15", "alle 9", "alle 15:30", "ore 18", "h 10", "alle 9.30"
+        if (preg_match('/(?:alle|ore|h|per le)\s*(\d{1,2})(?:[:.](\d{2}))?\b/', $clean, $m)) {
+            $hour = (int) $m[1];
+            $min  = isset($m[2]) ? (int) $m[2] : 0;
+
+            if ($hour >= 0 && $hour <= 23 && $min >= 0 && $min <= 59) {
+                $time = sprintf('%02d:%02d', $hour, $min);
+            }
+        }
+
+        // Ora senza prefisso se c'è già una data: "domani 15", "sabato 18:00"
+        if ($time === null && $date !== null) {
+            if (preg_match('/\b(\d{1,2})(?:[:.](\d{2}))?\s*$/', $clean, $m)) {
+                $hour = (int) $m[1];
+                $min  = isset($m[2]) ? (int) $m[2] : 0;
+                if ($hour >= 6 && $hour <= 23 && $min >= 0 && $min <= 59) {
+                    $time = sprintf('%02d:%02d', $hour, $min);
+                }
+            }
+        }
+
+        // Fasce orarie generiche
+        if ($time === null && $date !== null) {
+            if (str_contains($clean, 'mattina') || str_contains($clean, 'mattino')) {
+                $time = '09:00';
+            } elseif (str_contains($clean, 'pranzo')) {
+                $time = '13:00';
+            } elseif (str_contains($clean, 'pomeriggio')) {
+                $time = '15:00';
+            } elseif (str_contains($clean, 'sera') || str_contains($clean, 'serale')) {
+                $time = '19:00';
+            }
+        }
+
+        /* ─── 3. Se non abbiamo almeno la data, fallisci ─── */
+        if ($date === null) {
+            return null;
+        }
+
+        /* ─── 4. Costruisci la risposta friendly ─── */
+        $giorniIt = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
+        $mesiIt   = ['', 'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+            'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+
+        $dayName   = $giorniIt[$date->dayOfWeek];
+        $dayNum    = $date->day;
+        $monthName = $mesiIt[$date->month];
+
+        $friendly = "{$dayName} {$dayNum} {$monthName}";
+        if ($time !== null) {
+            $friendly .= " alle {$time}";
+        }
+
+        return [
+            'date'     => $date->format('Y-m-d'),
+            'time'     => $time,
+            'friendly' => $friendly,
+        ];
+    }
+
+    /**
+     * Fallback AI per input che il parser locale non riesce a gestire.
+     */
+    private function parseDateTimeWithAi(string $input): ?array
+    {
+        $today     = now()->format('Y-m-d');
         $dayOfWeek = now()->locale('it')->dayName;
 
         $prompt = <<<PROMPT
@@ -111,18 +282,15 @@ Sei un parser di date. Oggi è {$dayOfWeek} {$today}.
 
 L'utente ha scritto: "{$input}"
 
-Rispondi SOLO con un JSON valido (senza markdown, senza spiegazioni):
+Rispondi SOLO con un JSON valido (senza markdown, senza ```):
 {
   "date": "YYYY-MM-DD",
   "time": "HH:MM",
-  "friendly": "descrizione leggibile in italiano (es. 'sabato 28 marzo alle 18:00')"
+  "friendly": "descrizione leggibile in italiano"
 }
 
-Regole:
-- Se l'utente dice "domani", calcola la data corretta.
-- Se dice un giorno della settimana (es. "sabato"), usa il prossimo sabato.
-- Se non specifica l'ora, usa null.
-- Se non riesci a interpretare, rispondi: {"error": true}
+Se non specifica l'ora, "time" deve essere null.
+Se non riesci a interpretare, rispondi: {"error": true}
 PROMPT;
 
         try {
@@ -131,6 +299,10 @@ PROMPT;
             $parsed = json_decode($clean, true);
 
             if (json_last_error() !== JSON_ERROR_NONE || !empty($parsed['error'])) {
+                Log::info('TextGenerator: AI date parse returned error/invalid JSON', [
+                    'input' => $input,
+                    'reply' => $reply,
+                ]);
                 return null;
             }
 
@@ -149,10 +321,12 @@ PROMPT;
                 return null;
             }
 
-            // Validazione ora se presente
+            // Validazione ora — accetta sia HH:MM che H:MM
             if (!empty($parsed['time'])) {
-                if (!preg_match('/^\d{2}:\d{2}$/', $parsed['time'])) {
-                    return null;
+                if (preg_match('/^(\d{1,2}):(\d{2})$/', $parsed['time'], $m)) {
+                    $parsed['time'] = sprintf('%02d:%02d', (int)$m[1], (int)$m[2]);
+                } else {
+                    $parsed['time'] = null;
                 }
             }
 
@@ -162,7 +336,7 @@ PROMPT;
                 'friendly' => $parsed['friendly'] ?? $parsed['date'],
             ];
         } catch (\Throwable $e) {
-            Log::warning('TextGenerator: date parse failed', [
+            Log::warning('TextGenerator: AI date parse failed', [
                 'input' => $input,
                 'error' => $e->getMessage(),
             ]);
