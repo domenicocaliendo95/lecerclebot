@@ -37,16 +37,23 @@ return [
 
     'whatsapp' => [
         'verify_token' => env('WHATSAPP_VERIFY_TOKEN'),
-        'api_token'    => env('WHATSAPP_API_TOKEN'),
+        'api_token'    => env('WHATSAPP_TOKEN'),              // .env: WHATSAPP_TOKEN
         'phone_id'     => env('WHATSAPP_PHONE_NUMBER_ID'),
+        'waba_id'      => env('WHATSAPP_WABA_ID'),
+        'phone_number' => env('WHATSAPP_PHONE_NUMBER'),
         'api_version'  => env('WHATSAPP_API_VERSION', 'v21.0'),
     ],
 
     'gemini' => [
-        'api_key'  => env('GEMINI_API_KEY'),
+        'api_key'  => env('GEMINI_KEY'),                      // .env: GEMINI_KEY
         'model'    => env('GEMINI_MODEL', 'gemini-2.0-flash'),
         'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
         'timeout'  => (int) env('GEMINI_TIMEOUT', 15),
+    ],
+
+    'google_calendar' => [
+        'credentials' => env('GOOGLE_CALENDAR_CREDENTIALS'),
+        'calendar_id' => env('GOOGLE_CALENDAR_ID'),
     ],
 
 ];

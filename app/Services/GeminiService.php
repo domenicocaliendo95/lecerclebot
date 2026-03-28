@@ -21,10 +21,21 @@ class GeminiService
 
     public function __construct()
     {
-        $this->apiKey         = config('services.gemini.api_key');
+        $apiKey = config('services.gemini.api_key');
+
+        if (empty($apiKey)) {
+            throw new \RuntimeException(
+                'Gemini API key non configurata. '
+                . 'Verifica che GEMINI_KEY sia presente nel .env '
+                . 'e che config/services.php contenga la chiave services.gemini.api_key. '
+                . 'Se hai cachato la config, esegui: php artisan config:clear'
+            );
+        }
+
+        $this->apiKey         = $apiKey;
         $this->model          = config('services.gemini.model', 'gemini-2.0-flash');
         $this->baseUrl        = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta');
-        $this->timeoutSeconds = config('services.gemini.timeout', 15);
+        $this->timeoutSeconds = (int) config('services.gemini.timeout', 15);
     }
 
     /**
