@@ -2,236 +2,270 @@
 
 namespace App\Services;
 
-use Google\Client;
-use Google\Service\Calendar;
-use Google\Service\Calendar\Event;
-use Google\Service\Calendar\EventDateTime;
-use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+use Google\Client as GoogleClient;
+use Google\Service\Calendar as GoogleCalendar;
+use Google\Service\Calendar\Event as GoogleEvent;
+use Google\Service\Calendar\EventDateTime;
+use Google\Service\Calendar\FreeBusyRequest;
+use Google\Service\Calendar\FreeBusyRequestItem;
+use Illuminate\Support\Facades\Log;
 
+/**
+ * Servizio Google Calendar per Le Cercle Tennis Club.
+ *
+ * Responsabilità:
+ * - Verificare disponibilità slot
+ * - Creare eventi (prenotazioni)
+ * - Proporre alternative quando uno slot è occupato
+ */
 class CalendarService
 {
-    private Calendar $calendar;
+    private GoogleCalendar $service;
     private string $calendarId;
+    private string $timezone = 'Europe/Rome';
 
     public function __construct()
     {
-        $client = new Client();
-        $client->setAuthConfig(env('GOOGLE_CALENDAR_CREDENTIALS'));
-        $client->addScope(Calendar::CALENDAR);
+        $credentialsPath = config('services.google_calendar.credentials');
+        $this->calendarId = config('services.google_calendar.calendar_id');
 
-        $this->calendar   = new Calendar($client);
-        $this->calendarId = env('GOOGLE_CALENDAR_ID');
-    }
-
-    /**
-     * Restituisce i prossimi N slot liberi a partire da adesso.
-     * Cerca buchi di almeno $durationMinutes minuti nell'orario del circolo.
-     */
-    public function getFreeSlots(int $count = 5, int $durationMinutes = 60): array
-    {
-        $now   = Carbon::now('Europe/Rome');
-        $until = $now->copy()->addDays(7);
-
-        // Recupera gli eventi esistenti
-        $events = $this->calendar->events->listEvents($this->calendarId, [
-            'timeMin'      => $now->toRfc3339String(),
-            'timeMax'      => $until->toRfc3339String(),
-            'singleEvents' => true,
-            'orderBy'      => 'startTime',
-        ]);
-
-        $busySlots = [];
-        foreach ($events->getItems() as $event) {
-            $start = $event->getStart()->getDateTime() ?? $event->getStart()->getDate();
-            $end   = $event->getEnd()->getDateTime()   ?? $event->getEnd()->getDate();
-            $busySlots[] = [
-                'start' => Carbon::parse($start, 'Europe/Rome'),
-                'end'   => Carbon::parse($end, 'Europe/Rome'),
-            ];
+        if (empty($credentialsPath) || !file_exists($credentialsPath)) {
+            throw new \RuntimeException(
+                "Google Calendar credentials non trovate: {$credentialsPath}. "
+                . "Verifica GOOGLE_CALENDAR_CREDENTIALS nel .env."
+            );
         }
 
-        // Genera slot candidati negli orari del circolo (08:00–22:00)
-        $freeSlots = [];
-        $cursor    = $now->copy()->addHour()->startOfHour();
-
-        while (count($freeSlots) < $count && $cursor < $until) {
-            $hour = $cursor->hour;
-
-            // Solo negli orari del circolo
-            if ($hour >= 8 && $hour < 21) {
-                $slotEnd = $cursor->copy()->addMinutes($durationMinutes);
-                $isFree  = true;
-
-                foreach ($busySlots as $busy) {
-                    // Verifica sovrapposizione
-                    if ($cursor < $busy['end'] && $slotEnd > $busy['start']) {
-                        $isFree = false;
-                        break;
-                    }
-                }
-
-                if ($isFree) {
-                    $freeSlots[] = [
-                        'start'    => $cursor->copy(),
-                        'end'      => $slotEnd->copy(),
-                        'label'    => $cursor->isoFormat('ddd D MMM · HH:mm'),
-                        'price'    => $this->getPrice($cursor),
-                        'datetime' => $cursor->toIso8601String(),
-                    ];
-                }
-            }
-
-            $cursor->addHour();
+        if (empty($this->calendarId)) {
+            throw new \RuntimeException(
+                'Google Calendar ID non configurato. Verifica GOOGLE_CALENDAR_ID nel .env.'
+            );
         }
 
-        return $freeSlots;
+        $client = new GoogleClient();
+        $client->setAuthConfig($credentialsPath);
+        $client->addScope(GoogleCalendar::CALENDAR);
+
+        $this->service = new GoogleCalendar($client);
     }
 
+    /* ═══════════════════════════════════════════════════════════════
+     *  VERIFICA DISPONIBILITÀ
+     * ═══════════════════════════════════════════════════════════════ */
+
     /**
-     * Verifica se un orario richiesto dall'utente è disponibile
-     * e restituisce alternative se non lo è.
+     * Controlla se uno slot richiesto dall'utente è libero.
+     * Se non è libero, propone alternative nello stesso giorno.
+     *
+     * @param  string $userRequest  Testo con data/ora (es. "2026-03-29 17:00")
+     * @return array{available: bool, alternatives: array}
      */
-    public function checkUserRequest(string $userInput): array
+    public function checkUserRequest(string $userRequest): array
     {
-        // Per ora usiamo Carbon per parsare la data dall'input
-        // In futuro Gemini può estrarre la data strutturata
         try {
-            $requested = Carbon::parse($userInput, 'Europe/Rome');
-        } catch (\Exception $e) {
-            // Se non riesce a parsare, prende il prossimo slot libero
-            $requested = Carbon::now('Europe/Rome')->addDay()->setHour(18)->setMinute(0);
+            $parsed = $this->parseSlotRequest($userRequest);
+
+            if ($parsed === null) {
+                return ['available' => false, 'alternatives' => [], 'error' => 'parse_failed'];
+            }
+
+            $start = $parsed['start'];
+            $end   = $parsed['end'];
+
+            $isAvailable = $this->isSlotFree($start, $end);
+
+            if ($isAvailable) {
+                return [
+                    'available' => true,
+                    'alternatives' => [],
+                ];
+            }
+
+            // Slot occupato: cerca alternative nello stesso giorno
+            $alternatives = $this->findAlternatives($start->copy()->startOfDay(), $start->copy()->endOfDay());
+
+            return [
+                'available'    => false,
+                'alternatives' => $alternatives,
+            ];
+        } catch (\Throwable $e) {
+            Log::error('CalendarService: checkUserRequest failed', [
+                'request' => $userRequest,
+                'error'   => $e->getMessage(),
+            ]);
+
+            throw $e;
         }
+    }
 
-        $requestedEnd = $requested->copy()->addHour();
-
-        // Recupera eventi del giorno
-        $startOfDay = $requested->copy()->startOfDay();
-        $endOfDay   = $requested->copy()->endOfDay();
-
-        $events = $this->calendar->events->listEvents($this->calendarId, [
-            'timeMin'      => $startOfDay->toRfc3339String(),
-            'timeMax'      => $endOfDay->toRfc3339String(),
+    /**
+     * Verifica se uno specifico slot è libero controllando gli eventi esistenti.
+     */
+    private function isSlotFree(Carbon $start, Carbon $end): bool
+    {
+        $events = $this->service->events->listEvents($this->calendarId, [
+            'timeMin'      => $start->toRfc3339String(),
+            'timeMax'      => $end->toRfc3339String(),
             'singleEvents' => true,
-            'orderBy'      => 'startTime',
+            'maxResults'   => 1,
         ]);
 
+        return count($events->getItems()) === 0;
+    }
+
+    /**
+     * Trova slot liberi (da 1 ora) in un range giornaliero.
+     * Orari operativi: 08:00 – 22:00.
+     */
+    private function findAlternatives(Carbon $dayStart, Carbon $dayEnd): array
+    {
+        $operatingStart = $dayStart->copy()->setTime(8, 0);
+        $operatingEnd   = $dayStart->copy()->setTime(22, 0);
+
+        // Recupera tutti gli eventi del giorno
+        $events = $this->service->events->listEvents($this->calendarId, [
+            'timeMin'      => $operatingStart->toRfc3339String(),
+            'timeMax'      => $operatingEnd->toRfc3339String(),
+            'singleEvents' => true,
+            'orderBy'      => 'startTime',
+            'maxResults'   => 50,
+        ]);
+
+        // Costruisci la lista di periodi occupati
         $busySlots = [];
         foreach ($events->getItems() as $event) {
-            $start = Carbon::parse($event->getStart()->getDateTime() ?? $event->getStart()->getDate(), 'Europe/Rome');
-            $end   = Carbon::parse($event->getEnd()->getDateTime()   ?? $event->getEnd()->getDate(), 'Europe/Rome');
-            $busySlots[] = ['start' => $start, 'end' => $end];
+            $eventStart = Carbon::parse($event->getStart()->getDateTime(), $this->timezone);
+            $eventEnd   = Carbon::parse($event->getEnd()->getDateTime(), $this->timezone);
+            $busySlots[] = ['start' => $eventStart, 'end' => $eventEnd];
         }
 
-        // Verifica se lo slot richiesto è libero
-        $isFree = true;
-        foreach ($busySlots as $busy) {
-            if ($requested < $busy['end'] && $requestedEnd > $busy['start']) {
-                $isFree = false;
-                break;
-            }
-        }
-
-        if ($isFree) {
-            return [
-                'available' => true,
-                'slot' => [
-                    'start'    => $requested,
-                    'end'      => $requestedEnd,
-                    'label'    => $requested->isoFormat('ddd D MMM · HH:mm'),
-                    'price'    => $this->getPrice($requested),
-                    'datetime' => $requested->toIso8601String(),
-                ],
-            ];
-        }
-
-        // Trova alternative nello stesso giorno
+        // Trova slot liberi di 1 ora
         $alternatives = [];
-        $cursor = $startOfDay->copy()->setHour(8);
+        $cursor = $operatingStart->copy();
 
-        while ($cursor <= $endOfDay->copy()->setHour(21) && count($alternatives) < 3) {
-            $cursorEnd = $cursor->copy()->addHour();
-            $free = true;
+        while ($cursor->copy()->addHour()->lte($operatingEnd)) {
+            $slotStart = $cursor->copy();
+            $slotEnd   = $cursor->copy()->addHour();
 
+            // Salta slot nel passato
+            if ($slotStart->lt(now())) {
+                $cursor->addHour();
+                continue;
+            }
+
+            $isFree = true;
             foreach ($busySlots as $busy) {
-                if ($cursor < $busy['end'] && $cursorEnd > $busy['start']) {
-                    $free = false;
+                // Overlap check
+                if ($slotStart->lt($busy['end']) && $slotEnd->gt($busy['start'])) {
+                    $isFree = false;
                     break;
                 }
             }
 
-            if ($free && $cursor->isAfter(Carbon::now('Europe/Rome'))) {
+            if ($isFree) {
                 $alternatives[] = [
-                    'start'    => $cursor->copy(),
-                    'end'      => $cursorEnd->copy(),
-                    'label'    => $cursor->isoFormat('HH:mm'),
-                    'price'    => $this->getPrice($cursor),
-                    'datetime' => $cursor->toIso8601String(),
+                    'date'  => $slotStart->format('Y-m-d'),
+                    'time'  => $slotStart->format('H:i'),
+                    'label' => $slotStart->format('H:i') . ' - ' . $slotEnd->format('H:i'),
+                    'price' => $this->estimatePrice($slotStart),
                 ];
             }
 
             $cursor->addHour();
         }
 
-        return [
-            'available'    => false,
-            'alternatives' => $alternatives,
-        ];
+        return array_slice($alternatives, 0, 5); // Max 5 alternative
     }
 
+    /* ═══════════════════════════════════════════════════════════════
+     *  CREAZIONE EVENTI
+     * ═══════════════════════════════════════════════════════════════ */
+
     /**
-     * Crea un evento nel calendario per la prenotazione confermata.
+     * Crea un evento sul Google Calendar.
      */
-    public function createBookingEvent(string $title, Carbon $start, Carbon $end, string $description = ''): string
-    {
-        $event = new Event([
-            'summary'     => $title,
+    public function createEvent(
+        string $summary,
+        string $description,
+        Carbon $startTime,
+        Carbon $endTime,
+    ): GoogleEvent {
+        $event = new GoogleEvent([
+            'summary'     => $summary,
             'description' => $description,
-            'start'       => new EventDateTime([
-                'dateTime' => $start->toRfc3339String(),
-                'timeZone' => 'Europe/Rome',
-            ]),
-            'end' => new EventDateTime([
-                'dateTime' => $end->toRfc3339String(),
-                'timeZone' => 'Europe/Rome',
-            ]),
-            'colorId' => '2', // verde
+            'start'       => [
+                'dateTime' => $startTime->toRfc3339String(),
+                'timeZone' => $this->timezone,
+            ],
+            'end' => [
+                'dateTime' => $endTime->toRfc3339String(),
+                'timeZone' => $this->timezone,
+            ],
         ]);
 
+        $createdEvent = $this->service->events->insert($this->calendarId, $event);
+
+        Log::info('CalendarService: event created', [
+            'event_id' => $createdEvent->getId(),
+            'summary'  => $summary,
+            'start'    => $startTime->toIso8601String(),
+            'end'      => $endTime->toIso8601String(),
+        ]);
+
+        return $createdEvent;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  HELPER
+     * ═══════════════════════════════════════════════════════════════ */
+
+    /**
+     * Parsa la richiesta utente in un range start/end.
+     * Accetta: "2026-03-29 17:00" oppure testo libero (fallback).
+     */
+    private function parseSlotRequest(string $request): ?array
+    {
+        // Formato esatto: "YYYY-MM-DD HH:MM"
+        if (preg_match('/(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/', $request, $m)) {
+            $start = Carbon::parse("{$m[1]} {$m[2]}", $this->timezone);
+            return [
+                'start' => $start,
+                'end'   => $start->copy()->addHour(),
+            ];
+        }
+
+        // Fallback: prova a parsare come data Carbon
         try {
-            $created = $this->calendar->events->insert($this->calendarId, $event);
-            return $created->getId();
-        } catch (\Exception $e) {
-            Log::error('Google Calendar error', ['message' => $e->getMessage()]);
-            return '';
+            $start = Carbon::parse($request, $this->timezone);
+            return [
+                'start' => $start,
+                'end'   => $start->copy()->addHour(),
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('CalendarService: cannot parse slot request', [
+                'request' => $request,
+                'error'   => $e->getMessage(),
+            ]);
+            return null;
         }
     }
 
     /**
-     * Elimina un evento dal calendario (per cancellazioni).
+     * Stima il prezzo per uno slot (placeholder — da collegare alle pricing_rules del DB).
      */
-    public function deleteEvent(string $eventId): void
+    private function estimatePrice(Carbon $slotStart): float
     {
-        try {
-            $this->calendar->events->delete($this->calendarId, $eventId);
-        } catch (\Exception $e) {
-            Log::error('Google Calendar delete error', ['message' => $e->getMessage()]);
+        $hour = $slotStart->hour;
+
+        // Fasce orarie base
+        if ($hour >= 8 && $hour < 14) {
+            return 20.00;  // Mattina
         }
-    }
+        if ($hour >= 14 && $hour < 18) {
+            return 25.00;  // Pomeriggio
+        }
 
-    /**
-     * Calcola il prezzo in base alla fascia oraria.
-     */
-    private function getPrice(Carbon $dt): float
-    {
-        $hour      = $dt->hour;
-        $dayOfWeek = $dt->dayOfWeek; // 0=dom, 6=sab
-
-        $isWeekend = in_array($dayOfWeek, [0, 6]);
-
-        if ($isWeekend && $hour >= 9 && $hour < 13) return 16.00; // super peak
-        if ($isWeekend) return 13.00;                               // weekend
-        if ($hour >= 17 && $hour < 21) return 15.00;               // peak serale
-        return 10.00;                                               // off-peak
+        return 30.00;  // Sera (peak)
     }
 }

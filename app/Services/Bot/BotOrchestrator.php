@@ -196,19 +196,65 @@ class BotOrchestrator
                 return;
             }
 
-            // TODO: Integrare con il BookingService completo dal modello di progetto.
-            // Per ora logghiamo la prenotazione.
-            Log::info('Booking created', [
-                'user_id'      => $user->id,
-                'date'         => $session->getData('requested_date'),
-                'time'         => $session->getData('requested_time'),
-                'booking_type' => $session->getData('booking_type'),
-                'payment'      => $session->getData('payment_method'),
+            $date        = $session->getData('requested_date');  // Y-m-d
+            $time        = $session->getData('requested_time');  // H:i
+            $bookingType = $session->getData('booking_type') ?? 'con_avversario';
+            $payment     = $session->getData('payment_method') ?? 'in_loco';
+
+            if (empty($date) || empty($time)) {
+                Log::error('Cannot create booking: missing date/time', [
+                    'phone' => $phone,
+                    'date'  => $date,
+                    'time'  => $time,
+                ]);
+                return;
+            }
+
+            // Costruisci datetime inizio e fine (default 1 ora)
+            $startDateTime = \Carbon\Carbon::parse("{$date} {$time}", 'Europe/Rome');
+            $endDateTime   = $startDateTime->copy()->addMinutes(60);
+
+            // Etichette per il tipo di prenotazione
+            $typeLabels = [
+                'con_avversario' => 'Partita singolo',
+                'matchmaking'    => 'Partita (matchmaking)',
+                'sparapalline'   => 'Noleggio sparapalline',
+            ];
+            $typeLabel = $typeLabels[$bookingType] ?? 'Prenotazione campo';
+
+            $summary     = "{$typeLabel} - {$user->name}";
+            $description = implode("\n", [
+                "Giocatore: {$user->name}",
+                "Telefono: {$phone}",
+                "Tipo: {$typeLabel}",
+                "Pagamento: {$payment}",
+                "Prenotato via: WhatsApp Bot",
             ]);
+
+            // Crea evento su Google Calendar
+            $this->calendar->createEvent(
+                summary:     $summary,
+                description: $description,
+                startTime:   $startDateTime,
+                endTime:     $endDateTime,
+            );
+
+            Log::info('Booking created on Google Calendar', [
+                'user_id'   => $user->id,
+                'user_name' => $user->name,
+                'date'      => $date,
+                'time'      => $time,
+                'type'      => $bookingType,
+                'payment'   => $payment,
+                'start'     => $startDateTime->toIso8601String(),
+                'end'       => $endDateTime->toIso8601String(),
+            ]);
+
         } catch (\Throwable $e) {
             Log::error('Booking creation failed', [
                 'phone' => $phone,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
