@@ -104,8 +104,15 @@ class StateHandler
     private function handleOnboardFit(BotSession $session, string $input): BotResponse
     {
         $normalized = mb_strtolower(trim($input));
-        $isFit = $this->matchesYes($normalized) || str_contains($normalized, 'tesserato');
-        $isNotFit = $this->matchesNo($normalized) || str_contains($normalized, 'non sono');
+
+        // Controllo negativo PRIMA per evitare falsi positivi su "non sono tesserato"
+        $isNotFit = $this->matchesNo($normalized)
+            || str_contains($normalized, 'non sono')
+            || str_contains($normalized, 'non ho')
+            || str_contains($normalized, 'senza tessera')
+            || str_contains($normalized, 'non tesserato');
+
+        $isFit = !$isNotFit && ($this->matchesYes($normalized) || str_contains($normalized, 'tesserato'));
 
         if (!$isFit && !$isNotFit) {
             return BotResponse::make(
