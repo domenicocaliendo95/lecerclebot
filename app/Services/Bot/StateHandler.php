@@ -46,6 +46,19 @@ class StateHandler
             if ($user !== null && $this->isPrenotazioniKeyword($normalized)) {
                 return $this->handleMostraPrenotazioni($session, $user);
             }
+
+            if ($user !== null && $this->isProfiloKeyword($normalized)) {
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('modifica_profilo_scelta', $session->persona()),
+                    BotState::MODIFICA_PROFILO,
+                    ['Stato FIT', 'Livello gioco', 'Fascia oraria'],
+                );
+            }
+        }
+
+        // ── "Indietro" durante l'onboarding ────────────────────────────────
+        if ($state->isOnboarding() && $state !== BotState::ONBOARD_NOME && $this->isIndietroKeyword($normalized)) {
+            return $this->handleIndietroOnboarding($session, $state);
         }
 
         return match ($state) {
@@ -67,6 +80,8 @@ class StateHandler
             BotState::ATTESA_MATCH            => $this->handleAttesaMatch($session, $input),
             BotState::GESTIONE_PRENOTAZIONI   => $this->handleSelezionaPrenotazione($session, $input, $user),
             BotState::AZIONE_PRENOTAZIONE     => $this->handleAzionePrenotazione($session, $input),
+            BotState::MODIFICA_PROFILO        => $this->handleModificaProfilo($session, $input, $user),
+            BotState::MODIFICA_RISPOSTA       => $this->handleModificaRisposta($session, $input),
         };
     }
 
@@ -498,6 +513,191 @@ class StateHandler
     }
 
     /* ═══════════════════════════════════════════════════════════════
+     *  INDIETRO ONBOARDING
+     * ═══════════════════════════════════════════════════════════════ */
+
+    private function handleIndietroOnboarding(BotSession $session, BotState $current): BotResponse
+    {
+        $persona = $session->persona();
+        $profile = $session->profile();
+
+        $prefix = $this->textGenerator->rephrase('indietro_onboarding', $persona) . "\n\n";
+
+        return match ($current) {
+            BotState::ONBOARD_FIT =>
+                BotResponse::make(
+                    $prefix . $this->textGenerator->rephrase('chiedi_nome_nuovo', $persona),
+                    BotState::ONBOARD_NOME,
+                ),
+
+            BotState::ONBOARD_CLASSIFICA,
+            BotState::ONBOARD_LIVELLO =>
+                BotResponse::make(
+                    $prefix . $this->textGenerator->rephrase('chiedi_fit', $persona, [
+                        'name' => $profile['name'] ?? '',
+                    ]),
+                    BotState::ONBOARD_FIT,
+                    ['Sì, sono tesserato', 'Non sono tesserato'],
+                ),
+
+            BotState::ONBOARD_ETA =>
+                ($profile['is_fit'] ?? false)
+                    ? BotResponse::make(
+                        $prefix . $this->textGenerator->rephrase('chiedi_classifica', $persona),
+                        BotState::ONBOARD_CLASSIFICA,
+                    )
+                    : BotResponse::make(
+                        $prefix . $this->textGenerator->rephrase('chiedi_livello', $persona),
+                        BotState::ONBOARD_LIVELLO,
+                        ['Neofita', 'Dilettante', 'Avanzato'],
+                    ),
+
+            BotState::ONBOARD_SLOT_PREF =>
+                BotResponse::make(
+                    $prefix . $this->textGenerator->rephrase('chiedi_eta', $persona),
+                    BotState::ONBOARD_ETA,
+                ),
+
+            default =>
+                BotResponse::make(
+                    $prefix . $this->textGenerator->rephrase('chiedi_nome_nuovo', $persona),
+                    BotState::ONBOARD_NOME,
+                ),
+        };
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  MODIFICA PROFILO (utenti registrati)
+     * ═══════════════════════════════════════════════════════════════ */
+
+    private function handleModificaProfilo(BotSession $session, string $input, ?User $user): BotResponse
+    {
+        $normalized = mb_strtolower(trim($input));
+        $persona    = $session->persona();
+
+        if (str_contains($normalized, 'fit') || str_contains($normalized, 'tessera')) {
+            $session->mergeData(['update_field' => 'fit']);
+            return BotResponse::make(
+                $this->textGenerator->rephrase('chiedi_fit', $persona, [
+                    'name' => $user?->name ?? '',
+                ]),
+                BotState::MODIFICA_RISPOSTA,
+                ['Sì, sono tesserato', 'Non sono tesserato'],
+            );
+        }
+
+        if (str_contains($normalized, 'livello') || str_contains($normalized, 'gioco')) {
+            if ($user?->is_fit) {
+                $session->mergeData(['update_field' => 'classifica']);
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('chiedi_classifica', $persona),
+                    BotState::MODIFICA_RISPOSTA,
+                );
+            }
+            $session->mergeData(['update_field' => 'livello']);
+            return BotResponse::make(
+                $this->textGenerator->rephrase('chiedi_livello', $persona),
+                BotState::MODIFICA_RISPOSTA,
+                ['Neofita', 'Dilettante', 'Avanzato'],
+            );
+        }
+
+        if (str_contains($normalized, 'fascia') || str_contains($normalized, 'orario') || str_contains($normalized, 'slot')) {
+            $session->mergeData(['update_field' => 'slot']);
+            return BotResponse::make(
+                $this->textGenerator->rephrase('chiedi_fascia_oraria', $persona),
+                BotState::MODIFICA_RISPOSTA,
+                ['Mattina', 'Pomeriggio', 'Sera'],
+            );
+        }
+
+        // Non riconosciuto: riproponi le opzioni
+        return BotResponse::make(
+            $this->textGenerator->rephrase('modifica_profilo_scelta', $persona),
+            BotState::MODIFICA_PROFILO,
+            ['Stato FIT', 'Livello gioco', 'Fascia oraria'],
+        );
+    }
+
+    private function handleModificaRisposta(BotSession $session, string $input): BotResponse
+    {
+        $updateField = $session->getData('update_field');
+        $persona     = $session->persona();
+        $profileUpdate = [];
+
+        switch ($updateField) {
+            case 'fit':
+                $normalized = mb_strtolower(trim($input));
+                $isNotFit = $this->matchesNo($normalized)
+                    || str_contains($normalized, 'non sono')
+                    || str_contains($normalized, 'non ho');
+                $isFit = !$isNotFit && ($this->matchesYes($normalized) || str_contains($normalized, 'tesserato'));
+
+                if (!$isFit && !$isNotFit) {
+                    return BotResponse::make(
+                        $this->textGenerator->rephrase('fit_non_capito', $persona),
+                        BotState::MODIFICA_RISPOSTA,
+                        ['Sì, sono tesserato', 'Non sono tesserato'],
+                    );
+                }
+                $profileUpdate = ['is_fit' => $isFit, 'fit_rating' => null, 'self_level' => null];
+                break;
+
+            case 'classifica':
+                $rating = $this->parseClassificaFit($input);
+                if ($rating === null) {
+                    return BotResponse::make(
+                        $this->textGenerator->rephrase('classifica_non_valida', $persona),
+                        BotState::MODIFICA_RISPOSTA,
+                    );
+                }
+                $profileUpdate = ['fit_rating' => $rating];
+                break;
+
+            case 'livello':
+                $level = $this->parseLivello($input);
+                if ($level === null) {
+                    return BotResponse::make(
+                        $this->textGenerator->rephrase('livello_non_valido', $persona),
+                        BotState::MODIFICA_RISPOSTA,
+                        ['Neofita', 'Dilettante', 'Avanzato'],
+                    );
+                }
+                $profileUpdate = ['self_level' => $level];
+                break;
+
+            case 'slot':
+                $slot = $this->parseFasciaOraria($input);
+                if ($slot === null) {
+                    return BotResponse::make(
+                        $this->textGenerator->rephrase('fascia_non_valida', $persona),
+                        BotState::MODIFICA_RISPOSTA,
+                        ['Mattina', 'Pomeriggio', 'Sera'],
+                    );
+                }
+                $profileUpdate = ['slot' => $slot];
+                break;
+
+            default:
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('menu_ritorno', $persona),
+                    BotState::MENU,
+                    ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                );
+        }
+
+        // Merge con il profilo in sessione e salva nel DB
+        $merged = array_merge($session->profile(), $profileUpdate);
+        $session->mergeData(['update_field' => null]);
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('profilo_aggiornato', $persona),
+            BotState::MENU,
+            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+        )->withProfileToSave($merged);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
      *  GESTIONE PRENOTAZIONI
      * ═══════════════════════════════════════════════════════════════ */
 
@@ -772,6 +972,21 @@ class StateHandler
         return str_contains($input, 'prenotazion')
             || str_contains($input, 'mie prenotaz')
             || $input === 'booking';
+    }
+
+    private function isProfiloKeyword(string $input): bool
+    {
+        return str_contains($input, 'profilo')
+            || str_contains($input, 'modifica profilo')
+            || str_contains($input, 'aggiorna profilo')
+            || $input === 'impostazioni';
+    }
+
+    private function isIndietroKeyword(string $input): bool
+    {
+        return in_array($input, ['indietro', 'back', 'torna', 'annulla', 'precedente'], true)
+            || str_contains($input, 'torna indietro')
+            || str_contains($input, 'vai indietro');
     }
 
     private function matchesYes(string $input): bool

@@ -63,6 +63,12 @@ class TextGenerator
         'link_pagamento'           => 'Ecco il link per il pagamento. Una volta completato, la prenotazione sarà confermata!',
         'prenotazione_confermata'  => 'Prenotazione confermata per {slot}! ✅ Ti aspettiamo!',
 
+        // Modifica profilo
+        'modifica_profilo_scelta' => 'Cosa vuoi modificare nel tuo profilo?',
+        'profilo_aggiornato'      => 'Perfetto, profilo aggiornato! Cosa vuoi fare?',
+        'chiedi_nome_nuovo'       => 'Come ti chiami?',
+        'indietro_onboarding'     => 'Nessun problema, torniamo al passo precedente.',
+
         // Gestione prenotazioni
         'nessuna_prenotazione'       => 'Non hai prenotazioni attive al momento. Cosa vuoi fare?',
         'scegli_prenotazione'        => 'Ecco le tue prossime prenotazioni. Quale vuoi gestire?',

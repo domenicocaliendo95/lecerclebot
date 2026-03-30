@@ -36,6 +36,10 @@ enum BotState: string
     case GESTIONE_PRENOTAZIONI = 'GESTIONE_PRENOTAZIONI';
     case AZIONE_PRENOTAZIONE   = 'AZIONE_PRENOTAZIONE';
 
+    /* ── Modifica profilo ── */
+    case MODIFICA_PROFILO   = 'MODIFICA_PROFILO';
+    case MODIFICA_RISPOSTA  = 'MODIFICA_RISPOSTA';
+
     /**
      * Transizioni valide da ogni stato.
      *
@@ -46,14 +50,14 @@ enum BotState: string
         return match ($this) {
             self::NEW                => [self::ONBOARD_NOME],
             self::ONBOARD_NOME       => [self::ONBOARD_FIT],
-            self::ONBOARD_FIT        => [self::ONBOARD_CLASSIFICA, self::ONBOARD_LIVELLO],
-            self::ONBOARD_CLASSIFICA => [self::ONBOARD_ETA],
-            self::ONBOARD_LIVELLO    => [self::ONBOARD_ETA],
-            self::ONBOARD_ETA        => [self::ONBOARD_SLOT_PREF],
-            self::ONBOARD_SLOT_PREF  => [self::ONBOARD_COMPLETO],
+            self::ONBOARD_FIT        => [self::ONBOARD_CLASSIFICA, self::ONBOARD_LIVELLO, self::ONBOARD_NOME],
+            self::ONBOARD_CLASSIFICA => [self::ONBOARD_ETA, self::ONBOARD_FIT],
+            self::ONBOARD_LIVELLO    => [self::ONBOARD_ETA, self::ONBOARD_FIT],
+            self::ONBOARD_ETA        => [self::ONBOARD_SLOT_PREF, self::ONBOARD_CLASSIFICA, self::ONBOARD_LIVELLO],
+            self::ONBOARD_SLOT_PREF  => [self::ONBOARD_COMPLETO, self::ONBOARD_ETA],
             self::ONBOARD_COMPLETO   => [self::MENU, self::SCEGLI_QUANDO, self::ATTESA_MATCH],
 
-            self::MENU           => [self::SCEGLI_QUANDO, self::ATTESA_MATCH, self::GESTIONE_PRENOTAZIONI],
+            self::MENU           => [self::SCEGLI_QUANDO, self::ATTESA_MATCH, self::GESTIONE_PRENOTAZIONI, self::MODIFICA_PROFILO],
             self::SCEGLI_QUANDO  => [self::VERIFICA_SLOT, self::MENU, self::GESTIONE_PRENOTAZIONI],
             self::VERIFICA_SLOT  => [self::PROPONI_SLOT, self::MENU, self::GESTIONE_PRENOTAZIONI],
             self::PROPONI_SLOT   => [self::CONFERMA, self::SCEGLI_QUANDO, self::MENU, self::GESTIONE_PRENOTAZIONI],
@@ -64,6 +68,9 @@ enum BotState: string
             self::ATTESA_MATCH          => [self::SCEGLI_QUANDO, self::MENU, self::GESTIONE_PRENOTAZIONI],
             self::GESTIONE_PRENOTAZIONI => [self::AZIONE_PRENOTAZIONE, self::MENU],
             self::AZIONE_PRENOTAZIONE   => [self::SCEGLI_QUANDO, self::MENU],
+
+            self::MODIFICA_PROFILO  => [self::MODIFICA_RISPOSTA, self::MENU],
+            self::MODIFICA_RISPOSTA => [self::MENU, self::MODIFICA_RISPOSTA],
         };
     }
 
