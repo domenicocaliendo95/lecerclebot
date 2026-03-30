@@ -38,11 +38,11 @@ class TextGenerator
         'eta_non_valida'         => 'Scusa, dimmi la tua età con un numero (es. 30).',
         'chiedi_fascia_oraria'   => 'Ultima cosa: quando preferisci giocare di solito?',
         'fascia_non_valida'      => 'Non ho capito. Preferisci mattina, pomeriggio o sera?',
-        'registrazione_completa' => 'Perfetto {name}, sei registrato! 🎉 Cosa vuoi fare?',
+        'registrazione_completa' => 'Perfetto {name}, sei registrato! 🎉 Cosa vuoi fare? Scrivi "menu" quando vuoi per tornare qui, o "prenotazioni" per gestire le tue prenotazioni.',
 
         // Menu
-        'menu_non_capito'        => 'Scusa, non ho capito. Cosa preferisci fare?',
-        'menu_ritorno'           => 'Ci sono per te! Cosa vuoi fare?',
+        'menu_non_capito'        => 'Scusa, non ho capito. Scegli una delle opzioni o scrivi "prenotazioni" per gestire le tue prenotazioni.',
+        'menu_ritorno'           => 'Ci sono per te! Cosa vuoi fare? Puoi anche scrivere "prenotazioni" per vedere le tue prenotazioni attive.',
 
         // Prenotazione
         'chiedi_quando'            => 'Quando vorresti giocare? Dimmi giorno e ora (es. domani alle 18, sabato mattina...).',
@@ -62,6 +62,13 @@ class TextGenerator
         'prenotazione_annullata'   => 'Prenotazione annullata. Nessun problema! Cosa vuoi fare?',
         'link_pagamento'           => 'Ecco il link per il pagamento. Una volta completato, la prenotazione sarà confermata!',
         'prenotazione_confermata'  => 'Prenotazione confermata per {slot}! ✅ Ti aspettiamo!',
+
+        // Gestione prenotazioni
+        'nessuna_prenotazione'       => 'Non hai prenotazioni attive al momento. Cosa vuoi fare?',
+        'scegli_prenotazione'        => 'Ecco le tue prossime prenotazioni. Quale vuoi gestire?',
+        'azione_prenotazione'        => 'Prenotazione: {slot}. Cosa vuoi fare?',
+        'prenotazione_cancellata_ok' => 'Prenotazione annullata. A presto in campo! 🎾 Cosa vuoi fare?',
+        'prenotazione_modifica_quando' => 'Ok! Quando vorresti spostare la prenotazione? Dimmi il nuovo giorno e orario.',
 
         // Matchmaking
         'matchmaking_attesa'       => 'Sto cercando un avversario adatto a te. Ti avviso appena trovo qualcuno! 🔍',

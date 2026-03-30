@@ -2,9 +2,11 @@
 
 namespace App\Services\Bot;
 
+use App\Models\Booking;
 use App\Models\BotSession;
 use App\Models\User;
 use App\Services\CalendarService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -28,7 +30,23 @@ class StateHandler
      */
     public function handle(BotSession $session, string $input, ?User $user): BotResponse
     {
-        $state = BotState::from($session->state);
+        $state      = BotState::from($session->state);
+        $normalized = mb_strtolower(trim($input));
+
+        // ── Parole chiave globali (solo utenti non in onboarding) ──────────
+        if (!$state->isOnboarding()) {
+            if ($this->isMenuKeyword($normalized)) {
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
+                    BotState::MENU,
+                    ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                );
+            }
+
+            if ($user !== null && $this->isPrenotazioniKeyword($normalized)) {
+                return $this->handleMostraPrenotazioni($session, $user);
+            }
+        }
 
         return match ($state) {
             BotState::NEW                => $this->handleNew($session, $input),
@@ -45,8 +63,10 @@ class StateHandler
             BotState::PROPONI_SLOT       => $this->handleProponiSlot($session, $input),
             BotState::CONFERMA           => $this->handleConferma($session, $input),
             BotState::PAGAMENTO          => $this->handlePagamento($session, $input),
-            BotState::CONFERMATO         => $this->handleConfermato($session, $input),
-            BotState::ATTESA_MATCH       => $this->handleAttesaMatch($session, $input),
+            BotState::CONFERMATO              => $this->handleConfermato($session, $input),
+            BotState::ATTESA_MATCH            => $this->handleAttesaMatch($session, $input),
+            BotState::GESTIONE_PRENOTAZIONI   => $this->handleSelezionaPrenotazione($session, $input, $user),
+            BotState::AZIONE_PRENOTAZIONE     => $this->handleAzionePrenotazione($session, $input),
         };
     }
 
@@ -77,7 +97,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('chiedi_fit', $session->persona(), ['name' => $name]),
             BotState::ONBOARD_FIT,
-            ["Sì, sono tesserato", "No, non sono tesserato"],
+            ["Sì, sono tesserato", "Non sono tesserato"],
         );
     }
 
@@ -91,7 +111,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('fit_non_capito', $session->persona()),
                 BotState::ONBOARD_FIT,
-                ["Sì, sono tesserato", "No, non sono tesserato"],
+                ["Sì, sono tesserato", "Non sono tesserato"],
             );
         }
 
@@ -191,7 +211,7 @@ class StateHandler
                 'name' => $profile['name'] ?? 'Giocatore',
             ]),
             BotState::ONBOARD_COMPLETO,
-            ['Ho già un avversario', 'Trovami un avversario', 'Noleggio sparapalline'],
+            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
         )->withProfileToSave($profile);
     }
 
@@ -247,7 +267,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_non_capito', $session->persona()),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami un avversario', 'Noleggio sparapalline'],
+            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
         );
     }
 
@@ -353,7 +373,7 @@ class StateHandler
                     'booking_type' => $bookingType,
                 ]),
                 BotState::CONFERMA,
-                ['Conferma e paga online', 'Pago di persona', 'Annulla'],
+                ['Paga online', 'Pago di persona', 'Annulla'],
             );
         }
 
@@ -408,7 +428,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('prenotazione_annullata', $session->persona()),
                 BotState::MENU,
-                ['Ho già un avversario', 'Trovami un avversario', 'Noleggio sparapalline'],
+                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
             );
         }
 
@@ -444,7 +464,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('conferma_non_capita', $session->persona()),
             BotState::CONFERMA,
-            ['Conferma e paga online', 'Pago di persona', 'Annulla'],
+            ['Paga online', 'Pago di persona', 'Annulla'],
         );
     }
 
@@ -466,7 +486,148 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami un avversario', 'Noleggio sparapalline'],
+            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+        );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  GESTIONE PRENOTAZIONI
+     * ═══════════════════════════════════════════════════════════════ */
+
+    /**
+     * Chiamato dal keyword "prenotazioni": carica le prossime prenotazioni e le mostra.
+     */
+    private function handleMostraPrenotazioni(BotSession $session, User $user): BotResponse
+    {
+        $bookings = Booking::where('player1_id', $user->id)
+            ->where('booking_date', '>=', now()->format('Y-m-d'))
+            ->whereIn('status', ['confirmed', 'pending_match'])
+            ->orderBy('booking_date')
+            ->orderBy('start_time')
+            ->take(3)
+            ->get();
+
+        if ($bookings->isEmpty()) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('nessuna_prenotazione', $session->persona()),
+                BotState::MENU,
+                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            );
+        }
+
+        $dayNames   = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+        $monthNames = ['', 'gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+
+        $bookingsList = $bookings->map(function ($b) use ($dayNames, $monthNames) {
+            $date  = Carbon::parse($b->booking_date);
+            $label = $dayNames[$date->dayOfWeek] . ' ' . $date->day . ' ' . $monthNames[$date->month]
+                   . ' ' . mb_substr($b->start_time, 0, 5);
+
+            return [
+                'id'    => $b->id,
+                'date'  => $b->booking_date instanceof \Carbon\Carbon
+                    ? $b->booking_date->format('Y-m-d')
+                    : (string) $b->booking_date,
+                'time'  => mb_substr($b->start_time, 0, 5),
+                'gcal_id' => $b->gcal_event_id,
+                'label' => $label,
+            ];
+        })->toArray();
+
+        $session->mergeData(['bookings_list' => $bookingsList]);
+
+        $buttons = array_map(fn($b) => mb_substr($b['label'], 0, 20), $bookingsList);
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('scegli_prenotazione', $session->persona()),
+            BotState::GESTIONE_PRENOTAZIONI,
+            $buttons,
+        );
+    }
+
+    /**
+     * Utente è in GESTIONE_PRENOTAZIONI: ha selezionato una prenotazione dalla lista.
+     */
+    private function handleSelezionaPrenotazione(BotSession $session, string $input, ?User $user): BotResponse
+    {
+        $normalized   = mb_strtolower(trim($input));
+        $bookingsList = $session->getData('bookings_list') ?? [];
+
+        // Cerca la prenotazione selezionata per label
+        $selected = null;
+        foreach ($bookingsList as $b) {
+            if (str_contains($normalized, mb_strtolower($b['label'])) ||
+                str_contains(mb_strtolower($b['label']), $normalized)) {
+                $selected = $b;
+                break;
+            }
+        }
+
+        // Fallback: se non trova per label, prova a matchare per orario (es. "17:00")
+        if ($selected === null) {
+            foreach ($bookingsList as $b) {
+                if (str_contains($normalized, $b['time'])) {
+                    $selected = $b;
+                    break;
+                }
+            }
+        }
+
+        if ($selected === null) {
+            // Non capito — ripropone la lista
+            $buttons = array_map(fn($b) => mb_substr($b['label'], 0, 20), array_slice($bookingsList, 0, 3));
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('scegli_prenotazione', $session->persona()),
+                BotState::GESTIONE_PRENOTAZIONI,
+                $buttons,
+            );
+        }
+
+        $session->mergeData(['selected_booking_id' => $selected['id']]);
+
+        $slotFriendly = $selected['label'];
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('azione_prenotazione', $session->persona(), [
+                'slot' => $slotFriendly,
+            ]),
+            BotState::AZIONE_PRENOTAZIONE,
+            ['Modifica orario', 'Cancella', 'Torna al menu'],
+        );
+    }
+
+    /**
+     * Utente è in AZIONE_PRENOTAZIONE: sceglie cosa fare con la prenotazione selezionata.
+     */
+    private function handleAzionePrenotazione(BotSession $session, string $input): BotResponse
+    {
+        $normalized = mb_strtolower(trim($input));
+
+        if (str_contains($normalized, 'modifica') || str_contains($normalized, 'sposta') || str_contains($normalized, 'cambia')) {
+            // Salva l'ID della prenotazione da modificare e vai a SCEGLI_QUANDO
+            $bookingId = $session->getData('selected_booking_id');
+            $session->mergeData(['editing_booking_id' => $bookingId]);
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('prenotazione_modifica_quando', $session->persona()),
+                BotState::SCEGLI_QUANDO,
+            );
+        }
+
+        if (str_contains($normalized, 'cancella') || str_contains($normalized, 'elimina') || str_contains($normalized, 'annulla')) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('prenotazione_cancellata_ok', $session->persona()),
+                BotState::MENU,
+                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            )->withBookingToCancel(true);
+        }
+
+        // "Torna al menu" o qualsiasi altro input
+        return BotResponse::make(
+            $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
+            BotState::MENU,
+            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
         );
     }
 
@@ -591,6 +752,19 @@ class StateHandler
         }
 
         return null;
+    }
+
+    private function isMenuKeyword(string $input): bool
+    {
+        return in_array($input, ['menu', 'aiuto', 'help', 'home', 'start', 'ricomincia', '0', 'torna'], true)
+            || str_contains($input, 'torna al menu');
+    }
+
+    private function isPrenotazioniKeyword(string $input): bool
+    {
+        return str_contains($input, 'prenotazion')
+            || str_contains($input, 'mie prenotaz')
+            || $input === 'booking';
     }
 
     private function matchesYes(string $input): bool

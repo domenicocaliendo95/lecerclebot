@@ -156,7 +156,12 @@ class BotOrchestrator
             $this->profileService->saveFromBot($phone, $profile);
         }
 
-        // Creazione prenotazione
+        // Cancellazione prenotazione
+        if ($response->needsBookingCancellation()) {
+            $this->cancelBooking($session);
+        }
+
+        // Creazione (o modifica) prenotazione
         if ($response->needsBookingCreation()) {
             $this->createBooking($session, $phone);
         }
@@ -195,6 +200,39 @@ class BotOrchestrator
 
     /* ───────── Booking ───────── */
 
+    private function cancelBooking(BotSession $session): void
+    {
+        $bookingId = $session->getData('selected_booking_id');
+        if (!$bookingId) {
+            return;
+        }
+
+        try {
+            $booking = Booking::find($bookingId);
+            if (!$booking) {
+                return;
+            }
+
+            if ($booking->gcal_event_id) {
+                try {
+                    $this->calendar->deleteEvent($booking->gcal_event_id);
+                } catch (\Throwable $e) {
+                    Log::warning('cancelBooking: could not delete calendar event', [
+                        'gcal_id' => $booking->gcal_event_id,
+                        'error'   => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            $booking->update(['status' => 'cancelled']);
+            $session->mergeData(['selected_booking_id' => null]);
+
+            Log::info('Booking cancelled', ['booking_id' => $bookingId]);
+        } catch (\Throwable $e) {
+            Log::error('cancelBooking failed', ['booking_id' => $bookingId, 'error' => $e->getMessage()]);
+        }
+    }
+
     private function createBooking(BotSession $session, string $phone): void
     {
         try {
@@ -202,6 +240,25 @@ class BotOrchestrator
             if (!$user) {
                 Log::error('Cannot create booking: user not found', ['phone' => $phone]);
                 return;
+            }
+
+            // Modalità modifica: cancella la vecchia prenotazione prima di crearne una nuova
+            $editingBookingId = $session->getData('editing_booking_id');
+            if ($editingBookingId) {
+                $oldBooking = Booking::find($editingBookingId);
+                if ($oldBooking) {
+                    if ($oldBooking->gcal_event_id) {
+                        try {
+                            $this->calendar->deleteEvent($oldBooking->gcal_event_id);
+                        } catch (\Throwable $e) {
+                            Log::warning('createBooking: could not delete old calendar event', [
+                                'gcal_id' => $oldBooking->gcal_event_id,
+                            ]);
+                        }
+                    }
+                    $oldBooking->update(['status' => 'cancelled']);
+                }
+                $session->mergeData(['editing_booking_id' => null, 'selected_booking_id' => null]);
             }
 
             $date        = $session->getData('requested_date');  // Y-m-d

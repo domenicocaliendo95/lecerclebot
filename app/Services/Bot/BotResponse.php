@@ -10,10 +10,11 @@ namespace App\Services\Bot;
  */
 class BotResponse
 {
-    private bool  $calendarCheck   = false;
-    private bool  $paymentRequired = false;
-    private bool  $bookingToCreate = false;
-    private ?array $profileToSave  = null;
+    private bool  $calendarCheck    = false;
+    private bool  $paymentRequired  = false;
+    private bool  $bookingToCreate  = false;
+    private bool  $bookingToCancel  = false;
+    private ?array $profileToSave   = null;
 
     private function __construct(
         public readonly string   $message,
@@ -48,6 +49,12 @@ class BotResponse
         return $this;
     }
 
+    public function withBookingToCancel(bool $flag): self
+    {
+        $this->bookingToCancel = $flag;
+        return $this;
+    }
+
     public function withProfileToSave(?array $profile): self
     {
         $this->profileToSave = $profile;
@@ -69,6 +76,11 @@ class BotResponse
     public function needsBookingCreation(): bool
     {
         return $this->bookingToCreate;
+    }
+
+    public function needsBookingCancellation(): bool
+    {
+        return $this->bookingToCancel;
     }
 
     public function profileToSave(): ?array

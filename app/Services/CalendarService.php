@@ -216,6 +216,16 @@ class CalendarService
         return $createdEvent;
     }
 
+    /**
+     * Elimina un evento dal Google Calendar dato il suo ID.
+     */
+    public function deleteEvent(string $eventId): void
+    {
+        $this->service->events->delete($this->calendarId, $eventId);
+
+        Log::info('CalendarService: event deleted', ['event_id' => $eventId]);
+    }
+
     /* ═══════════════════════════════════════════════════════════════
      *  HELPER
      * ═══════════════════════════════════════════════════════════════ */

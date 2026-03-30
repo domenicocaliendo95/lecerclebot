@@ -32,6 +32,10 @@ enum BotState: string
     /* ── Matchmaking ── */
     case ATTESA_MATCH = 'ATTESA_MATCH';
 
+    /* ── Gestione prenotazioni ── */
+    case GESTIONE_PRENOTAZIONI = 'GESTIONE_PRENOTAZIONI';
+    case AZIONE_PRENOTAZIONE   = 'AZIONE_PRENOTAZIONE';
+
     /**
      * Transizioni valide da ogni stato.
      *
@@ -49,15 +53,17 @@ enum BotState: string
             self::ONBOARD_SLOT_PREF  => [self::ONBOARD_COMPLETO],
             self::ONBOARD_COMPLETO   => [self::MENU, self::SCEGLI_QUANDO, self::ATTESA_MATCH],
 
-            self::MENU           => [self::SCEGLI_QUANDO, self::ATTESA_MATCH],
-            self::SCEGLI_QUANDO  => [self::VERIFICA_SLOT, self::MENU],
-            self::VERIFICA_SLOT  => [self::PROPONI_SLOT],
-            self::PROPONI_SLOT   => [self::CONFERMA, self::SCEGLI_QUANDO, self::MENU],
-            self::CONFERMA       => [self::PAGAMENTO, self::CONFERMATO, self::SCEGLI_QUANDO, self::MENU],
-            self::PAGAMENTO      => [self::CONFERMATO, self::MENU],
-            self::CONFERMATO     => [self::MENU],
+            self::MENU           => [self::SCEGLI_QUANDO, self::ATTESA_MATCH, self::GESTIONE_PRENOTAZIONI],
+            self::SCEGLI_QUANDO  => [self::VERIFICA_SLOT, self::MENU, self::GESTIONE_PRENOTAZIONI],
+            self::VERIFICA_SLOT  => [self::PROPONI_SLOT, self::MENU, self::GESTIONE_PRENOTAZIONI],
+            self::PROPONI_SLOT   => [self::CONFERMA, self::SCEGLI_QUANDO, self::MENU, self::GESTIONE_PRENOTAZIONI],
+            self::CONFERMA       => [self::PAGAMENTO, self::CONFERMATO, self::SCEGLI_QUANDO, self::MENU, self::GESTIONE_PRENOTAZIONI],
+            self::PAGAMENTO      => [self::CONFERMATO, self::MENU, self::GESTIONE_PRENOTAZIONI],
+            self::CONFERMATO     => [self::MENU, self::GESTIONE_PRENOTAZIONI],
 
-            self::ATTESA_MATCH => [self::SCEGLI_QUANDO, self::MENU],
+            self::ATTESA_MATCH          => [self::SCEGLI_QUANDO, self::MENU, self::GESTIONE_PRENOTAZIONI],
+            self::GESTIONE_PRENOTAZIONI => [self::AZIONE_PRENOTAZIONE, self::MENU],
+            self::AZIONE_PRENOTAZIONE   => [self::SCEGLI_QUANDO, self::MENU],
         };
     }
 
