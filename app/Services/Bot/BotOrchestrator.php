@@ -4,7 +4,10 @@ namespace App\Services\Bot;
 
 use App\Models\Booking;
 use App\Models\BotSession;
+use App\Models\MatchInvitation;
+use App\Models\MatchResult;
 use App\Models\User;
+use App\Services\EloService;
 use App\Services\CalendarService;
 use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\DB;
@@ -23,10 +26,12 @@ use Illuminate\Support\Facades\Log;
 class BotOrchestrator
 {
     public function __construct(
-        private readonly StateHandler    $stateHandler,
-        private readonly WhatsAppService $whatsApp,
-        private readonly CalendarService $calendar,
+        private readonly StateHandler       $stateHandler,
+        private readonly WhatsAppService    $whatsApp,
+        private readonly CalendarService    $calendar,
         private readonly UserProfileService $profileService,
+        private readonly TextGenerator      $textGenerator,
+        private readonly EloService         $eloService,
     ) {}
 
     /**
@@ -165,15 +170,36 @@ class BotOrchestrator
         if ($response->needsBookingCreation()) {
             $this->createBooking($session, $phone);
         }
+
+        // Avvio ricerca matchmaking
+        if ($response->needsMatchmakingSearch()) {
+            $this->triggerMatchmaking($session, $phone);
+        }
+
+        // Avversario ha accettato la sfida
+        if ($response->needsMatchAccepted()) {
+            $this->confirmMatch($session, $phone);
+        }
+
+        // Avversario ha rifiutato la sfida
+        if ($response->needsMatchRefused()) {
+            $this->refuseMatch($session, $phone);
+        }
+
+        // Salvataggio risultato partita
+        if ($response->needsMatchResultSave()) {
+            $this->processMatchResult($session, $phone);
+        }
     }
 
     /* ───────── Calendar ───────── */
 
     private function performCalendarCheck(BotSession $session): array
     {
-        $date = $session->getData('requested_date');
-        $time = $session->getData('requested_time');
-        $raw  = $session->getData('requested_raw');
+        $date     = $session->getData('requested_date');
+        $time     = $session->getData('requested_time');
+        $raw      = $session->getData('requested_raw');
+        $duration = $session->getData('requested_duration_minutes') ?? 60;
 
         if (empty($date)) {
             return ['available' => false, 'alternatives' => [], 'error' => 'missing_date'];
@@ -181,7 +207,7 @@ class BotOrchestrator
 
         try {
             $query = $time ? "{$date} {$time}" : ($raw ?? $date);
-            $result = $this->calendar->checkUserRequest($query);
+            $result = $this->calendar->checkUserRequest($query, $duration);
 
             return [
                 'available'    => $result['available'] ?? false,
@@ -275,9 +301,10 @@ class BotOrchestrator
                 return;
             }
 
-            // Costruisci datetime inizio e fine (default 1 ora)
-            $startDateTime = \Carbon\Carbon::parse("{$date} {$time}", 'Europe/Rome');
-            $endDateTime   = $startDateTime->copy()->addMinutes(60);
+            // Costruisci datetime inizio e fine
+            $durationMinutes = $session->getData('requested_duration_minutes') ?? 60;
+            $startDateTime   = \Carbon\Carbon::parse("{$date} {$time}", 'Europe/Rome');
+            $endDateTime     = $startDateTime->copy()->addMinutes($durationMinutes);
 
             // Etichette per il tipo di prenotazione
             $typeLabels = [
@@ -296,13 +323,8 @@ class BotOrchestrator
                 "Prenotato via: WhatsApp Bot",
             ]);
 
-            // Stima il prezzo
-            $hour  = (int) $startDateTime->format('H');
-            $price = match (true) {
-                $hour >= 8 && $hour < 14 => 20.00,
-                $hour >= 14 && $hour < 18 => 25.00,
-                default => 30.00,
-            };
+            // Calcola il prezzo usando PricingRule
+            $price = \App\Models\PricingRule::getPriceForSlot($startDateTime, $durationMinutes);
 
             // Crea evento su Google Calendar
             $gcalEvent = $this->calendar->createEvent(
@@ -319,7 +341,7 @@ class BotOrchestrator
                 'start_time'   => $startDateTime->format('H:i:s'),
                 'end_time'     => $endDateTime->format('H:i:s'),
                 'price'        => $price,
-                'is_peak'      => $hour >= 18,
+                'is_peak'      => $startDateTime->hour >= 18,
                 'status'       => 'confirmed',
                 'gcal_event_id'=> $gcalEvent->getId(),
             ]);
@@ -340,6 +362,436 @@ class BotOrchestrator
                 'phone' => $phone,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+            ]);
+        }
+    }
+
+    /* ───────── Matchmaking ───────── */
+
+    private function triggerMatchmaking(BotSession $session, string $phone): void
+    {
+        try {
+            $challenger = User::where('phone', $phone)->first();
+            if (!$challenger) {
+                Log::error('triggerMatchmaking: challenger not found', ['phone' => $phone]);
+                return;
+            }
+
+            $challengerElo = $challenger->elo_rating ?? 1200;
+            $date          = $session->getData('requested_date');
+            $time          = $session->getData('requested_time');
+            $friendly      = $session->getData('requested_friendly') ?? "{$date} {$time}";
+
+            if (empty($date) || empty($time)) {
+                Log::error('triggerMatchmaking: missing date/time', ['phone' => $phone]);
+                return;
+            }
+
+            // Cerca un avversario con ELO simile (±200), con telefono, diverso dal challenger
+            $opponent = User::where('id', '!=', $challenger->id)
+                ->whereNotNull('phone')
+                ->whereBetween('elo_rating', [$challengerElo - 200, $challengerElo + 200])
+                ->inRandomOrder()
+                ->first();
+
+            if (!$opponent) {
+                Log::info('triggerMatchmaking: no opponent found', [
+                    'challenger_id' => $challenger->id,
+                    'elo'           => $challengerElo,
+                ]);
+                $this->whatsApp->sendButtons(
+                    $phone,
+                    $this->textGenerator->rephrase('nessun_avversario', $session->persona()),
+                    ['Cambia orario', 'Menu'],
+                );
+                $session->update(['state' => BotState::MENU->value]);
+                return;
+            }
+
+            // Crea prenotazione in stato pending_match
+            $durationMinutes = $session->getData('requested_duration_minutes') ?? 60;
+            $startDT = \Carbon\Carbon::parse("{$date} {$time}", 'Europe/Rome');
+            $endDT   = $startDT->copy()->addMinutes($durationMinutes);
+            $price   = \App\Models\PricingRule::getPriceForSlot($startDT, $durationMinutes);
+
+            $booking = Booking::create([
+                'player1_id'   => $challenger->id,
+                'player2_id'   => $opponent->id,
+                'booking_date' => $startDT->format('Y-m-d'),
+                'start_time'   => $startDT->format('H:i:s'),
+                'end_time'     => $endDT->format('H:i:s'),
+                'price'        => $price,
+                'is_peak'      => $startDT->hour >= 18,
+                'status'       => 'pending_match',
+            ]);
+
+            // Crea record invitation
+            MatchInvitation::create([
+                'booking_id'  => $booking->id,
+                'receiver_id' => $opponent->id,
+                'status'      => 'pending',
+            ]);
+
+            // Aggiorna sessione del challenger
+            $session->mergeData([
+                'pending_booking_id' => $booking->id,
+                'opponent_name'      => $opponent->name,
+                'opponent_phone'     => $opponent->phone,
+            ]);
+
+            // Trova o crea sessione dell'avversario
+            $opponentSession = BotSession::where('phone', $opponent->phone)->first();
+            $opponentData    = [
+                'invited_by_phone'   => $phone,
+                'invited_by_name'    => $challenger->name,
+                'invited_slot'       => $friendly,
+                'invited_booking_id' => $booking->id,
+            ];
+
+            if ($opponentSession) {
+                $opponentSession->update(['state' => BotState::RISPOSTA_MATCH->value]);
+                $opponentSession->mergeData($opponentData);
+            } else {
+                BotSession::create([
+                    'phone' => $opponent->phone,
+                    'state' => BotState::RISPOSTA_MATCH->value,
+                    'data'  => array_merge([
+                        'persona' => BotPersona::pickRandom(),
+                        'history' => [],
+                        'profile' => [],
+                    ], $opponentData),
+                ]);
+            }
+
+            // Invia invito all'avversario
+            $inviteText = str_replace(
+                ['{opponent_name}', '{challenger_name}', '{slot}'],
+                [$opponent->name, $challenger->name, $friendly],
+                'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Accetti?',
+            );
+            $this->whatsApp->sendButtons($opponent->phone, $inviteText, ['Accetta', 'Rifiuta']);
+
+            Log::info('Matchmaking invite sent', [
+                'challenger_id' => $challenger->id,
+                'opponent_id'   => $opponent->id,
+                'booking_id'    => $booking->id,
+                'slot'          => $friendly,
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('triggerMatchmaking failed', [
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function confirmMatch(BotSession $session, string $phone): void
+    {
+        try {
+            $bookingId = $session->getData('invited_booking_id');
+            if (!$bookingId) {
+                return;
+            }
+
+            $booking = Booking::find($bookingId);
+            if (!$booking) {
+                return;
+            }
+
+            // Aggiorna l'invitation
+            MatchInvitation::where('booking_id', $bookingId)
+                ->where('receiver_id', $booking->player2_id)
+                ->update(['status' => 'accepted']);
+
+            // Crea evento su Google Calendar
+            $opponent = User::where('phone', $phone)->first();
+            $dateStr  = \Carbon\Carbon::parse($booking->booking_date)->format('Y-m-d');
+            $startDT  = \Carbon\Carbon::parse("{$dateStr} {$booking->start_time}", 'Europe/Rome');
+            $endDT    = \Carbon\Carbon::parse("{$dateStr} {$booking->end_time}", 'Europe/Rome');
+
+            $player1   = User::find($booking->player1_id);
+            $summary   = "Partita singolo - {$player1?->name} vs {$opponent?->name}";
+            $desc      = implode("\n", [
+                "Giocatore 1: {$player1?->name} ({$player1?->phone})",
+                "Giocatore 2: {$opponent?->name} ({$phone})",
+                "Prenotato via: WhatsApp Bot (matchmaking)",
+            ]);
+
+            try {
+                $gcalEvent = $this->calendar->createEvent(
+                    summary:     $summary,
+                    description: $desc,
+                    startTime:   $startDT,
+                    endTime:     $endDT,
+                );
+                $booking->update([
+                    'status'        => 'confirmed',
+                    'gcal_event_id' => $gcalEvent->getId(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('confirmMatch: calendar event failed', ['error' => $e->getMessage()]);
+                $booking->update(['status' => 'confirmed']);
+            }
+
+            // Notifica il challenger
+            $challengerPhone = $session->getData('invited_by_phone');
+            if ($challengerPhone) {
+                $challengerSession = BotSession::where('phone', $challengerPhone)->first();
+                $friendly          = $session->getData('invited_slot') ?? '';
+                $opponentName      = $opponent?->name ?? 'L\'avversario';
+
+                $msg = str_replace(
+                    ['{opponent_name}', '{slot}'],
+                    [$opponentName, $friendly],
+                    'Ottima notizia! {opponent_name} ha accettato la sfida! Ci vediamo il {slot}. ✅',
+                );
+                $this->whatsApp->sendButtons(
+                    $challengerPhone,
+                    $msg,
+                    ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                );
+
+                if ($challengerSession) {
+                    $challengerSession->update(['state' => BotState::CONFERMATO->value]);
+                    $challengerSession->mergeData(['pending_booking_id' => null]);
+                }
+            }
+
+            // Pulisci i dati invitation dalla sessione avversario
+            $session->mergeData([
+                'invited_booking_id' => null,
+                'invited_by_phone'   => null,
+                'invited_by_name'    => null,
+                'invited_slot'       => null,
+            ]);
+
+            Log::info('Match confirmed', [
+                'booking_id'   => $bookingId,
+                'opponent'     => $phone,
+                'challenger'   => $challengerPhone ?? 'unknown',
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('confirmMatch failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function refuseMatch(BotSession $session, string $phone): void
+    {
+        try {
+            $bookingId = $session->getData('invited_booking_id');
+            if (!$bookingId) {
+                return;
+            }
+
+            $booking = Booking::find($bookingId);
+            if ($booking) {
+                MatchInvitation::where('booking_id', $bookingId)->update(['status' => 'refused']);
+                $booking->update(['status' => 'cancelled']);
+            }
+
+            // Notifica il challenger
+            $challengerPhone = $session->getData('invited_by_phone');
+            if ($challengerPhone) {
+                $challengerSession = BotSession::where('phone', $challengerPhone)->first();
+                $opponentName      = User::where('phone', $phone)->value('name') ?? 'L\'avversario';
+
+                $msg = str_replace(
+                    ['{opponent_name}'],
+                    [$opponentName],
+                    'Purtroppo {opponent_name} non è disponibile. Vuoi cercare un altro avversario?',
+                );
+                $this->whatsApp->sendButtons(
+                    $challengerPhone,
+                    $msg,
+                    ['Cerca avversario', 'Cambia orario', 'Menu'],
+                );
+
+                if ($challengerSession) {
+                    $challengerSession->update(['state' => BotState::MENU->value]);
+                    $challengerSession->mergeData(['pending_booking_id' => null]);
+                }
+            }
+
+            // Pulisci i dati invitation dalla sessione avversario
+            $session->mergeData([
+                'invited_booking_id' => null,
+                'invited_by_phone'   => null,
+                'invited_by_name'    => null,
+                'invited_slot'       => null,
+            ]);
+
+            Log::info('Match refused', [
+                'booking_id' => $bookingId,
+                'opponent'   => $phone,
+                'challenger' => $challengerPhone ?? 'unknown',
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('refuseMatch failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /* ───────── Risultati partita ───────── */
+
+    private function processMatchResult(BotSession $session, string $phone): void
+    {
+        try {
+            $bookingId = $session->getData('result_booking_id');
+            $role      = $session->getData('result_role');      // 'player1' | 'player2'
+            $outcome   = $session->getData('result_outcome');   // 'won' | 'lost' | 'no_show'
+            $score     = $session->getData('result_score');
+            $slot      = $session->getData('result_slot') ?? '';
+
+            if (!$bookingId || !$role || !$outcome) {
+                Log::warning('processMatchResult: dati mancanti in sessione', ['phone' => $phone]);
+                return;
+            }
+
+            $matchResult = MatchResult::where('booking_id', $bookingId)->first();
+            if (!$matchResult) {
+                Log::error('processMatchResult: MatchResult non trovato', [
+                    'booking_id' => $bookingId,
+                    'phone'      => $phone,
+                ]);
+                return;
+            }
+
+            $booking = Booking::find($bookingId);
+            if (!$booking) {
+                return;
+            }
+
+            // Partita non giocata: segna entrambi confermati, nessun ELO
+            if ($outcome === 'no_show') {
+                $matchResult->update([
+                    'player1_confirmed' => true,
+                    'player2_confirmed' => true,
+                    'confirmed_at'      => now(),
+                ]);
+                $booking->update(['status' => 'completed']);
+                $session->mergeData(['result_booking_id' => null, 'result_role' => null]);
+                return;
+            }
+
+            // Determina il winner_id secondo la dichiarazione di questo giocatore
+            $user      = User::where('phone', $phone)->first();
+            $winnerId  = null;
+
+            if ($user) {
+                $winnerId = ($outcome === 'won') ? $user->id : (
+                    $role === 'player1' ? $booking->player2_id : $booking->player1_id
+                );
+            }
+
+            // Aggiorna la colonna corrispondente al ruolo
+            $update = $role === 'player1'
+                ? ['player1_confirmed' => true, 'winner_id' => $winnerId]
+                : ['player2_confirmed' => true];
+
+            // Per player2, aggiorniamo winner solo se non già impostato o se concordano
+            if ($role === 'player2' && $matchResult->player1_confirmed) {
+                $update['winner_id'] = $winnerId;
+            }
+
+            if ($score) {
+                $update['score'] = $score;
+            }
+
+            $matchResult->update($update);
+            $matchResult->refresh();
+
+            // Pulisci dati risultato dalla sessione
+            $session->mergeData([
+                'result_booking_id' => null,
+                'result_role'       => null,
+                'result_outcome'    => null,
+                'result_score'      => null,
+            ]);
+
+            // Entrambi hanno confermato?
+            if ($matchResult->player1_confirmed && $matchResult->player2_confirmed) {
+                $this->finalizeMatchResult($matchResult, $booking, $slot);
+            }
+
+        } catch (\Throwable $e) {
+            Log::error('processMatchResult failed', [
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function finalizeMatchResult(MatchResult $matchResult, Booking $booking, string $slot): void
+    {
+        $player1 = User::find($booking->player1_id);
+        $player2 = User::find($booking->player2_id);
+
+        if (!$player1 || !$player2) {
+            return;
+        }
+
+        $winnerId = $matchResult->winner_id;
+
+        // Controlla coerenza: se winner_id non è né player1 né player2 → discordanza
+        if ($winnerId && !in_array($winnerId, [$player1->id, $player2->id])) {
+            $winnerId = null;
+        }
+
+        if (!$winnerId) {
+            // Discordanza — notifica entrambi, nessun aggiornamento ELO
+            $this->whatsApp->sendText(
+                $player1->phone,
+                $this->textGenerator->rephrase('risultato_discordante', $booking->player1->name ?? 'Ciao'),
+            );
+            $this->whatsApp->sendText(
+                $player2->phone,
+                $this->textGenerator->rephrase('risultato_discordante', $booking->player2->name ?? 'Ciao'),
+            );
+
+            Log::warning('finalizeMatchResult: discordanza risultato', [
+                'booking_id'      => $booking->id,
+                'match_result_id' => $matchResult->id,
+            ]);
+            return;
+        }
+
+        // Aggiorna ELO
+        $matchResult->update(['winner_id' => $winnerId]);
+        $this->eloService->processResult($matchResult->fresh());
+
+        // Notifica entrambi con il nuovo ELO
+        $matchResult->refresh();
+        $player1->refresh();
+        $player2->refresh();
+
+        $this->notifyEloUpdate($player1, $matchResult->player1_elo_before, $matchResult->player1_elo_after, $winnerId === $player1->id);
+        $this->notifyEloUpdate($player2, $matchResult->player2_elo_before, $matchResult->player2_elo_after, $winnerId === $player2->id);
+    }
+
+    private function notifyEloUpdate(User $player, ?int $eloBefore, ?int $eloAfter, bool $won): void
+    {
+        if (!$eloBefore || !$eloAfter || !$player->phone) {
+            return;
+        }
+
+        $delta        = $eloAfter - $eloBefore;
+        $deltaStr     = $delta >= 0 ? "+{$delta}" : (string) $delta;
+        $templateId   = $won ? 'elo_aggiornato_vinto' : 'elo_aggiornato_perso';
+
+        $msg = $this->textGenerator->rephrase($templateId, 'Bot', [
+            'elo_before' => $eloBefore,
+            'elo_after'  => $eloAfter,
+            'delta'      => $deltaStr,
+        ]);
+
+        try {
+            $this->whatsApp->sendText($player->phone, $msg);
+        } catch (\Throwable $e) {
+            Log::warning('notifyEloUpdate: send failed', [
+                'player' => $player->id,
+                'error'  => $e->getMessage(),
             ]);
         }
     }

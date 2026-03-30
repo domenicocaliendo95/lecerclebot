@@ -72,16 +72,20 @@ class StateHandler
             BotState::ONBOARD_COMPLETO   => $this->handleOnboardCompleto($session, $input),
             BotState::MENU               => $this->handleMenu($session, $input, $user),
             BotState::SCEGLI_QUANDO      => $this->handleScegliQuando($session, $input),
+            BotState::SCEGLI_DURATA      => $this->handleScegliDurata($session, $input),
             BotState::VERIFICA_SLOT      => $this->handleVerificaSlot($session, $input),
             BotState::PROPONI_SLOT       => $this->handleProponiSlot($session, $input),
             BotState::CONFERMA           => $this->handleConferma($session, $input),
             BotState::PAGAMENTO          => $this->handlePagamento($session, $input),
             BotState::CONFERMATO              => $this->handleConfermato($session, $input),
             BotState::ATTESA_MATCH            => $this->handleAttesaMatch($session, $input),
+            BotState::RISPOSTA_MATCH          => $this->handleRispostaMatch($session, $input),
             BotState::GESTIONE_PRENOTAZIONI   => $this->handleSelezionaPrenotazione($session, $input, $user),
             BotState::AZIONE_PRENOTAZIONE     => $this->handleAzionePrenotazione($session, $input),
             BotState::MODIFICA_PROFILO        => $this->handleModificaProfilo($session, $input, $user),
             BotState::MODIFICA_RISPOSTA       => $this->handleModificaRisposta($session, $input),
+            BotState::INSERISCI_RISULTATO     => $this->handleInserisciRisultato($session, $input),
+            BotState::FEEDBACK                => $this->handleFeedback($session, $input),
         };
     }
 
@@ -314,13 +318,58 @@ class StateHandler
         Log::info('Date parsed successfully', ['input' => $input, 'result' => $parsed]);
 
         $session->mergeData([
-            'requested_date'     => $parsed['date'],      // Y-m-d
-            'requested_time'     => $parsed['time'],      // H:i
+            'requested_date'     => $parsed['date'],
+            'requested_time'     => $parsed['time'],
             'requested_raw'      => $input,
-            'requested_friendly' => $parsed['friendly'],  // "sabato 28 marzo alle 18:00"
+            'requested_friendly' => $parsed['friendly'],
         ]);
 
-        // Transizione a VERIFICA_SLOT — la verifica calendar avviene nel prossimo step
+        // Controlla che la data non sia nel passato
+        $requestedDt = \Carbon\Carbon::parse(
+            $parsed['date'] . ' ' . ($parsed['time'] ?? '23:59'),
+            'Europe/Rome'
+        );
+
+        if ($requestedDt->isPast()) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('data_nel_passato', $session->persona()),
+                BotState::SCEGLI_QUANDO,
+            );
+        }
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('chiedi_durata', $session->persona()),
+            BotState::SCEGLI_DURATA,
+            ['1 ora', '1,5 ore', '2 ore'],
+        );
+    }
+
+    private function handleScegliDurata(BotSession $session, string $input): BotResponse
+    {
+        $normalized = mb_strtolower(trim($input));
+
+        $duration = null;
+
+        if (preg_match('/\b1[,.]5\b|\bun\'ora e mezzo\b|\bora e mezza\b|\bun ora e mezzo\b/', $normalized)) {
+            $duration = 90;
+        } elseif (preg_match('/\b2\s*ore\b|\bdue ore\b/', $normalized)) {
+            $duration = 120;
+        } elseif (preg_match('/\b3\s*ore\b|\btre ore\b/', $normalized)) {
+            $duration = 180;
+        } elseif (preg_match('/\b1\s*ora\b|\bun\'ora\b|\bun ora\b|\b1h\b/', $normalized)) {
+            $duration = 60;
+        }
+
+        if ($duration === null) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('durata_non_capita', $session->persona()),
+                BotState::SCEGLI_DURATA,
+                ['1 ora', '1,5 ore', '2 ore'],
+            );
+        }
+
+        $session->mergeData(['requested_duration_minutes' => $duration]);
+
         return BotResponse::make(
             $this->textGenerator->rephrase('verifico_disponibilita', $session->persona()),
             BotState::VERIFICA_SLOT,
@@ -343,11 +392,19 @@ class StateHandler
         }
 
         if ($calendarResult['available']) {
-            $friendly = $session->getData('requested_friendly') ?? 'l\'orario richiesto';
+            $friendly      = $session->getData('requested_friendly') ?? 'l\'orario richiesto';
+            $duration      = $session->getData('requested_duration_minutes') ?? 60;
+            $price         = \App\Models\PricingRule::getPriceForSlot(
+                \Carbon\Carbon::parse($session->getData('requested_date') . ' ' . ($session->getData('requested_time') ?? '08:00'), 'Europe/Rome'),
+                $duration,
+            );
+            $durationLabel = \App\Models\PricingRule::durationLabel($duration);
 
             return BotResponse::make(
                 $this->textGenerator->rephrase('slot_disponibile', $session->persona(), [
-                    'slot' => $friendly,
+                    'slot'     => $friendly,
+                    'duration' => $durationLabel,
+                    'price'    => number_format($price, 0),
                 ]),
                 BotState::PROPONI_SLOT,
                 ['Sì, prenota', 'No, cambia orario'],
@@ -386,16 +443,32 @@ class StateHandler
 
         // "Sì, prenota" → conferma
         if ($this->matchesYes($normalized) || str_contains($normalized, 'prenota')) {
-            $friendly = $session->getData('requested_friendly') ?? 'l\'orario selezionato';
+            $friendly    = $session->getData('requested_friendly') ?? 'l\'orario selezionato';
             $bookingType = $session->getData('booking_type') ?? 'con_avversario';
+
+            $buttons = $bookingType === 'matchmaking'
+                ? ['Cerca avversario', 'Annulla']
+                : ['Paga online', 'Pago di persona', 'Annulla'];
+
+            $duration      = $session->getData('requested_duration_minutes') ?? 60;
+            $price         = \App\Models\PricingRule::getPriceForSlot(
+                \Carbon\Carbon::parse(
+                    ($session->getData('requested_date') ?? now()->format('Y-m-d')) . ' ' . ($session->getData('requested_time') ?? '08:00'),
+                    'Europe/Rome'
+                ),
+                $duration,
+            );
+            $durationLabel = \App\Models\PricingRule::durationLabel($duration);
 
             return BotResponse::make(
                 $this->textGenerator->rephrase('riepilogo_prenotazione', $session->persona(), [
                     'slot'         => $friendly,
+                    'duration'     => $durationLabel,
+                    'price'        => number_format($price, 0),
                     'booking_type' => $bookingType,
                 ]),
                 BotState::CONFERMA,
-                ['Paga online', 'Pago di persona', 'Annulla'],
+                $buttons,
             );
         }
 
@@ -444,8 +517,29 @@ class StateHandler
 
     private function handleConferma(BotSession $session, string $input): BotResponse
     {
-        $normalized = mb_strtolower(trim($input));
+        $normalized  = mb_strtolower(trim($input));
+        $bookingType = $session->getData('booking_type') ?? 'con_avversario';
 
+        // ── Matchmaking branch ──────────────────────────────────────────
+        if ($bookingType === 'matchmaking') {
+            if (str_contains($normalized, 'annulla') || str_contains($normalized, 'indietro')) {
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('prenotazione_annullata', $session->persona()),
+                    BotState::MENU,
+                    ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                );
+            }
+
+            // "Cerca avversario" o qualsiasi conferma → avvia matchmaking
+            return BotResponse::make(
+                $this->textGenerator->rephrase('cerca_avversario', $session->persona(), [
+                    'slot' => $session->getData('requested_friendly') ?? '',
+                ]),
+                BotState::ATTESA_MATCH,
+            )->withMatchmakingSearch(true);
+        }
+
+        // ── Flusso normale (con_avversario / sparapalline) ───────────────
         if (str_contains($normalized, 'annulla') || str_contains($normalized, 'indietro')) {
             return BotResponse::make(
                 $this->textGenerator->rephrase('prenotazione_annullata', $session->persona()),
@@ -844,10 +938,118 @@ class StateHandler
 
     private function handleAttesaMatch(BotSession $session, string $input): BotResponse
     {
-        // Placeholder per il flusso matchmaking — fase 3
+        $normalized = mb_strtolower(trim($input));
+
+        // L'utente può annullare l'attesa
+        if (str_contains($normalized, 'annulla') || $this->isMenuKeyword($normalized)) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
+                BotState::MENU,
+                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            );
+        }
+
+        // Qualsiasi altro messaggio: ricorda che stiamo aspettando
         return BotResponse::make(
             $this->textGenerator->rephrase('matchmaking_attesa', $session->persona()),
             BotState::ATTESA_MATCH,
+        );
+    }
+
+    private function handleRispostaMatch(BotSession $session, string $input): BotResponse
+    {
+        $normalized      = mb_strtolower(trim($input));
+        $invitedSlot     = $session->getData('invited_slot') ?? '';
+        $challengerName  = $session->getData('invited_by_name') ?? 'Un giocatore';
+
+        if ($this->matchesYes($normalized) || str_contains($normalized, 'accett')) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('match_accettato_opponent', $session->persona(), [
+                    'slot' => $invitedSlot,
+                ]),
+                BotState::CONFERMATO,
+            )->withMatchAccepted(true);
+        }
+
+        if ($this->matchesNo($normalized) || str_contains($normalized, 'rifiut') || str_contains($normalized, 'non posso')) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('match_rifiutato_opponent', $session->persona()),
+                BotState::MENU,
+                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            )->withMatchRefused(true);
+        }
+
+        // Non capito: riproponi l'invito
+        return BotResponse::make(
+            $this->textGenerator->rephrase('invito_match', $session->persona(), [
+                'opponent_name'   => '',
+                'challenger_name' => $challengerName,
+                'slot'            => $invitedSlot,
+            ]),
+            BotState::RISPOSTA_MATCH,
+            ['Accetta', 'Rifiuta'],
+        );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  RISULTATI & FEEDBACK
+     * ═══════════════════════════════════════════════════════════════ */
+
+    private function handleInserisciRisultato(BotSession $session, string $input): BotResponse
+    {
+        $normalized = mb_strtolower(trim($input));
+        $slot       = $session->getData('result_slot') ?? 'la partita';
+
+        // Partita non giocata
+        if (
+            str_contains($normalized, 'non giocata') ||
+            str_contains($normalized, 'annullata') ||
+            str_contains($normalized, 'non si è') ||
+            str_contains($normalized, 'non si e')
+        ) {
+            $session->mergeData(['result_outcome' => 'no_show', 'result_score' => null]);
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('risultato_non_giocata', $session->persona()),
+                BotState::MENU,
+                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            )->withMatchResultToSave(true);
+        }
+
+        $won  = str_contains($normalized, 'vinto') || str_contains($normalized, 'ho vin');
+        $lost = str_contains($normalized, 'perso') || str_contains($normalized, 'ho pers');
+
+        if (!$won && !$lost) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('risultato_non_capito', $session->persona()),
+                BotState::INSERISCI_RISULTATO,
+                ['Ho vinto', 'Ho perso', 'Non giocata'],
+            );
+        }
+
+        // Estrai punteggio se presente (es. "6-4 6-2", "7-6 3-6 6-4")
+        preg_match_all('/\b(\d{1,2})[-\/](\d{1,2})\b/', $input, $m);
+        $score = !empty($m[0]) ? implode(' ', $m[0]) : null;
+
+        $session->mergeData([
+            'result_outcome' => $won ? 'won' : 'lost',
+            'result_score'   => $score,
+        ]);
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('risultato_ricevuto', $session->persona()),
+            BotState::MENU,
+            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+        )->withMatchResultToSave(true);
+    }
+
+    private function handleFeedback(BotSession $session, string $input): BotResponse
+    {
+        // Placeholder — implementazione futura
+        return BotResponse::make(
+            $this->textGenerator->rephrase('feedback_ricevuto', $session->persona()),
+            BotState::MENU,
+            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
         );
     }
 

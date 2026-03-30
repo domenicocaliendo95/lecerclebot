@@ -61,10 +61,10 @@ class CalendarService
      * @param  string $userRequest  Testo con data/ora (es. "2026-03-29 17:00")
      * @return array{available: bool, alternatives: array}
      */
-    public function checkUserRequest(string $userRequest): array
+    public function checkUserRequest(string $userRequest, int $durationMinutes = 60): array
     {
         try {
-            $parsed = $this->parseSlotRequest($userRequest);
+            $parsed = $this->parseSlotRequest($userRequest, $durationMinutes);
 
             if ($parsed === null) {
                 return ['available' => false, 'alternatives' => [], 'error' => 'parse_failed'];
@@ -83,7 +83,7 @@ class CalendarService
             }
 
             // Slot occupato: cerca alternative nello stesso giorno
-            $alternatives = $this->findAlternatives($start->copy()->startOfDay(), $start->copy()->endOfDay());
+            $alternatives = $this->findAlternatives($start->copy()->startOfDay(), $start->copy()->endOfDay(), $durationMinutes);
 
             return [
                 'available'    => false,
@@ -118,7 +118,7 @@ class CalendarService
      * Trova slot liberi (da 1 ora) in un range giornaliero.
      * Orari operativi: 08:00 – 22:00.
      */
-    private function findAlternatives(Carbon $dayStart, Carbon $dayEnd): array
+    private function findAlternatives(Carbon $dayStart, Carbon $dayEnd, int $durationMinutes = 60): array
     {
         $operatingStart = $dayStart->copy()->setTime(8, 0);
         $operatingEnd   = $dayStart->copy()->setTime(22, 0);
@@ -140,17 +140,17 @@ class CalendarService
             $busySlots[] = ['start' => $eventStart, 'end' => $eventEnd];
         }
 
-        // Trova slot liberi di 1 ora
+        // Trova slot liberi della durata richiesta
         $alternatives = [];
         $cursor = $operatingStart->copy();
 
-        while ($cursor->copy()->addHour()->lte($operatingEnd)) {
+        while ($cursor->copy()->addMinutes($durationMinutes)->lte($operatingEnd)) {
             $slotStart = $cursor->copy();
-            $slotEnd   = $cursor->copy()->addHour();
+            $slotEnd   = $cursor->copy()->addMinutes($durationMinutes);
 
             // Salta slot nel passato
             if ($slotStart->lt(now())) {
-                $cursor->addHour();
+                $cursor->addMinutes(30);
                 continue;
             }
 
@@ -164,15 +164,17 @@ class CalendarService
             }
 
             if ($isFree) {
+                $slotPrice = \App\Models\PricingRule::getPriceForSlot($slotStart, $durationMinutes);
                 $alternatives[] = [
-                    'date'  => $slotStart->format('Y-m-d'),
-                    'time'  => $slotStart->format('H:i'),
-                    'label' => $slotStart->format('H:i') . ' - ' . $slotEnd->format('H:i'),
-                    'price' => $this->estimatePrice($slotStart),
+                    'date'     => $slotStart->format('Y-m-d'),
+                    'time'     => $slotStart->format('H:i'),
+                    'duration' => $durationMinutes,
+                    'label'    => $slotStart->format('H:i') . '–' . $slotEnd->format('H:i') . ' (€' . number_format($slotPrice, 0) . ')',
+                    'price'    => $slotPrice,
                 ];
             }
 
-            $cursor->addHour();
+            $cursor->addMinutes(30);
         }
 
         return array_slice($alternatives, 0, 5); // Max 5 alternative
@@ -234,24 +236,18 @@ class CalendarService
      * Parsa la richiesta utente in un range start/end.
      * Accetta: "2026-03-29 17:00" oppure testo libero (fallback).
      */
-    private function parseSlotRequest(string $request): ?array
+    private function parseSlotRequest(string $request, int $durationMinutes = 60): ?array
     {
         // Formato esatto: "YYYY-MM-DD HH:MM"
         if (preg_match('/(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/', $request, $m)) {
             $start = Carbon::parse("{$m[1]} {$m[2]}", $this->timezone);
-            return [
-                'start' => $start,
-                'end'   => $start->copy()->addHour(),
-            ];
+            return ['start' => $start, 'end' => $start->copy()->addMinutes($durationMinutes)];
         }
 
         // Fallback: prova a parsare come data Carbon
         try {
             $start = Carbon::parse($request, $this->timezone);
-            return [
-                'start' => $start,
-                'end'   => $start->copy()->addHour(),
-            ];
+            return ['start' => $start, 'end' => $start->copy()->addMinutes($durationMinutes)];
         } catch (\Throwable $e) {
             Log::warning('CalendarService: cannot parse slot request', [
                 'request' => $request,
@@ -262,20 +258,10 @@ class CalendarService
     }
 
     /**
-     * Stima il prezzo per uno slot (placeholder — da collegare alle pricing_rules del DB).
+     * Stima il prezzo per uno slot usando le pricing_rules del DB.
      */
-    private function estimatePrice(Carbon $slotStart): float
+    private function estimatePrice(Carbon $slotStart, int $durationMinutes = 60): float
     {
-        $hour = $slotStart->hour;
-
-        // Fasce orarie base
-        if ($hour >= 8 && $hour < 14) {
-            return 20.00;  // Mattina
-        }
-        if ($hour >= 14 && $hour < 18) {
-            return 25.00;  // Pomeriggio
-        }
-
-        return 30.00;  // Sera (peak)
+        return \App\Models\PricingRule::getPriceForSlot($slotStart, $durationMinutes);
     }
 }

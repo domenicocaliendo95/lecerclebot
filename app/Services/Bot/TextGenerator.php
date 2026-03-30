@@ -28,40 +28,43 @@ class TextGenerator
     private const TEMPLATES = [
         // Onboarding
         'nome_non_valido'        => 'Scusa, non ho capito il tuo nome. Puoi ripetermelo?',
-        'chiedi_fit'             => 'Piacere {name}! Sei tesserato FIT?',
+        'chiedi_fit'             => 'Piacere {name}! Sei tesserato FIT? La tessera ci serve per calcolare il tuo livello di gioco.',
         'fit_non_capito'         => 'Scusa, non ho capito. Sei tesserato FIT oppure no?',
-        'chiedi_classifica'      => 'Ottimo! Qual è la tua classifica FIT? (es. 4.1, 3.3, NC)',
+        'chiedi_classifica'      => 'Ottimo! Qual è la tua classifica FIT? (es. 4.1, 3.3, NC — la trovi sulla tessera)',
         'classifica_non_valida'  => 'Non ho riconosciuto la classifica. Prova con il formato tipo 4.1, 3.3 oppure NC.',
-        'chiedi_livello'         => 'Nessun problema! Come definiresti il tuo livello?',
+        'chiedi_livello'         => 'Nessun problema! Come definiresti il tuo livello di gioco?',
         'livello_non_valido'     => 'Non ho capito il livello. Scegli tra Neofita, Dilettante o Avanzato.',
-        'chiedi_eta'             => 'Quanti anni hai?',
+        'chiedi_eta'             => 'Quanti anni hai? Ci serve per trovare avversari della tua fascia d\'età.',
         'eta_non_valida'         => 'Scusa, dimmi la tua età con un numero (es. 30).',
-        'chiedi_fascia_oraria'   => 'Ultima cosa: quando preferisci giocare di solito?',
+        'chiedi_fascia_oraria'   => 'Ultima cosa: in che fascia oraria preferisci giocare di solito?',
         'fascia_non_valida'      => 'Non ho capito. Preferisci mattina, pomeriggio o sera?',
-        'registrazione_completa' => 'Perfetto {name}, sei registrato! 🎉 Cosa vuoi fare? Scrivi "menu" quando vuoi per tornare qui, o "prenotazioni" per gestire le tue prenotazioni.',
+        'registrazione_completa' => 'Ottimo {name}, sei nel sistema! 🎾 Scrivi "menu" per il menu principale.',
 
         // Menu
         'menu_non_capito'        => 'Scusa, non ho capito. Scegli una delle opzioni o scrivi "prenotazioni" per gestire le tue prenotazioni.',
-        'menu_ritorno'           => 'Ci sono per te! Cosa vuoi fare? Puoi anche scrivere "prenotazioni" per vedere le tue prenotazioni attive.',
+        'menu_ritorno'           => 'Eccomi! Scegli un\'opzione. Scrivi "prenotazioni" per le tue prenotazioni o "profilo" per modificare i tuoi dati.',
 
         // Prenotazione
-        'chiedi_quando'            => 'Quando vorresti giocare? Dimmi giorno e ora (es. domani alle 18, sabato mattina...).',
+        'chiedi_quando'            => 'Quando vorresti giocare? Dimmi giorno e ora (es. "domani alle 18", "sabato mattina", "28 marzo alle 17").',
         'chiedi_quando_match'      => 'Quando saresti disponibile per una partita? Dimmi giorno e ora.',
         'chiedi_quando_sparapalline' => 'Quando vorresti usare lo sparapalline? Dimmi giorno e ora.',
+        'chiedi_durata'            => 'Per quanto tempo vuoi il campo?',
+        'durata_non_capita'        => 'Non ho capito la durata. Scegli tra 1 ora, 1,5 ore o 2 ore.',
+        'data_nel_passato'         => 'La data che hai indicato è già passata! Scegli una data futura.',
         'data_non_capita'          => 'Non ho capito quando vorresti venire. Prova con qualcosa tipo "domani alle 17" o "sabato pomeriggio".',
         'verifico_disponibilita'   => 'Un attimo, verifico la disponibilità... ⏳',
-        'slot_disponibile'         => 'Ottima notizia! {slot} è libero. Confermo la prenotazione?',
-        'slot_non_disponibile'     => 'Purtroppo quell\'orario non è disponibile. Ho trovato queste alternative:',
+        'slot_disponibile'         => 'Ottima notizia! {slot} ({duration}) è libero — €{price}. Confermo la prenotazione?',
+        'slot_non_disponibile'     => 'Quell\'orario è occupato. Ho trovato questi slot liberi nello stesso giorno:',
         'nessuna_alternativa'      => 'Mi dispiace, non ci sono slot liberi in quel giorno. Vuoi provare un altro giorno?',
         'proposta_non_capita'      => 'Non ho capito. Vuoi prenotare questo slot oppure cambiare orario?',
 
         // Conferma
-        'riepilogo_prenotazione'   => 'Riepilogo: prenotazione per {slot}. Come vuoi procedere?',
+        'riepilogo_prenotazione'   => 'Riepilogo: {slot} · {duration} · €{price}. Come vuoi pagare?',
         'scegli_pagamento'         => 'Vuoi pagare online o di persona?',
         'conferma_non_capita'      => 'Scusa, non ho capito. Vuoi confermare, pagare online, o annullare?',
         'prenotazione_annullata'   => 'Prenotazione annullata. Nessun problema! Cosa vuoi fare?',
         'link_pagamento'           => 'Ecco il link per il pagamento. Una volta completato, la prenotazione sarà confermata!',
-        'prenotazione_confermata'  => 'Prenotazione confermata per {slot}! ✅ Ti aspettiamo!',
+        'prenotazione_confermata'  => 'Prenotato! Campo confermato per {slot} ({duration}). ✅ Ti aspettiamo al circolo!',
 
         // Modifica profilo
         'modifica_profilo_scelta' => 'Cosa vuoi modificare nel tuo profilo?',
@@ -77,7 +80,27 @@ class TextGenerator
         'prenotazione_modifica_quando' => 'Ok! Quando vorresti spostare la prenotazione? Dimmi il nuovo giorno e orario.',
 
         // Matchmaking
-        'matchmaking_attesa'       => 'Sto cercando un avversario adatto a te. Ti avviso appena trovo qualcuno! 🔍',
+        'matchmaking_attesa'         => 'Sto cercando un avversario adatto a te. Ti avviso appena trovo qualcuno! 🔍',
+        'cerca_avversario'           => 'Perfetto! Cerco un avversario per {slot}. Ti scrivo appena lo trovo! 🔍',
+        'nessun_avversario'          => 'Nessun avversario disponibile per questo slot. Prova un altro orario?',
+        'invito_match'               => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Accetti?',
+        'match_accettato_challenger' => '{opponent_name} ha accettato! Prenotazione confermata per {slot}. ✅',
+        'match_rifiutato_challenger' => '{opponent_name} non è disponibile. Cerca un altro avversario?',
+        'match_accettato_opponent'   => 'Perfetto! Hai accettato. Ci vediamo il {slot}! 🎾',
+        'match_rifiutato_opponent'   => 'Ok, sfida rifiutata. A presto al circolo! 🎾',
+
+        // Risultati partita
+        'chiedi_risultato'         => 'Com\'è andata la partita di {slot}? Inserisci il risultato! 🎾',
+        'risultato_ricevuto'       => 'Grazie! Risultato registrato. Ti avviso appena anche l\'avversario conferma.',
+        'risultato_non_capito'     => 'Non ho capito. Hai vinto, hai perso, o la partita non si è giocata?',
+        'risultato_non_giocata'    => 'Ok, partita segnata come non giocata. A presto in campo! 🎾',
+        'risultato_discordante'    => 'Il tuo avversario ha dichiarato un risultato diverso. L\'admin verificherà.',
+        'elo_aggiornato_vinto'     => 'ELO aggiornato! Ottima vittoria. Eri a {elo_before}, ora sei a {elo_after} (+{delta}). 🏆',
+        'elo_aggiornato_perso'     => 'ELO aggiornato. Eri a {elo_before}, ora sei a {elo_after} ({delta}). Alla prossima! 💪',
+
+        // Feedback (placeholder per flusso futuro)
+        'chiedi_feedback'          => 'Come è andata la tua esperienza al circolo? Lasciaci un feedback!',
+        'feedback_ricevuto'        => 'Grazie per il feedback! Ci aiuta a migliorare. 🙏',
 
         // Errore
         'errore_generico'          => 'Scusa, c\'è stato un problema. Riproviamo: quando vorresti giocare?',

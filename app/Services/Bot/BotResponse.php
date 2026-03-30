@@ -10,11 +10,15 @@ namespace App\Services\Bot;
  */
 class BotResponse
 {
-    private bool  $calendarCheck    = false;
-    private bool  $paymentRequired  = false;
-    private bool  $bookingToCreate  = false;
-    private bool  $bookingToCancel  = false;
-    private ?array $profileToSave   = null;
+    private bool  $calendarCheck       = false;
+    private bool  $paymentRequired     = false;
+    private bool  $bookingToCreate     = false;
+    private bool  $bookingToCancel     = false;
+    private bool  $matchmakingToSearch = false;
+    private bool  $matchAccepted       = false;
+    private bool  $matchRefused        = false;
+    private bool  $matchResultToSave   = false;
+    private ?array $profileToSave      = null;
 
     private function __construct(
         public readonly string   $message,
@@ -55,6 +59,30 @@ class BotResponse
         return $this;
     }
 
+    public function withMatchmakingSearch(bool $flag): self
+    {
+        $this->matchmakingToSearch = $flag;
+        return $this;
+    }
+
+    public function withMatchAccepted(bool $flag): self
+    {
+        $this->matchAccepted = $flag;
+        return $this;
+    }
+
+    public function withMatchRefused(bool $flag): self
+    {
+        $this->matchRefused = $flag;
+        return $this;
+    }
+
+    public function withMatchResultToSave(bool $flag): self
+    {
+        $this->matchResultToSave = $flag;
+        return $this;
+    }
+
     public function withProfileToSave(?array $profile): self
     {
         $this->profileToSave = $profile;
@@ -81,6 +109,26 @@ class BotResponse
     public function needsBookingCancellation(): bool
     {
         return $this->bookingToCancel;
+    }
+
+    public function needsMatchmakingSearch(): bool
+    {
+        return $this->matchmakingToSearch;
+    }
+
+    public function needsMatchAccepted(): bool
+    {
+        return $this->matchAccepted;
+    }
+
+    public function needsMatchRefused(): bool
+    {
+        return $this->matchRefused;
+    }
+
+    public function needsMatchResultSave(): bool
+    {
+        return $this->matchResultToSave;
     }
 
     public function profileToSave(): ?array
