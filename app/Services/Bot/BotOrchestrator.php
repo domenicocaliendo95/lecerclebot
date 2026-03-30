@@ -2,6 +2,7 @@
 
 namespace App\Services\Bot;
 
+use App\Models\Booking;
 use App\Models\BotSession;
 use App\Models\User;
 use App\Services\CalendarService;
@@ -39,8 +40,8 @@ class BotOrchestrator
             $user    = User::where('phone', $phone)->first();
             $session = $this->resolveSession($phone, $user);
 
-            // Se è una nuova sessione, invia il saluto e basta
-            if ($session->wasRecentlyCreated && $session->state === BotState::NEW->value) {
+            // Se lo stato è NEW, invia il saluto e basta (primo contatto o sessione stuck)
+            if ($session->state === BotState::NEW->value) {
                 DB::commit();
                 $this->sendGreeting($session, $phone, $user);
                 return;
@@ -56,8 +57,15 @@ class BotOrchestrator
             // Esegui side-effects
             $this->executeSideEffects($session, $response, $phone, $user);
 
-            // Se c'era un calendar check, ri-processa con i risultati
+            // Se c'era un calendar check, manda subito il messaggio di attesa, poi processa
             if ($response->needsCalendarCheck()) {
+                // Invia "sto verificando..." prima del check (fuori dalla tx non serve aspettare)
+                DB::commit();
+                $this->sendResponse($phone, $response);
+
+                DB::beginTransaction();
+                $session->refresh();
+
                 $calendarResult = $this->performCalendarCheck($session);
                 $session->mergeData(['calendar_result' => $calendarResult]);
                 $session->update(['state' => BotState::VERIFICA_SLOT->value]);
@@ -231,13 +239,33 @@ class BotOrchestrator
                 "Prenotato via: WhatsApp Bot",
             ]);
 
+            // Stima il prezzo
+            $hour  = (int) $startDateTime->format('H');
+            $price = match (true) {
+                $hour >= 8 && $hour < 14 => 20.00,
+                $hour >= 14 && $hour < 18 => 25.00,
+                default => 30.00,
+            };
+
             // Crea evento su Google Calendar
-            $this->calendar->createEvent(
+            $gcalEvent = $this->calendar->createEvent(
                 summary:     $summary,
                 description: $description,
                 startTime:   $startDateTime,
                 endTime:     $endDateTime,
             );
+
+            // Salva prenotazione nel DB
+            Booking::create([
+                'player1_id'   => $user->id,
+                'booking_date' => $startDateTime->format('Y-m-d'),
+                'start_time'   => $startDateTime->format('H:i:s'),
+                'end_time'     => $endDateTime->format('H:i:s'),
+                'price'        => $price,
+                'is_peak'      => $hour >= 18,
+                'status'       => 'confirmed',
+                'gcal_event_id'=> $gcalEvent->getId(),
+            ]);
 
             Log::info('Booking created on Google Calendar', [
                 'user_id'   => $user->id,

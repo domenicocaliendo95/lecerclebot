@@ -13,9 +13,10 @@ class WhatsAppService
 
     public function __construct()
     {
-        $this->token         = env('WHATSAPP_TOKEN');
-        $this->phoneNumberId = env('WHATSAPP_PHONE_NUMBER_ID');
-        $this->apiUrl        = "https://graph.facebook.com/v21.0/{$this->phoneNumberId}/messages";
+        $this->token         = config('services.whatsapp.api_token');
+        $this->phoneNumberId = config('services.whatsapp.phone_id');
+        $version             = config('services.whatsapp.api_version', 'v21.0');
+        $this->apiUrl        = "https://graph.facebook.com/{$version}/{$this->phoneNumberId}/messages";
     }
 
     /**

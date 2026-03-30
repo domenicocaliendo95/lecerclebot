@@ -12,7 +12,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name', 'email', 'password',
-        'phone', 'birthdate', 'is_fit',
+        'phone', 'age', 'birthdate', 'is_fit',
         'fit_rating', 'self_level', 'elo_rating',
         'matches_played', 'matches_won',
         'is_elo_established', 'preferred_slots',

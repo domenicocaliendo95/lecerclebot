@@ -47,13 +47,13 @@ enum BotState: string
             self::ONBOARD_LIVELLO    => [self::ONBOARD_ETA],
             self::ONBOARD_ETA        => [self::ONBOARD_SLOT_PREF],
             self::ONBOARD_SLOT_PREF  => [self::ONBOARD_COMPLETO],
-            self::ONBOARD_COMPLETO   => [self::MENU],
+            self::ONBOARD_COMPLETO   => [self::MENU, self::SCEGLI_QUANDO, self::ATTESA_MATCH],
 
             self::MENU           => [self::SCEGLI_QUANDO, self::ATTESA_MATCH],
             self::SCEGLI_QUANDO  => [self::VERIFICA_SLOT, self::MENU],
             self::VERIFICA_SLOT  => [self::PROPONI_SLOT],
             self::PROPONI_SLOT   => [self::CONFERMA, self::SCEGLI_QUANDO, self::MENU],
-            self::CONFERMA       => [self::PAGAMENTO, self::SCEGLI_QUANDO, self::MENU],
+            self::CONFERMA       => [self::PAGAMENTO, self::CONFERMATO, self::SCEGLI_QUANDO, self::MENU],
             self::PAGAMENTO      => [self::CONFERMATO, self::MENU],
             self::CONFERMATO     => [self::MENU],
 
