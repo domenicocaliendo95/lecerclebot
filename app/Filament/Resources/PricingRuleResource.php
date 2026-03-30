@@ -8,6 +8,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class PricingRuleResource extends Resource
 {
@@ -115,7 +116,7 @@ class PricingRuleResource extends Resource
             ->filters([
                 Tables\Filters\Filter::make('attive')
                     ->label('Solo attive')
-                    ->query(fn ($q) => $q->where('is_active', true))
+                    ->query(fn (Builder $query) => $query->where('is_active', true))
                     ->default(),
             ])
             ->defaultSort('priority', 'desc')

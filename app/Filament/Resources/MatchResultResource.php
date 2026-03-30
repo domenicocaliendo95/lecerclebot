@@ -9,6 +9,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class MatchResultResource extends Resource
 {
@@ -119,7 +120,7 @@ class MatchResultResource extends Resource
             ->filters([
                 Tables\Filters\Filter::make('da_verificare')
                     ->label('Da verificare (discordanti)')
-                    ->query(fn ($query) => $query
+                    ->query(fn (Builder $query) => $query
                         ->where('player1_confirmed', true)
                         ->where('player2_confirmed', true)
                         ->whereNull('winner_id')
@@ -127,8 +128,8 @@ class MatchResultResource extends Resource
 
                 Tables\Filters\Filter::make('in_attesa')
                     ->label('In attesa di conferma')
-                    ->query(fn ($query) => $query->where(
-                        fn ($q) => $q->where('player1_confirmed', false)->orWhere('player2_confirmed', false)
+                    ->query(fn (Builder $query) => $query->where(
+                        fn (Builder $q) => $q->where('player1_confirmed', false)->orWhere('player2_confirmed', false)
                     )),
             ])
             ->defaultSort('created_at', 'desc');
