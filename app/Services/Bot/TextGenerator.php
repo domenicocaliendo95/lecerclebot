@@ -80,10 +80,12 @@ class TextGenerator
         'prenotazione_modifica_quando' => 'Ok! Quando vorresti spostare la prenotazione? Dimmi il nuovo giorno e orario.',
 
         // Matchmaking
-        'matchmaking_attesa'         => 'Sto cercando un avversario adatto a te. Ti avviso appena trovo qualcuno! 🔍',
-        'cerca_avversario'           => 'Perfetto! Cerco un avversario per {slot}. Ti scrivo appena lo trovo! 🔍',
-        'nessun_avversario'          => 'Nessun avversario disponibile per questo slot. Prova un altro orario?',
-        'invito_match'               => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Accetti?',
+        'matchmaking_attesa'              => 'Sto cercando il tuo avversario ideale. Ti avviso appena trovo qualcuno! 🔍',
+        'cerca_avversario'                => 'Perfetto! Cerco un avversario per {slot}. Ti scrivo appena lo trovo! 🔍',
+        'nessun_avversario'               => 'Non ho trovato avversari disponibili per questo slot. Vuoi provare un altro orario?',
+        'invito_match'                    => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Accetti?',
+        'invito_match_disparita'          => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Nota: c\'è una differenza di livello ({delta} ELO). Accetti?',
+        'match_trovato_disparita'         => 'Ho trovato un avversario! C\'è una differenza di livello ({delta} ELO). Ti ho inviato l\'invito. ⚡',
         'match_accettato_challenger' => '{opponent_name} ha accettato! Prenotazione confermata per {slot}. ✅',
         'match_rifiutato_challenger' => '{opponent_name} non è disponibile. Cerca un altro avversario?',
         'match_accettato_opponent'   => 'Perfetto! Hai accettato. Ci vediamo il {slot}! 🎾',

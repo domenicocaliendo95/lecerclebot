@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"FILAMENT\" /Users/domenicocaliendo/Desktop/lecerclebot/.env*)",
+      "Bash(mkdir -p /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Pages)",
+      "Bash(mkdir -p /Users/domenicocaliendo/Desktop/lecerclebot/resources/views/filament/pages)",
+      "Bash(php artisan:*)",
+      "Read(//opt/homebrew/**)",
+      "Read(//usr/**)",
+      "Bash(command -v php)",
+      "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php /Users/domenicocaliendo/Desktop/lecerclebot/artisan route:list --path=admin/calendar 2>&1)",
+      "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Pages/CalendarBookings.php 2>&1)",
+      "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/resources/views/filament/pages/calendar-bookings.blade.php 2>&1)",
+      "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Pages/CalendarBookings.php)",
+      "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Resources/BookingResource.php)",
+      "Bash(ls /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Pages/Dashboard*)"
+    ]
+  }
+}

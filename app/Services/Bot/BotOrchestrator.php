@@ -368,6 +368,15 @@ class BotOrchestrator
 
     /* ───────── Matchmaking ───────── */
 
+    /**
+     * Cerca un avversario a 3 livelli di ELO:
+     *  Tier 1 — ±50  (livello identico)
+     *  Tier 2 — ±150 (livello simile, lieve disparità)
+     *  Tier 3 — qualsiasi ELO (disparità significativa)
+     *
+     * Se nessuno trovato → salva il timestamp e aspetta fino a 30 min
+     * (il comando bot:retry-matchmaking riprova ogni 5 min).
+     */
     private function triggerMatchmaking(BotSession $session, string $phone): void
     {
         try {
@@ -387,103 +396,178 @@ class BotOrchestrator
                 return;
             }
 
-            // Cerca un avversario con ELO simile (±200), con telefono, diverso dal challenger
-            $opponent = User::where('id', '!=', $challenger->id)
-                ->whereNotNull('phone')
-                ->whereBetween('elo_rating', [$challengerElo - 200, $challengerElo + 200])
-                ->inRandomOrder()
-                ->first();
+            [$opponent, $eloGap] = $this->findOpponentTiered($challenger->id, $challengerElo);
 
             if (!$opponent) {
-                Log::info('triggerMatchmaking: no opponent found', [
+                // Nessuno trovato ora: avvia attesa asincrona (max 30 min)
+                $session->mergeData([
+                    'matchmaking_started_at'     => now()->toIso8601String(),
+                    'matchmaking_pending_search' => true,
+                ]);
+                $this->whatsApp->sendText(
+                    $phone,
+                    $this->textGenerator->rephrase('matchmaking_attesa', $session->persona()),
+                );
+                Log::info('triggerMatchmaking: no opponent found, waiting', [
                     'challenger_id' => $challenger->id,
                     'elo'           => $challengerElo,
                 ]);
-                $this->whatsApp->sendButtons(
-                    $phone,
-                    $this->textGenerator->rephrase('nessun_avversario', $session->persona()),
-                    ['Cambia orario', 'Menu'],
-                );
-                $session->update(['state' => BotState::MENU->value]);
                 return;
             }
 
-            // Crea prenotazione in stato pending_match
-            $durationMinutes = $session->getData('requested_duration_minutes') ?? 60;
-            $startDT = \Carbon\Carbon::parse("{$date} {$time}", 'Europe/Rome');
-            $endDT   = $startDT->copy()->addMinutes($durationMinutes);
-            $price   = \App\Models\PricingRule::getPriceForSlot($startDT, $durationMinutes);
+            $this->sendMatchInvite($session, $phone, $challenger, $opponent, $eloGap, $date, $time, $friendly);
 
-            $booking = Booking::create([
-                'player1_id'   => $challenger->id,
-                'player2_id'   => $opponent->id,
-                'booking_date' => $startDT->format('Y-m-d'),
-                'start_time'   => $startDT->format('H:i:s'),
-                'end_time'     => $endDT->format('H:i:s'),
-                'price'        => $price,
-                'is_peak'      => $startDT->hour >= 18,
-                'status'       => 'pending_match',
-            ]);
+        } catch (\Throwable $e) {
+            Log::error('triggerMatchmaking failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+        }
+    }
 
-            // Crea record invitation
-            MatchInvitation::create([
-                'booking_id'  => $booking->id,
-                'receiver_id' => $opponent->id,
-                'status'      => 'pending',
-            ]);
+    /**
+     * Ricerca a 3 livelli ELO.
+     * Restituisce [$opponent|null, $eloGap].
+     */
+    public function findOpponentTiered(int $excludeId, int $challengerElo): array
+    {
+        $tiers = [50, 150, PHP_INT_MAX];
 
-            // Aggiorna sessione del challenger
-            $session->mergeData([
-                'pending_booking_id' => $booking->id,
-                'opponent_name'      => $opponent->name,
-                'opponent_phone'     => $opponent->phone,
-            ]);
+        foreach ($tiers as $i => $radius) {
+            $minPrev = $i > 0 ? $tiers[$i - 1] : 0;
 
-            // Trova o crea sessione dell'avversario
-            $opponentSession = BotSession::where('phone', $opponent->phone)->first();
-            $opponentData    = [
-                'invited_by_phone'   => $phone,
-                'invited_by_name'    => $challenger->name,
-                'invited_slot'       => $friendly,
-                'invited_booking_id' => $booking->id,
-            ];
+            $query = User::where('id', '!=', $excludeId)
+                ->whereNotNull('phone')
+                ->inRandomOrder();
 
-            if ($opponentSession) {
-                $opponentSession->update(['state' => BotState::RISPOSTA_MATCH->value]);
-                $opponentSession->mergeData($opponentData);
+            if ($radius === PHP_INT_MAX) {
+                // Tier 3: qualsiasi ELO, escludi già coperti dai tier precedenti
+                $query->where(function ($q) use ($challengerElo, $minPrev) {
+                    $q->where('elo_rating', '<', $challengerElo - $minPrev)
+                      ->orWhere('elo_rating', '>', $challengerElo + $minPrev);
+                });
             } else {
-                BotSession::create([
-                    'phone' => $opponent->phone,
-                    'state' => BotState::RISPOSTA_MATCH->value,
-                    'data'  => array_merge([
-                        'persona' => BotPersona::pickRandom(),
-                        'history' => [],
-                        'profile' => [],
-                    ], $opponentData),
+                $query->whereBetween('elo_rating', [
+                    $challengerElo - $radius,
+                    $challengerElo + $radius,
                 ]);
+                if ($minPrev > 0) {
+                    // Escludi il range già cercato nel tier precedente
+                    $query->where(function ($q) use ($challengerElo, $minPrev) {
+                        $q->where('elo_rating', '<', $challengerElo - $minPrev)
+                          ->orWhere('elo_rating', '>', $challengerElo + $minPrev);
+                    });
+                }
             }
 
-            // Invia invito all'avversario
+            $opponent = $query->first();
+            if ($opponent) {
+                $gap = abs($opponent->elo_rating - $challengerElo);
+                return [$opponent, $gap];
+            }
+        }
+
+        return [null, 0];
+    }
+
+    /**
+     * Crea Booking + Invitation, aggiorna sessioni, invia invito WhatsApp.
+     * Usato sia da triggerMatchmaking che dal comando di retry.
+     */
+    public function sendMatchInvite(
+        BotSession $session,
+        string $challengerPhone,
+        User $challenger,
+        User $opponent,
+        int $eloGap,
+        string $date,
+        string $time,
+        string $friendly,
+    ): void {
+        $durationMinutes = $session->getData('requested_duration_minutes') ?? 60;
+        $startDT = \Carbon\Carbon::parse("{$date} {$time}", 'Europe/Rome');
+        $endDT   = $startDT->copy()->addMinutes($durationMinutes);
+        $price   = \App\Models\PricingRule::getPriceForSlot($startDT, $durationMinutes);
+
+        $booking = Booking::create([
+            'player1_id'   => $challenger->id,
+            'player2_id'   => $opponent->id,
+            'booking_date' => $startDT->format('Y-m-d'),
+            'start_time'   => $startDT->format('H:i:s'),
+            'end_time'     => $endDT->format('H:i:s'),
+            'price'        => $price,
+            'is_peak'      => $startDT->hour >= 18,
+            'status'       => 'pending_match',
+        ]);
+
+        MatchInvitation::create([
+            'booking_id'  => $booking->id,
+            'receiver_id' => $opponent->id,
+            'status'      => 'pending',
+        ]);
+
+        // Aggiorna sessione challenger — pulisce i flag di ricerca pendente
+        $session->mergeData([
+            'pending_booking_id'         => $booking->id,
+            'opponent_name'              => $opponent->name,
+            'opponent_phone'             => $opponent->phone,
+            'matchmaking_pending_search' => false,
+            'matchmaking_started_at'     => null,
+        ]);
+
+        // Prepara o aggiorna sessione avversario
+        $opponentData = [
+            'invited_by_phone'   => $challengerPhone,
+            'invited_by_name'    => $challenger->name,
+            'invited_slot'       => $friendly,
+            'invited_booking_id' => $booking->id,
+        ];
+
+        $opponentSession = BotSession::where('phone', $opponent->phone)->first();
+        if ($opponentSession) {
+            $opponentSession->update(['state' => BotState::RISPOSTA_MATCH->value]);
+            $opponentSession->mergeData($opponentData);
+        } else {
+            BotSession::create([
+                'phone' => $opponent->phone,
+                'state' => BotState::RISPOSTA_MATCH->value,
+                'data'  => array_merge([
+                    'persona' => BotPersona::pickRandom(),
+                    'history' => [],
+                    'profile' => [],
+                ], $opponentData),
+            ]);
+        }
+
+        // Invito all'avversario — include nota disparità se ELO gap > 50
+        $hasDisparity = $eloGap > 50;
+        if ($hasDisparity) {
+            $inviteText = str_replace(
+                ['{opponent_name}', '{challenger_name}', '{slot}', '{delta}'],
+                [$opponent->name, $challenger->name, $friendly, $eloGap],
+                "Ciao {opponent_name}! {challenger_name} ti sfida il {slot}.\nNota: c'è una differenza di livello ({delta} ELO). Accetti?",
+            );
+        } else {
             $inviteText = str_replace(
                 ['{opponent_name}', '{challenger_name}', '{slot}'],
                 [$opponent->name, $challenger->name, $friendly],
                 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Accetti?',
             );
-            $this->whatsApp->sendButtons($opponent->phone, $inviteText, ['Accetta', 'Rifiuta']);
-
-            Log::info('Matchmaking invite sent', [
-                'challenger_id' => $challenger->id,
-                'opponent_id'   => $opponent->id,
-                'booking_id'    => $booking->id,
-                'slot'          => $friendly,
-            ]);
-
-        } catch (\Throwable $e) {
-            Log::error('triggerMatchmaking failed', [
-                'phone' => $phone,
-                'error' => $e->getMessage(),
-            ]);
         }
+        $this->whatsApp->sendButtons($opponent->phone, $inviteText, ['Accetta', 'Rifiuta']);
+
+        // Notifica al challenger — se c'è disparità, lo segnaliamo
+        if ($hasDisparity) {
+            $disparityMsg = str_replace('{delta}', (string) $eloGap,
+                $this->textGenerator->rephrase('match_trovato_disparita', $session->persona())
+            );
+            $this->whatsApp->sendText($challengerPhone, $disparityMsg);
+        }
+
+        Log::info('Matchmaking invite sent', [
+            'challenger_id' => $challenger->id,
+            'opponent_id'   => $opponent->id,
+            'booking_id'    => $booking->id,
+            'elo_gap'       => $eloGap,
+            'slot'          => $friendly,
+        ]);
     }
 
     private function confirmMatch(BotSession $session, string $phone): void

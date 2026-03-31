@@ -20,3 +20,16 @@ Schedule::command('bot:send-result-requests')
     ->everyFifteenMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+ * Ogni 5 minuti: riprova matchmaking per chi è in attesa senza avversario.
+ * Dopo 30 min senza trovare nessuno, avvisa il challenger e torna al menu.
+ *
+ * Lanciabile manualmente:
+ *   php artisan bot:retry-matchmaking
+ *   php artisan bot:retry-matchmaking --dry-run
+ */
+Schedule::command('bot:retry-matchmaking')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

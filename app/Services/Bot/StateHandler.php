@@ -4,6 +4,7 @@ namespace App\Services\Bot;
 
 use App\Models\Booking;
 use App\Models\BotSession;
+use App\Models\PricingRule;
 use App\Models\User;
 use App\Services\CalendarService;
 use Carbon\Carbon;
@@ -337,38 +338,49 @@ class StateHandler
             );
         }
 
+        $durationButtons = array_map(
+            fn(int $m) => PricingRule::durationLabel($m),
+            PricingRule::availableDurations()
+        );
+
         return BotResponse::make(
             $this->textGenerator->rephrase('chiedi_durata', $session->persona()),
             BotState::SCEGLI_DURATA,
-            ['1 ora', '1,5 ore', '2 ore'],
+            $durationButtons,
         );
     }
 
     private function handleScegliDurata(BotSession $session, string $input): BotResponse
     {
         $normalized = mb_strtolower(trim($input));
+        $available  = PricingRule::availableDurations();
 
-        $duration = null;
-
+        $parsed = null;
         if (preg_match('/\b1[,.]5\b|\bun\'ora e mezzo\b|\bora e mezza\b|\bun ora e mezzo\b/', $normalized)) {
-            $duration = 90;
+            $parsed = 90;
         } elseif (preg_match('/\b2\s*ore\b|\bdue ore\b/', $normalized)) {
-            $duration = 120;
+            $parsed = 120;
         } elseif (preg_match('/\b3\s*ore\b|\btre ore\b/', $normalized)) {
-            $duration = 180;
+            $parsed = 180;
         } elseif (preg_match('/\b1\s*ora\b|\bun\'ora\b|\bun ora\b|\b1h\b/', $normalized)) {
-            $duration = 60;
+            $parsed = 60;
         }
 
-        if ($duration === null) {
+        $durationButtons = array_map(
+            fn(int $m) => PricingRule::durationLabel($m),
+            $available
+        );
+
+        // Rifiuta durate non configurate
+        if ($parsed === null || !in_array($parsed, $available, true)) {
             return BotResponse::make(
                 $this->textGenerator->rephrase('durata_non_capita', $session->persona()),
                 BotState::SCEGLI_DURATA,
-                ['1 ora', '1,5 ore', '2 ore'],
+                $durationButtons,
             );
         }
 
-        $session->mergeData(['requested_duration_minutes' => $duration]);
+        $session->mergeData(['requested_duration_minutes' => $parsed]);
 
         return BotResponse::make(
             $this->textGenerator->rephrase('verifico_disponibilita', $session->persona()),

@@ -1,5 +1,5 @@
 # Le Cercle Tennis Club — Bot WhatsApp
-## Bibbia del Progetto — Aggiornata al 2026-03-30
+## Bibbia del Progetto — Aggiornata al 2026-03-31
 
 ---
 
@@ -50,6 +50,21 @@ WhatsAppController          → Sottile: valida webhook, estrae input, delega
 
 ```
 app/
+├── Filament/
+│   ├── Pages/
+│   │   └── CalendarBookings.php        ← Calendario giornaliero/settimanale (drag&drop, filtri, click-to-create)
+│   ├── Widgets/
+│   │   ├── StatsOverview.php           ← 4 stat card con sparkline e trend
+│   │   ├── WeeklyBookingsChart.php     ← Grafico a barre prenotazioni 7gg (stacked per stato)
+│   │   ├── TodaySchedule.php           ← Tabella prenotazioni di oggi
+│   │   └── LatestUsers.php             ← Ultimi giocatori registrati
+│   └── Resources/
+│       ├── BookingResource.php         ← CRUD prenotazioni (tabella)
+│       ├── UserResource.php            ← CRUD giocatori
+│       ├── PricingRuleResource.php     ← CRUD regole prezzi
+│       ├── BotSessionResource.php      ← Sessioni bot (sola lettura + chat view)
+│       ├── MatchResultResource.php     ← Risultati partite
+│       └── FeedbackResource.php        ← Feedback utenti
 ├── Http/Controllers/
 │   └── WhatsAppController.php          ← Controller (webhook verify + handle, risponde sempre 200)
 ├── Models/
@@ -572,6 +587,98 @@ APP_TIMEZONE=Europe/Rome
 ```
 
 Le variabili `.env` vengono lette **SOLO** nei file `config/*.php`. Nel codice si usa sempre `config('services.whatsapp.api_token')`, mai `env()` direttamente.
+
+---
+
+## Filament Admin Panel
+
+### Pannello Generale
+
+- Path: `/admin`, primary color: **Amber**
+- Auto-discovery: `app/Filament/Resources`, `app/Filament/Pages`, `app/Filament/Widgets`
+- Auth: solo utenti con `is_admin = true` (`User::canAccessPanel()`)
+
+### Pagina Calendario (`CalendarBookings`)
+
+Pagina custom Livewire — il centro di gestione delle prenotazioni. Accessibile da `/admin/calendar-bookings`.
+
+**Funzionalità:**
+- **Vista giornaliera** con timeline 08:00–22:00 (80px per ora)
+- **Vista settimanale** con 7 colonne affiancate (Lun–Dom), header cliccabile per tornare a vista giorno, scroll orizzontale su mobile
+- **Toggle Giorno/Settimana** nell'header, navigazione prev/next adatta alla vista corrente
+- **Navigazione**: pulsanti Oggi/Precedente/Successivo + strip settimanale (solo in vista giorno)
+- **Statistiche**: totale prenotazioni, confermate, in attesa, incasso (contesto giorno o settimana)
+- **Blocchi prenotazione** colorati per stato: verde (confermata), ambra (in attesa), azzurro (completata)
+- **Indicatore tempo reale**: linea rossa con orario corrente, auto-scroll (in entrambe le viste)
+- **Click-to-create**: click su slot vuoto → redirect a BookingResource/create con data/ora pre-compilate (snap a 30 min)
+- **Drag & drop**: trascinamento prenotazioni su nuovi orari/giorni. Aggiorna DB + Google Calendar + prezzo (PricingRule). Ghost indicator durante il drag. Notifica Filament al completamento.
+- **Filtri**: ricerca giocatore per nome (debounce 300ms) + toggle stato (Confermate/In attesa/Completate)
+- **Slide-over dettaglio**: click su prenotazione → pannello laterale con giocatori, telefoni, prezzo, tariffa, stato pagamento, sync Google Calendar, link a modifica
+- **Chiusura slide-over**: click overlay, tasto Escape, pulsante X
+- **Badge navigazione**: mostra il numero di prenotazioni del giorno corrente nella sidebar
+- **Empty state**: messaggio con invito a cliccare per creare
+- **URL persistente**: `selectedDate` sincronizzato via `#[Url]`
+
+**Proprietà Livewire:**
+- `$selectedDate` (string, #[Url]) — data selezionata
+- `$viewMode` (string) — `day` o `week`
+- `$filterPlayer` (string) — ricerca giocatore
+- `$filterStatuses` (array) — stati attivi nel filtro
+- `$selectedBooking` (?array) — dettaglio prenotazione aperta
+
+**Computed Properties (#[Computed]):**
+- `bookings` — prenotazioni filtrate del giorno selezionato
+- `weekBookings` — prenotazioni filtrate della settimana, raggruppate per data (array di collection)
+- `weekDays` — 7 giorni della settimana con conteggio prenotazioni (query singola)
+- `formattedDate` — data/range in italiano (adattato a vista giorno/settimana)
+- `stats` — totale, confermate, in attesa, incasso (contesto vista)
+- `currentTimePosition` — posizione px linea "adesso"
+- `todayColumnIndex` — indice colonna "oggi" in vista settimanale
+
+**Metodi principali:**
+- `moveBooking(id, newDate, newTime)` — drag & drop: aggiorna booking, prezzo, Google Calendar
+- `createAtSlot(date, time)` — redirect a BookingResource/create con query params
+- `selectBooking(id)` / `closeDetail()` — gestione slide-over
+- `toggleStatus(status)` — toggle filtro stato
+- `switchToDay(date)` — da vista settimanale a giornaliera su un giorno specifico
+
+**Alpine.js (`calendarApp()`):**
+- `scrollToNow()` — auto-scroll alla posizione corrente
+- `clickToCreate(event, date)` — calcola orario dal click (snap 30 min), chiama `$wire.createAtSlot`
+- `dragStart/dragOver/dragLeave/dragEnd/drop` — gestione HTML5 drag & drop con ghost indicator
+- Ghost image trasparente custom, blocchi non-dragged diventano `opacity-40 pointer-events-none`
+
+**BookingResource prefill:**
+- La form di creazione legge `?date=` e `?time=` dalla query string
+- `end_time` calcolato automaticamente come `time + 1 ora`
+
+**File:**
+- `app/Filament/Pages/CalendarBookings.php`
+- `resources/views/filament/pages/calendar-bookings.blade.php`
+
+### Dashboard (`/admin`)
+
+La dashboard usa 4 widget custom auto-discovered da `app/Filament/Widgets/`:
+
+| Widget | Tipo | Sort | Descrizione |
+|---|---|---|---|
+| `StatsOverview` | StatsOverviewWidget | 1 | 4 stat card: prenotazioni oggi (sparkline 7gg + trend%), incasso oggi (sparkline + trend%), giocatori totali (+nuovi settimana), match in attesa |
+| `WeeklyBookingsChart` | ChartWidget (bar stacked) | 2 | Grafico a barre ultimi 7 giorni, stacked per stato (confermate/in attesa/completate). Colori: emerald/amber/sky. Query singola con groupBy(date, status) |
+| `TodaySchedule` | TableWidget | 3 | Tabella prenotazioni di oggi (orario, giocatori, stato badge, prezzo, peak icon). Non paginata. Empty state personalizzato |
+| `LatestUsers` | TableWidget | 4 | Ultimi 8 giocatori registrati (nome, telefono, FIT, livello badge, ELO, "registrato X fa"). Non paginata |
+
+**Rimosso:** `FilamentInfoWidget` (branding Filament). **Mantenuto:** `AccountWidget` (profilo/logout).
+
+### Resources
+
+| Resource | Modello | Tipo | NavigationSort |
+|---|---|---|---|
+| UserResource | User | CRUD | 1 |
+| BookingResource | Booking | CRUD (prefill da query params `?date=&time=`) | 3 |
+| BotSessionResource | BotSession | Sola lettura (Infolist) | 2 |
+| MatchResultResource | MatchResult | List + Edit | 4 |
+| FeedbackResource | Feedback | List + View | 5 |
+| PricingRuleResource | PricingRule | CRUD (reorderable) | 6 |
 
 ---
 

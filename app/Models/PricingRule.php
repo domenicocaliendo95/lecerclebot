@@ -69,6 +69,25 @@ class PricingRule extends Model
     }
 
     /**
+     * Restituisce le durate distinte configurate nelle regole attive, ordinate.
+     * Se nessuna regola ha duration_minutes specifico, ritorna il default [60].
+     *
+     * @return int[]  es. [60, 90, 120]
+     */
+    public static function availableDurations(): array
+    {
+        $durations = self::where('is_active', true)
+            ->whereNotNull('duration_minutes')
+            ->distinct()
+            ->orderBy('duration_minutes')
+            ->pluck('duration_minutes')
+            ->map(fn($v) => (int) $v)
+            ->toArray();
+
+        return $durations ?: [60];
+    }
+
+    /**
      * Label leggibile per la durata.
      */
     public static function durationLabel(int $minutes): string

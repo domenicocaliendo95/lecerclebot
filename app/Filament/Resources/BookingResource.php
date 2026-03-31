@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\BookingResource\Pages;
 use App\Models\Booking;
+use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -42,16 +43,22 @@ class BookingResource extends Resource
 
                 Forms\Components\DatePicker::make('booking_date')
                     ->label('Data')
+                    ->default(fn () => request()->query('date'))
                     ->required(),
 
                 Forms\Components\TimePicker::make('start_time')
                     ->label('Ora inizio')
                     ->seconds(false)
+                    ->default(fn () => request()->query('time'))
                     ->required(),
 
                 Forms\Components\TimePicker::make('end_time')
                     ->label('Ora fine')
                     ->seconds(false)
+                    ->default(function () {
+                        $time = request()->query('time');
+                        return $time ? Carbon::createFromFormat('H:i', $time)->addHour()->format('H:i') : null;
+                    })
                     ->required(),
 
                 Forms\Components\Select::make('status')
