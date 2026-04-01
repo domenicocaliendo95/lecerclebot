@@ -1,5 +1,5 @@
 # Le Cercle Tennis Club — Bot WhatsApp
-## Bibbia del Progetto — Aggiornata al 2026-03-31
+## Bibbia del Progetto — Aggiornata al 2026-04-01
 
 ---
 
@@ -13,7 +13,8 @@ Bot WhatsApp per **Le Cercle Tennis Club**, circolo tennistico a **San Gennaro V
 
 | Componente | Tecnologia |
 |---|---|
-| Framework | Laravel 11 + Filament 3 Admin Panel |
+| Framework | Laravel 11 + Filament 3 (legacy admin) |
+| Frontend | React SPA (Vite + Tailwind v4 + Shadcn/UI) in `frontend/`, build → `public/panel/` |
 | Database | MySQL (`lecercle_db`) |
 | AI testi | Google Gemini API (`gemini-2.5-flash`) — SOLO rephrase + date parsing |
 | Calendario | Google Calendar API (service account JSON) |
@@ -50,28 +51,33 @@ WhatsAppController          → Sottile: valida webhook, estrae input, delega
 
 ```
 app/
-├── Filament/
-│   ├── Pages/
-│   │   └── CalendarBookings.php        ← Calendario giornaliero/settimanale (drag&drop, filtri, click-to-create)
-│   ├── Widgets/
-│   │   ├── StatsOverview.php           ← 4 stat card con sparkline e trend
-│   │   ├── WeeklyBookingsChart.php     ← Grafico a barre prenotazioni 7gg (stacked per stato)
-│   │   ├── TodaySchedule.php           ← Tabella prenotazioni di oggi
-│   │   └── LatestUsers.php             ← Ultimi giocatori registrati
-│   └── Resources/
-│       ├── BookingResource.php         ← CRUD prenotazioni (tabella)
-│       ├── UserResource.php            ← CRUD giocatori
-│       ├── PricingRuleResource.php     ← CRUD regole prezzi
-│       ├── BotSessionResource.php      ← Sessioni bot (sola lettura + chat view)
-│       ├── MatchResultResource.php     ← Risultati partite
-│       └── FeedbackResource.php        ← Feedback utenti
-├── Http/Controllers/
-│   └── WhatsAppController.php          ← Controller (webhook verify + handle, risponde sempre 200)
+├── Console/Commands/
+│   ├── SendMatchResultRequests.php     ← Scheduler: chiedi risultato 1h dopo partita
+│   └── SendBookingReminders.php        ← Scheduler: promemoria prenotazioni (configurabile)
+├── Filament/                           ← Legacy admin (sostituito da React SPA)
+├── Http/
+│   ├── Controllers/
+│   │   ├── Api/
+│   │   │   ├── AuthController.php      ← Login/logout/me (session-based, solo admin)
+│   │   │   ├── DashboardController.php ← Stats + weekly chart
+│   │   │   ├── BookingController.php   ← CRUD prenotazioni + calendar + today
+│   │   │   ├── UserController.php      ← CRUD giocatori + search autocomplete
+│   │   │   ├── BotSessionController.php← Lista sessioni + chat history
+│   │   │   ├── MatchResultController.php← Risultati partite
+│   │   │   ├── PricingRuleController.php← CRUD regole prezzi
+│   │   │   └── SettingsController.php  ← Lettura/scrittura bot_settings
+│   │   └── WhatsAppController.php      ← Webhook verify + handle (risponde sempre 200)
+│   ├── Middleware/
+│   │   └── EnsureIsAdmin.php           ← Verifica is_admin sull'utente
+│   └── Resources/                      ← API Resources (JSON transform)
 ├── Models/
 │   ├── BotSession.php                  ← Sessione bot (phone, state, data JSON)
 │   ├── Booking.php                     ← Prenotazione campo
 │   ├── MatchInvitation.php             ← Invito matchmaking (booking_id, receiver_id, status)
-│   ├── MatchResult.php                 ← Risultato partita (futuro)
+│   ├── MatchResult.php                 ← Risultato partita + ELO tracking
+│   ├── EloHistory.php                  ← Storico variazioni ELO
+│   ├── Feedback.php                    ← Feedback utenti (rating 1-5 + commento)
+│   ├── BotSetting.php                  ← Settings chiave-valore (reminder, ecc.)
 │   └── User.php                        ← Modello utente con profilo tennis
 └── Services/
     ├── CalendarService.php             ← Google Calendar API (checkUserRequest, createEvent, deleteEvent)
@@ -84,17 +90,29 @@ app/
         ├── BotOrchestrator.php         ← Coordinatore: DB tx, side-effects, invio messaggi
         ├── StateHandler.php            ← Macchina a stati (tutti gli handle*)
         ├── TextGenerator.php           ← AI: rephrase templates + parseDateTime
-        └── UserProfileService.php      ← saveFromBot(): crea/aggiorna User con stima ELO
-database/
-└── migrations/
-    ├── ..._create_bot_sessions_table.php
-    ├── ..._create_bookings_table.php
-    ├── ..._create_match_invitations_table.php
-    ├── ..._create_match_results_table.php
-    ├── ..._create_pricing_rules_table.php
-    ├── ..._add_tennis_profile_to_users_table.php
-    ├── ..._add_age_to_users_table.php
-    └── ..._fix_self_level_column_type.php   ← self_level è VARCHAR, non tinyInteger
+        ├── UserProfileService.php      ← saveFromBot(): crea/aggiorna User con stima ELO
+        └── EloService.php              ← Calcolo ELO dopo partita
+frontend/                               ← React SPA (monorepo)
+├── src/
+│   ├── components/
+│   │   ├── layout/                     ← AppLayout, Sidebar, Header
+│   │   ├── auth/                       ← RequireAuth wrapper
+│   │   └── ui/                         ← Shadcn/UI + FormDialog, PlayerSearch
+│   ├── pages/
+│   │   ├── login.tsx                   ← Login admin
+│   │   ├── dashboard.tsx               ← Stats, grafico 7gg, prenotazioni oggi
+│   │   ├── calendario.tsx              ← Vista giorno/settimana con blocchi
+│   │   ├── prenotazioni.tsx            ← CRUD prenotazioni con filtri
+│   │   ├── giocatori.tsx               ← CRUD giocatori con sort/search
+│   │   ├── sessioni.tsx                ← Lista sessioni + chat view
+│   │   ├── match.tsx                   ← Risultati + classifica ELO
+│   │   └── impostazioni.tsx            ← Pricing rules CRUD + config reminder
+│   ├── hooks/
+│   │   ├── use-api.ts                  ← Fetch wrapper con auth
+│   │   └── use-auth.tsx                ← AuthProvider + useAuth
+│   └── types/api.ts                    ← TypeScript types allineati a DB
+├── vite.config.ts                      ← base: /panel/, build → public/panel/
+└── public/.htaccess                    ← SPA routing per Apache
 ```
 
 ---
@@ -206,11 +224,17 @@ MENU                Menu principale
 
 ── Prenotazione ────────────────────────────
 SCEGLI_QUANDO       In attesa data/ora
+SCEGLI_DURATA       In attesa durata (mostra tariffe)
 VERIFICA_SLOT       Calendar check in corso
 PROPONI_SLOT        Slot proposto, in attesa conferma
 CONFERMA            Riepilogo, in attesa conferma pagamento
 PAGAMENTO           Pagamento online in corso
 CONFERMATO          Prenotazione confermata
+
+── Risultati & Feedback ────────────────────
+INSERISCI_RISULTATO In attesa risultato (vinto/perso/non giocata)
+FEEDBACK            In attesa rating 1-5
+FEEDBACK_COMMENTO   In attesa commento opzionale
 
 ── Matchmaking ─────────────────────────────
 ATTESA_MATCH        Challenger in attesa risposta avversario
@@ -374,6 +398,52 @@ Attivabile da qualsiasi stato non-onboarding con la keyword `profilo`.
 
 ---
 
+### Flusso 6 — Risultati partita
+
+Attivato automaticamente dallo scheduler `bot:send-result-requests` (ogni 15 min, 1h dopo fine partita).
+
+1. **Scheduler** crea `MatchResult` e imposta sessione avversari a `INSERISCI_RISULTATO`
+2. **INSERISCI_RISULTATO**: attende input
+   - Pulsanti: `["Ho vinto", "Ho perso", "Non giocata"]`
+   - Rileva keyword: "vinto", "perso", "non giocata", "annullata"
+   - Estrae punteggio opzionale: regex `\b(\d{1,2})[-\/](\d{1,2})\b`
+   - Flag: `withMatchResultToSave(true)` → `processMatchResult()` nell'orchestrator
+3. **processMatchResult()**: aggiorna MatchResult per il ruolo (player1/player2)
+   - Se entrambi confermati → `finalizeMatchResult()` → `EloService::processResult()`
+   - Se discordanza → notifica entrambi, admin verifica
+   - Se no_show → booking completato, nessun ELO
+4. **Dopo il risultato** → transita automaticamente a FEEDBACK (rating)
+
+---
+
+### Flusso 7 — Feedback
+
+Attivabile con keyword "feedback" o automaticamente dopo inserimento risultato partita.
+
+1. **FEEDBACK**: chiede rating 1-5
+   - Pulsanti: `["1", "2", "3", "4", "5"]`
+   - Parser: numeri, parole (uno-cinque), emoji stelle
+2. **FEEDBACK_COMMENTO**: chiede commento opzionale
+   - "no", "skip", "niente" → salva senza commento
+   - Qualsiasi altro testo → salva come commento
+3. Flag: `withFeedbackToSave(true)` → `saveFeedback()` nell'orchestrator
+4. Salva su tabella `feedbacks` con tipo, rating, contenuto, link user/booking
+
+---
+
+### Flusso 8 — Promemoria prenotazioni
+
+Scheduler `bot:send-reminders` (ogni 15 min). Configurabile da pannello admin.
+
+1. Legge settings da tabella `bot_settings` (chiave `reminders`)
+2. Per ogni slot configurato (es. 24h prima, 2h prima):
+   - Trova prenotazioni nella finestra temporale (±8 min)
+   - Invia WhatsApp a player1 e player2
+   - Cache 48h per evitare duplicati
+3. Template: `reminder_giorno_prima` (≥12h) o `reminder_ore_prima` (<12h)
+
+---
+
 ## Parole Chiave Globali (fuori dall'onboarding)
 
 Intercettate all'inizio di `StateHandler::handle()` prima della macchina a stati:
@@ -382,6 +452,7 @@ Intercettate all'inizio di `StateHandler::handle()` prima della macchina a stati
 |---|---|
 | `menu`, `home`, `aiuto`, `help`, `start`, `ricomincia`, `0`, `torna al menu` | → MENU con pulsanti |
 | `prenotazioni`, `mie prenotaz`, `booking` | → mostra lista prenotazioni |
+| `feedback`, `valuta`, `vota`, `recensione`, `opinione` | → FEEDBACK (rating 1-5) |
 | `profilo`, `modifica profilo`, `aggiorna profilo`, `impostazioni` | → MODIFICA_PROFILO |
 
 Durante l'onboarding: keyword `indietro`, `back`, `torna`, `annulla`, `precedente`, `torna indietro` → step precedente.
@@ -533,6 +604,8 @@ Il `StateHandler` segnala effetti collaterali tramite flag sul DTO `BotResponse`
 | `withMatchmakingSearch(true)` | `triggerMatchmaking()`: trova avversario, crea Booking+Invitation, invia invito WA |
 | `withMatchAccepted(true)` | `confirmMatch()`: crea gcal event, booking=confirmed, notifica challenger |
 | `withMatchRefused(true)` | `refuseMatch()`: booking=cancelled, notifica challenger |
+| `withMatchResultToSave(true)` | `processMatchResult()`: aggiorna MatchResult, se entrambi confermati → ELO |
+| `withFeedbackToSave(true)` | `saveFeedback()`: salva rating + commento su tabella feedbacks |
 | `withPaymentRequired(true)` | Attualmente usato come flag — pagamento online non ancora integrato |
 
 ---
@@ -679,6 +752,61 @@ La dashboard usa 4 widget custom auto-discovered da `app/Filament/Widgets/`:
 | MatchResultResource | MatchResult | List + Edit | 4 |
 | FeedbackResource | Feedback | List + View | 5 |
 | PricingRuleResource | PricingRule | CRUD (reorderable) | 6 |
+
+---
+
+## React SPA — Admin Panel (`/panel`)
+
+### Stack Frontend
+- **Vite** + React 19 + TypeScript
+- **Tailwind CSS v4** + Shadcn/UI (base-ui)
+- **Recharts** per grafici
+- **Lucide** per icone
+- Build output: `public/panel/` con `.htaccess` per SPA routing
+- URL: `https://bot.lecercleclub.it/panel/`
+
+### Autenticazione
+- Session-based (stessa sessione di Filament, no Sanctum)
+- `POST /api/auth/login` → verifica credenziali + `is_admin`
+- `GET /api/auth/me` → check sessione
+- Middleware `auth` + `admin` su tutte le route `/api/admin/*`
+- Frontend: `AuthProvider` + `RequireAuth` wrapper
+
+### API Endpoints (`/api/admin/...`)
+
+| Endpoint | Metodo | Descrizione |
+|---|---|---|
+| `/dashboard/stats` | GET | Stats: prenotazioni, incasso, trend, giocatori, pending |
+| `/dashboard/weekly-chart` | GET | Grafico 7 giorni stacked per stato |
+| `/bookings` | GET/POST | Lista paginata / Crea prenotazione (auto-prezzo) |
+| `/bookings/{id}` | GET/PUT/DELETE | Dettaglio / Modifica / Annulla |
+| `/bookings/today` | GET | Prenotazioni di oggi |
+| `/bookings/calendar?from=&to=` | GET | Range date, raggruppate per giorno |
+| `/users` | GET | Lista paginata con filtri e sort |
+| `/users/search?q=` | GET | Autocomplete (max 10 risultati) |
+| `/users/{id}` | GET/PUT/DELETE | Dettaglio / Modifica / Elimina |
+| `/bot-sessions` | GET | Lista sessioni con chat history |
+| `/match-results` | GET | Lista risultati partite |
+| `/pricing-rules` | GET/POST | Lista / Crea regola |
+| `/pricing-rules/{id}` | PUT/DELETE | Modifica / Elimina |
+| `/settings` | GET | Tutte le impostazioni |
+| `/settings/{key}` | GET/PUT | Leggi / Aggiorna setting |
+
+### Tabella `bot_settings`
+```sql
+key        VARCHAR PRIMARY KEY
+value      JSON
+created_at TIMESTAMP
+updated_at TIMESTAMP
+```
+Chiave `reminders`: `{enabled: bool, slots: [{hours_before: int, enabled: bool}]}`
+
+### Scheduler Commands
+| Comando | Frequenza | Descrizione |
+|---|---|---|
+| `bot:send-result-requests` | Ogni 15 min | Chiede risultato 1h dopo partita |
+| `bot:retry-matchmaking` | Ogni 5 min | Riprova matchmaking per chi è in attesa |
+| `bot:send-reminders` | Ogni 15 min | Promemoria prenotazioni (configurabile) |
 
 ---
 

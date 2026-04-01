@@ -107,6 +107,10 @@ class TextGenerator
         'feedback_ricevuto'        => 'Grazie per il feedback! Ci aiuta a migliorare. 🙏',
         'feedback_dopo_partita'    => "Com'è andata al circolo? Lasciaci un voto da 1 a 5! La tua opinione conta.",
 
+        // Promemoria
+        'reminder_giorno_prima'    => 'Promemoria: hai una prenotazione domani — {slot}. Ti aspettiamo al circolo! 🎾',
+        'reminder_ore_prima'       => 'Ci siamo quasi! La tua prenotazione è tra {hours} ore — {slot}. A tra poco! 🎾',
+
         // Errore
         'errore_generico'          => 'Scusa, c\'è stato un problema. Riproviamo: quando vorresti giocare?',
     ];

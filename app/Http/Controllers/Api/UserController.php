@@ -71,6 +71,25 @@ class UserController extends Controller
         return response()->json(['message' => 'Giocatore eliminato.']);
     }
 
+    /**
+     * Ricerca veloce per autocomplete (max 10 risultati).
+     */
+    public function search(Request $request): AnonymousResourceCollection
+    {
+        $q = $request->input('q', '');
+
+        $users = User::where('is_admin', false)
+            ->where(function ($query) use ($q) {
+                $query->where('name', 'like', "%{$q}%")
+                      ->orWhere('phone', 'like', "%{$q}%");
+            })
+            ->orderBy('name')
+            ->limit(10)
+            ->get();
+
+        return UserResource::collection($users);
+    }
+
     public function latest(): AnonymousResourceCollection
     {
         $users = User::where('is_admin', false)

@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { Loader2, Clock, Zap, Info, Plus, Pencil, Trash2 } from 'lucide-react'
+import { useState, useCallback, useEffect } from 'react'
+import { Loader2, Zap, Info, Plus, Pencil, Trash2, Bell, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,9 @@ interface RuleForm {
   duration_minutes: string; price: string; price_per_hour: string; is_peak: boolean; priority: string
 }
 const emptyForm: RuleForm = { label: '', day_of_week: '', specific_date: '', start_time: '08:00', end_time: '22:00', duration_minutes: '', price: '', price_per_hour: '', is_peak: false, priority: '0' }
+
+interface ReminderSlot { hours_before: number; enabled: boolean }
+interface ReminderSettings { enabled: boolean; slots: ReminderSlot[] }
 
 export function Impostazioni() {
   const { data, loading, refetch } = useApi<{ data: PricingRule[] }>('/admin/pricing-rules')
@@ -73,29 +76,32 @@ export function Impostazioni() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Impostazioni</h1>
+        <p className="text-muted-foreground">Configurazione del circolo, prezzi e notifiche.</p>
+      </div>
+
+      {/* Reminder settings */}
+      <ReminderConfig />
+
+      {/* Pricing rules */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Impostazioni</h1>
-          <p className="text-muted-foreground">Regole prezzi e configurazione del circolo.</p>
-        </div>
-        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
+        <h2 className="text-lg font-semibold">Regole Prezzi</h2>
+        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700" size="sm">
           <Plus className="mr-1.5 h-4 w-4" /> Nuova regola
         </Button>
       </div>
 
       <Card className="overflow-hidden">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" /> Regole Prezzi</CardTitle>
-        </CardHeader>
         <CardContent className="p-0">
           {loading ? (
             <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : rules.length === 0 ? (
             <div className="py-16 text-center">
               <Info className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-              <p className="text-muted-foreground">Nessuna regola prezzi configurata.</p>
-              <p className="text-sm text-muted-foreground mt-1">Viene usato il prezzo di fallback (€20).</p>
+              <p className="text-muted-foreground">Nessuna regola prezzi.</p>
+              <p className="text-sm text-muted-foreground mt-1">Prezzo fallback: €20.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -169,8 +175,8 @@ export function Impostazioni() {
           </FormField>
           <FormField label="Ora inizio"><input type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} className={inputClass} /></FormField>
           <FormField label="Ora fine"><input type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)} className={inputClass} /></FormField>
-          <FormField label="Prezzo fisso (€)" hint="Per slot"><input type="number" step="0.01" value={form.price} onChange={e => set('price', e.target.value)} className={inputClass} /></FormField>
-          <FormField label="Prezzo/ora (€)" hint="Alternativo al fisso"><input type="number" step="0.01" value={form.price_per_hour} onChange={e => set('price_per_hour', e.target.value)} className={inputClass} /></FormField>
+          <FormField label="Prezzo fisso (€)"><input type="number" step="0.01" value={form.price} onChange={e => set('price', e.target.value)} className={inputClass} /></FormField>
+          <FormField label="Prezzo/ora (€)"><input type="number" step="0.01" value={form.price_per_hour} onChange={e => set('price_per_hour', e.target.value)} className={inputClass} /></FormField>
           <FormField label="Peak">
             <select value={form.is_peak ? 'true' : 'false'} onChange={e => set('is_peak', e.target.value === 'true')} className={selectClass}>
               <option value="false">No</option><option value="true">Sì</option>
@@ -180,12 +186,135 @@ export function Impostazioni() {
         </div>
       </FormDialog>
 
-      {/* Delete Dialog */}
       <FormDialog open={!!deleting} onClose={() => setDeleting(null)} title="Elimina regola"
         onSubmit={handleDelete} submitting={submitting} submitLabel="Elimina" destructive>
         <p className="text-sm">Eliminare la regola <strong>{deleting?.label ?? `#${deleting?.id}`}</strong>?</p>
       </FormDialog>
     </div>
+  )
+}
+
+// ── Reminder Config ──────────────────────────────────────────────────
+
+function ReminderConfig() {
+  const [settings, setSettings] = useState<ReminderSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [newHours, setNewHours] = useState('')
+
+  useEffect(() => {
+    apiFetch<{ key: string; value: ReminderSettings }>('/admin/settings/reminders')
+      .then(res => setSettings(res.value))
+      .catch(() => setSettings({ enabled: true, slots: [{ hours_before: 24, enabled: true }, { hours_before: 2, enabled: true }] }))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const save = async (updated: ReminderSettings) => {
+    setSettings(updated)
+    setSaving(true)
+    setSaved(false)
+    try {
+      await apiFetch('/admin/settings/reminders', { method: 'PUT', body: JSON.stringify({ value: updated }) })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch { /* */ }
+    setSaving(false)
+  }
+
+  const toggleEnabled = () => {
+    if (!settings) return
+    save({ ...settings, enabled: !settings.enabled })
+  }
+
+  const toggleSlot = (index: number) => {
+    if (!settings) return
+    const slots = [...settings.slots]
+    slots[index] = { ...slots[index], enabled: !slots[index].enabled }
+    save({ ...settings, slots })
+  }
+
+  const removeSlot = (index: number) => {
+    if (!settings) return
+    save({ ...settings, slots: settings.slots.filter((_, i) => i !== index) })
+  }
+
+  const addSlot = () => {
+    const hours = parseInt(newHours)
+    if (!settings || isNaN(hours) || hours < 1 || hours > 168) return
+    if (settings.slots.some(s => s.hours_before === hours)) return
+    save({ ...settings, slots: [...settings.slots, { hours_before: hours, enabled: true }].sort((a, b) => b.hours_before - a.hours_before) })
+    setNewHours('')
+  }
+
+  if (loading) return <Card><CardContent className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></CardContent></Card>
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="h-4 w-4" /> Promemoria prenotazioni
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {saved && <span className="text-xs text-emerald-600 flex items-center gap-1"><Check className="h-3 w-3" /> Salvato</span>}
+            {saving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            <button
+              onClick={toggleEnabled}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings?.enabled ? 'bg-emerald-600' : 'bg-gray-300'}`}
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${settings?.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Invia un messaggio WhatsApp ai giocatori prima della prenotazione. Il comando gira ogni 15 minuti.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!settings?.enabled ? (
+          <p className="text-sm text-muted-foreground text-center py-4">Promemoria disabilitati.</p>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {settings.slots.map((slot, i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg border p-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => toggleSlot(i)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${slot.enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                    >
+                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${slot.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                    </button>
+                    <div>
+                      <p className="text-sm font-medium">
+                        {slot.hours_before >= 24 ? `${Math.floor(slot.hours_before / 24)} giorno${slot.hours_before >= 48 ? 'i' : ''} prima` : `${slot.hours_before} ore prima`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {slot.hours_before >= 12 ? 'Messaggio: "Hai una prenotazione domani..."' : 'Messaggio: "Ci siamo quasi! Tra poco..."'}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={() => removeSlot(i)} className="rounded p-1 hover:bg-red-100 text-red-500 transition-colors">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input type="number" min="1" max="168" placeholder="Ore prima (es. 12)" value={newHours}
+                onChange={e => setNewHours(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addSlot()}
+                className={`${inputClass} max-w-48`} />
+              <Button onClick={addSlot} size="sm" variant="outline" disabled={!newHours}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Aggiungi
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

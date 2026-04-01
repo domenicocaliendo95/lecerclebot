@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\BotSessionController;
 use App\Http\Controllers\Api\MatchResultController;
 use App\Http\Controllers\Api\PricingRuleController;
+use App\Http\Controllers\Api\SettingsController;
 
 // ── WhatsApp Webhook (nessuna auth) ──────────────────────────────────
 Route::get('/webhook', [WhatsAppController::class, 'verify']);
@@ -32,6 +33,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 
     // Giocatori
     Route::get('/users/latest', [UserController::class, 'latest']);
+    Route::get('/users/search', [UserController::class, 'search']);
     Route::apiResource('users', UserController::class)->except(['store']);
 
     // Sessioni Bot
@@ -44,4 +46,9 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 
     // Pricing Rules
     Route::apiResource('pricing-rules', PricingRuleController::class);
+
+    // Settings
+    Route::get('/settings', [SettingsController::class, 'index']);
+    Route::get('/settings/{key}', [SettingsController::class, 'show']);
+    Route::put('/settings/{key}', [SettingsController::class, 'update']);
 });

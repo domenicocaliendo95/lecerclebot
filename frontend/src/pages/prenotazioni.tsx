@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { FormDialog, FormField, inputClass, selectClass } from '@/components/ui/form-dialog'
+import { PlayerSearch } from '@/components/ui/player-search'
 import { useApi, apiFetch } from '@/hooks/use-api'
 import type { Booking, PaginatedResponse } from '@/types/api'
 
@@ -201,11 +202,11 @@ export function Prenotazioni() {
       <FormDialog open={showCreate || !!editing} onClose={() => { setShowCreate(false); setEditing(null) }}
         title={editing ? 'Modifica prenotazione' : 'Nuova prenotazione'} onSubmit={handleSave} submitting={submitting}>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="ID Giocatore 1">
-            <input type="number" value={form.player1_id} onChange={e => set('player1_id', e.target.value)} className={inputClass} placeholder="ID utente" />
+          <FormField label="Giocatore 1">
+            <PlayerSearch value={form.player1_id} onChange={(id) => set('player1_id', id)} placeholder="Cerca giocatore..." />
           </FormField>
-          <FormField label="ID Giocatore 2" hint="Opzionale">
-            <input type="number" value={form.player2_id} onChange={e => set('player2_id', e.target.value)} className={inputClass} placeholder="ID utente" />
+          <FormField label="Giocatore 2" hint="Opzionale">
+            <PlayerSearch value={form.player2_id} onChange={(id) => set('player2_id', id)} placeholder="Cerca avversario..." />
           </FormField>
           <FormField label="Data">
             <input type="date" value={form.booking_date} onChange={e => set('booking_date', e.target.value)} className={inputClass} />

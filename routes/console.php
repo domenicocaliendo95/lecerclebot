@@ -33,3 +33,16 @@ Schedule::command('bot:retry-matchmaking')
     ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+ * Ogni 15 minuti: invia promemoria per prenotazioni imminenti.
+ * Orari configurabili da pannello admin (Impostazioni → Promemoria).
+ *
+ * Lanciabile manualmente:
+ *   php artisan bot:send-reminders
+ *   php artisan bot:send-reminders --dry-run
+ */
+Schedule::command('bot:send-reminders')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
