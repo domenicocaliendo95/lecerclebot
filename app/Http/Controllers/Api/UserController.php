@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -46,9 +47,30 @@ class UserController extends Controller
         return new UserResource($user);
     }
 
-    /**
-     * Ultimi giocatori registrati (per dashboard).
-     */
+    public function update(Request $request, User $user): UserResource
+    {
+        $validated = $request->validate([
+            'name'             => 'sometimes|string|max:60',
+            'phone'            => 'sometimes|string|max:20',
+            'is_fit'           => 'sometimes|boolean',
+            'fit_rating'       => 'nullable|string|max:10',
+            'self_level'       => 'nullable|in:neofita,dilettante,avanzato',
+            'age'              => 'nullable|integer|min:5|max:99',
+            'elo_rating'       => 'sometimes|integer|min:0',
+            'preferred_slots'  => 'nullable|array',
+        ]);
+
+        $user->update($validated);
+
+        return new UserResource($user->fresh());
+    }
+
+    public function destroy(User $user): JsonResponse
+    {
+        $user->delete();
+        return response()->json(['message' => 'Giocatore eliminato.']);
+    }
+
     public function latest(): AnonymousResourceCollection
     {
         $users = User::where('is_admin', false)

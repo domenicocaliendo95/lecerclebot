@@ -26,15 +26,13 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/dashboard/weekly-chart', [DashboardController::class, 'weeklyChart']);
 
     // Prenotazioni
-    Route::get('/bookings', [BookingController::class, 'index']);
     Route::get('/bookings/today', [BookingController::class, 'today']);
     Route::get('/bookings/calendar', [BookingController::class, 'calendar']);
-    Route::get('/bookings/{booking}', [BookingController::class, 'show']);
+    Route::apiResource('bookings', BookingController::class);
 
     // Giocatori
-    Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/latest', [UserController::class, 'latest']);
-    Route::get('/users/{user}', [UserController::class, 'show']);
+    Route::apiResource('users', UserController::class)->except(['store']);
 
     // Sessioni Bot
     Route::get('/bot-sessions', [BotSessionController::class, 'index']);
@@ -45,5 +43,5 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/match-results/{matchResult}', [MatchResultController::class, 'show']);
 
     // Pricing Rules
-    Route::get('/pricing-rules', [PricingRuleController::class, 'index']);
+    Route::apiResource('pricing-rules', PricingRuleController::class);
 });
