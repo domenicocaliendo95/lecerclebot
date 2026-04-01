@@ -190,6 +190,11 @@ class BotOrchestrator
         if ($response->needsMatchResultSave()) {
             $this->processMatchResult($session, $phone);
         }
+
+        // Salvataggio feedback
+        if ($response->needsFeedbackSave()) {
+            $this->saveFeedback($session, $phone);
+        }
     }
 
     /* ───────── Calendar ───────── */
@@ -714,6 +719,39 @@ class BotOrchestrator
 
         } catch (\Throwable $e) {
             Log::error('refuseMatch failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /* ───────── Feedback ───────── */
+
+    private function saveFeedback(BotSession $session, string $phone): void
+    {
+        try {
+            $rating    = $session->getData('feedback_rating');
+            $comment   = $session->getData('feedback_comment');
+            $bookingId = $session->getData('result_booking_id');
+
+            $user = \App\Models\User::where('phone', $phone)->first();
+
+            \App\Models\Feedback::create([
+                'user_id'    => $user?->id,
+                'booking_id' => $bookingId,
+                'type'       => $bookingId ? 'match_feedback' : 'general',
+                'rating'     => $rating,
+                'content'    => $comment ? [['question' => 'Commento libero', 'answer' => $comment]] : null,
+                'metadata'   => ['phone' => $phone, 'source' => 'bot'],
+                'is_read'    => false,
+            ]);
+
+            // Pulisci dati sessione
+            $session->mergeData([
+                'feedback_rating'  => null,
+                'feedback_comment' => null,
+            ]);
+
+            Log::info('Feedback salvato', ['phone' => $phone, 'rating' => $rating]);
+        } catch (\Throwable $e) {
+            Log::error('saveFeedback failed', ['phone' => $phone, 'error' => $e->getMessage()]);
         }
     }
 

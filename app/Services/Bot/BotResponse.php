@@ -18,6 +18,7 @@ class BotResponse
     private bool  $matchAccepted       = false;
     private bool  $matchRefused        = false;
     private bool  $matchResultToSave   = false;
+    private bool  $feedbackToSave      = false;
     private ?array $profileToSave      = null;
 
     private function __construct(
@@ -83,6 +84,12 @@ class BotResponse
         return $this;
     }
 
+    public function withFeedbackToSave(bool $flag): self
+    {
+        $this->feedbackToSave = $flag;
+        return $this;
+    }
+
     public function withProfileToSave(?array $profile): self
     {
         $this->profileToSave = $profile;
@@ -129,6 +136,11 @@ class BotResponse
     public function needsMatchResultSave(): bool
     {
         return $this->matchResultToSave;
+    }
+
+    public function needsFeedbackSave(): bool
+    {
+        return $this->feedbackToSave;
     }
 
     public function profileToSave(): ?array

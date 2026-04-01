@@ -37,6 +37,7 @@ enum BotState: string
     /* ── Risultati & Feedback ── */
     case INSERISCI_RISULTATO = 'INSERISCI_RISULTATO';
     case FEEDBACK            = 'FEEDBACK';
+    case FEEDBACK_COMMENTO   = 'FEEDBACK_COMMENTO';
 
     /* ── Gestione prenotazioni ── */
     case GESTIONE_PRENOTAZIONI = 'GESTIONE_PRENOTAZIONI';
@@ -80,8 +81,9 @@ enum BotState: string
             self::MODIFICA_PROFILO  => [self::MODIFICA_RISPOSTA, self::MENU],
             self::MODIFICA_RISPOSTA => [self::MENU, self::MODIFICA_RISPOSTA],
 
-            self::INSERISCI_RISULTATO => [self::MENU, self::INSERISCI_RISULTATO],
-            self::FEEDBACK            => [self::MENU, self::FEEDBACK],
+            self::INSERISCI_RISULTATO => [self::MENU, self::INSERISCI_RISULTATO, self::FEEDBACK],
+            self::FEEDBACK            => [self::FEEDBACK_COMMENTO, self::MENU],
+            self::FEEDBACK_COMMENTO   => [self::MENU, self::FEEDBACK_COMMENTO],
         };
     }
 

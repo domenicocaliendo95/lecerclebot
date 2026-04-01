@@ -48,6 +48,14 @@ class StateHandler
                 return $this->handleMostraPrenotazioni($session, $user);
             }
 
+            if ($user !== null && $this->isFeedbackKeyword($normalized)) {
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('chiedi_feedback_rating', $session->persona()),
+                    BotState::FEEDBACK,
+                    ['1', '2', '3', '4', '5'],
+                );
+            }
+
             if ($user !== null && $this->isProfiloKeyword($normalized)) {
                 return BotResponse::make(
                     $this->textGenerator->rephrase('modifica_profilo_scelta', $session->persona()),
@@ -87,6 +95,7 @@ class StateHandler
             BotState::MODIFICA_RISPOSTA       => $this->handleModificaRisposta($session, $input),
             BotState::INSERISCI_RISULTATO     => $this->handleInserisciRisultato($session, $input),
             BotState::FEEDBACK                => $this->handleFeedback($session, $input),
+            BotState::FEEDBACK_COMMENTO       => $this->handleFeedbackCommento($session, $input),
         };
     }
 
@@ -1069,21 +1078,91 @@ class StateHandler
             'result_score'   => $score,
         ]);
 
+        // Dopo il risultato, chiedi feedback
         return BotResponse::make(
-            $this->textGenerator->rephrase('risultato_ricevuto', $session->persona()),
-            BotState::MENU,
-            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            $this->textGenerator->rephrase('risultato_ricevuto', $session->persona())
+                . "\n\n" . $this->textGenerator->rephrase('feedback_dopo_partita', $session->persona()),
+            BotState::FEEDBACK,
+            ['1', '2', '3', '4', '5'],
         )->withMatchResultToSave(true);
     }
 
     private function handleFeedback(BotSession $session, string $input): BotResponse
     {
-        // Placeholder — implementazione futura
+        // Step 1: raccolta rating (1-5)
+        $rating = $this->parseRating($input);
+
+        if ($rating === null) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('feedback_rating_non_valido', $session->persona()),
+                BotState::FEEDBACK,
+                ['1', '2', '3', '4', '5'],
+            );
+        }
+
+        $session->mergeData(['feedback_rating' => $rating]);
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('chiedi_feedback_commento', $session->persona()),
+            BotState::FEEDBACK_COMMENTO,
+        );
+    }
+
+    private function handleFeedbackCommento(BotSession $session, string $input): BotResponse
+    {
+        $normalized = mb_strtolower(trim($input));
+
+        // "no", "skip", "niente" → salva senza commento
+        $skip = in_array($normalized, ['no', 'skip', 'niente', 'nulla', 'passo', 'salta'], true);
+        $comment = $skip ? null : trim($input);
+
+        $session->mergeData(['feedback_comment' => $comment]);
+
         return BotResponse::make(
             $this->textGenerator->rephrase('feedback_ricevuto', $session->persona()),
             BotState::MENU,
             ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
-        );
+        )->withFeedbackToSave(true);
+    }
+
+    private function parseRating(string $input): ?int
+    {
+        $normalized = mb_strtolower(trim($input));
+
+        // Numero diretto
+        if (preg_match('/\b([1-5])\b/', $normalized, $m)) {
+            return (int) $m[1];
+        }
+
+        // Parole
+        $map = [
+            'uno' => 1, 'una' => 1,
+            'due' => 2,
+            'tre' => 3,
+            'quattro' => 4,
+            'cinque' => 5,
+        ];
+
+        foreach ($map as $word => $val) {
+            if (str_contains($normalized, $word)) {
+                return $val;
+            }
+        }
+
+        // Stelle/emoji
+        $stars = substr_count($input, '⭐') + substr_count($input, '★') + substr_count($input, '🌟');
+        if ($stars >= 1 && $stars <= 5) {
+            return $stars;
+        }
+
+        return null;
+    }
+
+    private function isFeedbackKeyword(string $input): bool
+    {
+        return in_array($input, ['feedback', 'valuta', 'vota', 'recensione', 'opinione'], true)
+            || str_contains($input, 'lascia feedback')
+            || str_contains($input, 'dai feedback');
     }
 
     /* ═══════════════════════════════════════════════════════════════

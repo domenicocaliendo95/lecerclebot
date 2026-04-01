@@ -100,9 +100,12 @@ class TextGenerator
         'elo_aggiornato_vinto'     => 'ELO aggiornato! Ottima vittoria. Eri a {elo_before}, ora sei a {elo_after} (+{delta}). 🏆',
         'elo_aggiornato_perso'     => 'ELO aggiornato. Eri a {elo_before}, ora sei a {elo_after} ({delta}). Alla prossima! 💪',
 
-        // Feedback (placeholder per flusso futuro)
-        'chiedi_feedback'          => 'Come è andata la tua esperienza al circolo? Lasciaci un feedback!',
+        // Feedback
+        'chiedi_feedback_rating'   => "Come valuteresti la tua esperienza al circolo? Dai un voto da 1 a 5.\n\n⭐ 1 = Pessima\n⭐⭐⭐ 3 = Nella media\n⭐⭐⭐⭐⭐ 5 = Ottima",
+        'chiedi_feedback_commento' => 'Grazie! Vuoi aggiungere un commento? Scrivi pure, oppure scrivi "no" per saltare.',
+        'feedback_rating_non_valido' => 'Non ho capito. Dammi un voto da 1 a 5 (es. "4" o "quattro stelle").',
         'feedback_ricevuto'        => 'Grazie per il feedback! Ci aiuta a migliorare. 🙏',
+        'feedback_dopo_partita'    => "Com'è andata al circolo? Lasciaci un voto da 1 a 5! La tua opinione conta.",
 
         // Errore
         'errore_generico'          => 'Scusa, c\'è stato un problema. Riproviamo: quando vorresti giocare?',
