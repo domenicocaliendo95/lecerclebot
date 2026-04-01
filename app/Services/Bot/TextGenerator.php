@@ -41,30 +41,30 @@ class TextGenerator
         'registrazione_completa' => 'Ottimo {name}, sei nel sistema! 🎾 Scrivi "menu" per il menu principale.',
 
         // Menu
-        'menu_non_capito'        => 'Scusa, non ho capito. Scegli una delle opzioni o scrivi "prenotazioni" per gestire le tue prenotazioni.',
-        'menu_ritorno'           => 'Eccomi! Scegli un\'opzione. Scrivi "prenotazioni" per le tue prenotazioni o "profilo" per modificare i tuoi dati.',
+        'menu_non_capito'        => "Non ho capito la tua scelta. Ecco cosa puoi fare:\n\n🎾 *Prenota campo* — hai già un compagno di gioco? Scegli data e ora e il campo è tuo.\n🔍 *Trovami avversario* — cerco io un avversario del tuo livello e organizzo tutto.\n🎯 *Sparapalline* — prenota il campo con la macchina sparapalline per allenarti da solo.\n\nOppure scrivi \"prenotazioni\" per gestire le tue prenotazioni o \"profilo\" per i tuoi dati.",
+        'menu_ritorno'           => "Cosa vuoi fare?\n\n🎾 *Prenota campo* — hai già un compagno? Scegli data e ora.\n🔍 *Trovami avversario* — cerco io qualcuno del tuo livello.\n🎯 *Sparapalline* — allenamento da solo con la macchina.\n\nPuoi anche scrivere \"prenotazioni\" per le tue prenotazioni o \"profilo\" per modificare i tuoi dati.",
 
         // Prenotazione
-        'chiedi_quando'            => 'Quando vorresti giocare? Dimmi giorno e ora (es. "domani alle 18", "sabato mattina", "28 marzo alle 17").',
-        'chiedi_quando_match'      => 'Quando saresti disponibile per una partita? Dimmi giorno e ora.',
-        'chiedi_quando_sparapalline' => 'Quando vorresti usare lo sparapalline? Dimmi giorno e ora.',
-        'chiedi_durata'            => 'Per quanto tempo vuoi il campo?',
-        'durata_non_capita'        => 'Non ho capito la durata. Scegli tra 1 ora, 1,5 ore o 2 ore.',
+        'chiedi_quando'            => "Ottimo, prenotiamo il campo!\n\nDimmi giorno e ora in cui vorresti giocare.\nEsempi: \"domani alle 18\", \"sabato mattina\", \"28 aprile alle 17\".",
+        'chiedi_quando_match'      => "Perfetto, cerco un avversario del tuo livello!\n\nDimmi giorno e ora in cui saresti disponibile.\nEsempi: \"domani alle 18\", \"sabato pomeriggio\", \"28 aprile alle 17\".",
+        'chiedi_quando_sparapalline' => "Allenamento con lo sparapalline, ottima scelta!\n\nDimmi giorno e ora in cui vorresti il campo.\nEsempi: \"domani alle 18\", \"sabato mattina\", \"28 aprile alle 17\".",
+        'chiedi_durata'            => "Per quanto tempo ti serve il campo?\n\n{tariffe}\n\nScegli la durata:",
+        'durata_non_capita'        => 'Non ho capito la durata. Scegli tra le opzioni qui sotto.',
         'data_nel_passato'         => 'La data che hai indicato è già passata! Scegli una data futura.',
         'data_non_capita'          => 'Non ho capito quando vorresti venire. Prova con qualcosa tipo "domani alle 17" o "sabato pomeriggio".',
         'verifico_disponibilita'   => 'Un attimo, verifico la disponibilità... ⏳',
-        'slot_disponibile'         => 'Ottima notizia! {slot} ({duration}) è libero — €{price}. Confermo la prenotazione?',
+        'slot_disponibile'         => "Il campo è libero!\n\n📅 {slot}\n⏱ Durata: {duration}\n💰 Prezzo: €{price}\n\nVuoi prenotare questo slot?",
         'slot_non_disponibile'     => 'Quell\'orario è occupato. Ho trovato questi slot liberi nello stesso giorno:',
         'nessuna_alternativa'      => 'Mi dispiace, non ci sono slot liberi in quel giorno. Vuoi provare un altro giorno?',
         'proposta_non_capita'      => 'Non ho capito. Vuoi prenotare questo slot oppure cambiare orario?',
 
         // Conferma
-        'riepilogo_prenotazione'   => 'Riepilogo: {slot} · {duration} · €{price}. Come vuoi pagare?',
+        'riepilogo_prenotazione'   => "Riepilogo prenotazione:\n\n📅 {slot}\n⏱ Durata: {duration}\n💰 Prezzo: €{price}\n\nCome preferisci pagare?",
         'scegli_pagamento'         => 'Vuoi pagare online o di persona?',
         'conferma_non_capita'      => 'Scusa, non ho capito. Vuoi confermare, pagare online, o annullare?',
         'prenotazione_annullata'   => 'Prenotazione annullata. Nessun problema! Cosa vuoi fare?',
         'link_pagamento'           => 'Ecco il link per il pagamento. Una volta completato, la prenotazione sarà confermata!',
-        'prenotazione_confermata'  => 'Prenotato! Campo confermato per {slot} ({duration}). ✅ Ti aspettiamo al circolo!',
+        'prenotazione_confermata'  => "Prenotazione confermata! ✅\n\n📅 {slot}\n⏱ Durata: {duration}\n\nTi aspettiamo al circolo!",
 
         // Modifica profilo
         'modifica_profilo_scelta' => 'Cosa vuoi modificare nel tuo profilo?',
@@ -123,7 +123,22 @@ class TextGenerator
             $reply  = $this->gemini->generate($prompt);
             $clean  = $this->cleanAiReply($reply);
 
-            return !empty($clean) ? $clean : $fallback;
+            if (empty($clean)) {
+                return $fallback;
+            }
+
+            // Se l'AI ha troncato (output molto più corto del fallback con variabili),
+            // usa il fallback per evitare messaggi tagliati
+            if (mb_strlen($clean) < mb_strlen($fallback) * 0.6) {
+                Log::info('TextGenerator: AI reply too short, using fallback', [
+                    'template'   => $templateId,
+                    'ai_len'     => mb_strlen($clean),
+                    'fallback_len' => mb_strlen($fallback),
+                ]);
+                return $fallback;
+            }
+
+            return $clean;
         } catch (\Throwable $e) {
             Log::warning('TextGenerator: AI rephrase fallback', [
                 'template' => $templateId,
@@ -403,10 +418,13 @@ PROMPT;
         return <<<PROMPT
 Sei {$persona}, assistente virtuale del circolo Le Cercle Tennis Club.
 Tono: amichevole, diretto, sportivo. Parli in italiano.
-Massimo 3 righe. No emoji eccessive (max 1).
+No emoji eccessive (max 1).
 
-Riformula questo messaggio mantenendo ESATTAMENTE lo stesso significato e le stesse informazioni.
-Non aggiungere domande extra. Non cambiare il senso.
+Riformula questo messaggio mantenendo ESATTAMENTE lo stesso significato e TUTTE le informazioni.
+REGOLE TASSATIVE:
+- NON troncare MAI il messaggio: ogni dato (date, orari, prezzi, nomi) DEVE apparire nella risposta.
+- NON aggiungere domande extra. NON cambiare il senso.
+- Se il messaggio contiene numeri, prezzi o orari, riportali TUTTI identici.
 
 Messaggio originale: "{$text}"
 

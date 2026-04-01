@@ -40,7 +40,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
                     BotState::MENU,
-                    ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                    ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
                 );
             }
 
@@ -238,7 +238,7 @@ class StateHandler
                 'name' => $profile['name'] ?? 'Giocatore',
             ]),
             BotState::ONBOARD_COMPLETO,
-            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
         )->withProfileToSave($profile);
     }
 
@@ -262,26 +262,10 @@ class StateHandler
     {
         $normalized = mb_strtolower(trim($input));
 
-        if (str_contains($normalized, 'avversario') && str_contains($normalized, 'già')) {
-            // "Ho già un avversario" → prenotazione diretta
-            $session->mergeData(['booking_type' => 'con_avversario']);
-
-            return BotResponse::make(
-                $this->textGenerator->rephrase('chiedi_quando', $session->persona()),
-                BotState::SCEGLI_QUANDO,
-            );
-        }
-
-        if (str_contains($normalized, 'trovami') || str_contains($normalized, 'trova')) {
-            $session->mergeData(['booking_type' => 'matchmaking']);
-
-            return BotResponse::make(
-                $this->textGenerator->rephrase('chiedi_quando_match', $session->persona()),
-                BotState::SCEGLI_QUANDO,
-            );
-        }
-
-        if (str_contains($normalized, 'sparapalline') || str_contains($normalized, 'noleggio')) {
+        // ⚠️ "Sparapalline" PRIMA di "trova" — evita che "trovare sparapalline" attivi matchmaking
+        if (str_contains($normalized, 'sparapalline') || str_contains($normalized, 'spara palline')
+            || str_contains($normalized, 'macchina') || str_contains($normalized, 'da solo')
+            || str_contains($normalized, 'allenamento') || str_contains($normalized, 'allenarmi')) {
             $session->mergeData(['booking_type' => 'sparapalline']);
 
             return BotResponse::make(
@@ -290,11 +274,33 @@ class StateHandler
             );
         }
 
+        if (str_contains($normalized, 'avversario') && str_contains($normalized, 'già')
+            || str_contains($normalized, 'prenota campo') || str_contains($normalized, 'prenota')
+            || str_contains($normalized, 'ho un compagno') || str_contains($normalized, 'con un amico')) {
+            $session->mergeData(['booking_type' => 'con_avversario']);
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('chiedi_quando', $session->persona()),
+                BotState::SCEGLI_QUANDO,
+            );
+        }
+
+        if (str_contains($normalized, 'trovami') || str_contains($normalized, 'trova')
+            || str_contains($normalized, 'cerca') || str_contains($normalized, 'matchmaking')
+            || str_contains($normalized, 'avversario')) {
+            $session->mergeData(['booking_type' => 'matchmaking']);
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('chiedi_quando_match', $session->persona()),
+                BotState::SCEGLI_QUANDO,
+            );
+        }
+
         // Input non riconosciuto: riproponi il menu
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_non_capito', $session->persona()),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
         );
     }
 
@@ -338,13 +344,28 @@ class StateHandler
             );
         }
 
+        $durations = PricingRule::availableDurations();
         $durationButtons = array_map(
             fn(int $m) => PricingRule::durationLabel($m),
-            PricingRule::availableDurations()
+            $durations
         );
 
+        // Calcola tariffe per ogni durata disponibile
+        $startTime = \Carbon\Carbon::parse(
+            $session->getData('requested_date') . ' ' . ($session->getData('requested_time') ?? '08:00'),
+            'Europe/Rome'
+        );
+        $tariffLines = [];
+        foreach ($durations as $min) {
+            $price = PricingRule::getPriceForSlot($startTime, $min);
+            $tariffLines[] = '• ' . PricingRule::durationLabel($min) . ' → €' . number_format($price, 0);
+        }
+        $tariffe = implode("\n", $tariffLines);
+
         return BotResponse::make(
-            $this->textGenerator->rephrase('chiedi_durata', $session->persona()),
+            $this->textGenerator->rephrase('chiedi_durata', $session->persona(), [
+                'tariffe' => $tariffe,
+            ]),
             BotState::SCEGLI_DURATA,
             $durationButtons,
         );
@@ -538,7 +559,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('prenotazione_annullata', $session->persona()),
                     BotState::MENU,
-                    ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                    ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
                 );
             }
 
@@ -556,7 +577,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('prenotazione_annullata', $session->persona()),
                 BotState::MENU,
-                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
             );
         }
 
@@ -614,7 +635,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
         );
     }
 
@@ -788,7 +809,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('menu_ritorno', $persona),
                     BotState::MENU,
-                    ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                    ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
                 );
         }
 
@@ -799,7 +820,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('profilo_aggiornato', $persona),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
         )->withProfileToSave($merged);
     }
 
@@ -824,7 +845,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('nessuna_prenotazione', $session->persona()),
                 BotState::MENU,
-                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
             );
         }
 
@@ -932,7 +953,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('prenotazione_cancellata_ok', $session->persona()),
                 BotState::MENU,
-                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
             )->withBookingToCancel(true);
         }
 
@@ -940,7 +961,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
         );
     }
 
@@ -957,7 +978,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
                 BotState::MENU,
-                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
             );
         }
 
@@ -987,7 +1008,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('match_rifiutato_opponent', $session->persona()),
                 BotState::MENU,
-                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
             )->withMatchRefused(true);
         }
 
@@ -1024,7 +1045,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('risultato_non_giocata', $session->persona()),
                 BotState::MENU,
-                ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
             )->withMatchResultToSave(true);
         }
 
@@ -1051,7 +1072,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('risultato_ricevuto', $session->persona()),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
         )->withMatchResultToSave(true);
     }
 
@@ -1061,7 +1082,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('feedback_ricevuto', $session->persona()),
             BotState::MENU,
-            ['Ho già un avversario', 'Trovami avversario', 'Sparapalline'],
+            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
         );
     }
 

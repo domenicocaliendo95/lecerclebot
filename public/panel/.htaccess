@@ -1,0 +1,12 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /panel/
+
+    # Se il file o la directory esiste, servilo direttamente
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Altrimenti servi index.html (SPA client-side routing)
+    RewriteRule ^ index.html [L]
+</IfModule>
