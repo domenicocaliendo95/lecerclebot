@@ -2,15 +2,15 @@
 
 namespace App\Services\Bot;
 
+use App\Models\BotMessage;
 use App\Services\GeminiService;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
  * UNICO punto di contatto con l'AI (Gemini).
  *
  * Responsabilità:
- * 1. Riformulare testi predefiniti in modo naturale e vario
+ * 1. Rendere i messaggi template dal DB (con variabili)
  * 2. Interpretare date/ore in linguaggio naturale
  *
  * NON decide MAI transizioni di stato o logica di business.
@@ -22,138 +22,86 @@ class TextGenerator
     ) {}
 
     /**
-     * Template dei messaggi con testo di fallback.
-     * La chiave è l'ID del template; il valore è il testo base.
+     * Fallback hardcoded — usati SOLO se il DB non ha il messaggio.
      */
-    private const TEMPLATES = [
-        // Onboarding
+    private const FALLBACKS = [
         'nome_non_valido'        => 'Scusa, non ho capito il tuo nome. Puoi ripetermelo?',
-        'chiedi_fit'             => 'Piacere {name}! Sei tesserato FIT? La tessera ci serve per calcolare il tuo livello di gioco.',
+        'chiedi_fit'             => 'Piacere {name}! Sei tesserato FIT?',
         'fit_non_capito'         => 'Scusa, non ho capito. Sei tesserato FIT oppure no?',
-        'chiedi_classifica'      => 'Ottimo! Qual è la tua classifica FIT? (es. 4.1, 3.3, NC — la trovi sulla tessera)',
+        'chiedi_classifica'      => 'Ottimo! Qual è la tua classifica FIT? (es. 4.1, 3.3, NC)',
         'classifica_non_valida'  => 'Non ho riconosciuto la classifica. Prova con il formato tipo 4.1, 3.3 oppure NC.',
         'chiedi_livello'         => 'Nessun problema! Come definiresti il tuo livello di gioco?',
         'livello_non_valido'     => 'Non ho capito il livello. Scegli tra Neofita, Dilettante o Avanzato.',
-        'chiedi_eta'             => 'Quanti anni hai? Ci serve per trovare avversari della tua fascia d\'età.',
+        'chiedi_eta'             => 'Quanti anni hai?',
         'eta_non_valida'         => 'Scusa, dimmi la tua età con un numero (es. 30).',
         'chiedi_fascia_oraria'   => 'Ultima cosa: in che fascia oraria preferisci giocare di solito?',
         'fascia_non_valida'      => 'Non ho capito. Preferisci mattina, pomeriggio o sera?',
-        'registrazione_completa' => 'Ottimo {name}, sei nel sistema! 🎾 Scrivi "menu" per il menu principale.',
-
-        // Menu
-        'menu_non_capito'        => "Non ho capito la tua scelta. Ecco cosa puoi fare:\n\n🎾 *Prenota campo* — hai già un compagno di gioco? Scegli data e ora e il campo è tuo.\n🔍 *Trovami avversario* — cerco io un avversario del tuo livello e organizzo tutto.\n🎯 *Sparapalline* — prenota il campo con la macchina sparapalline per allenarti da solo.\n\nOppure scrivi \"prenotazioni\" per gestire le tue prenotazioni o \"profilo\" per i tuoi dati.",
-        'menu_ritorno'           => "Cosa vuoi fare?\n\n🎾 *Prenota campo* — hai già un compagno? Scegli data e ora.\n🔍 *Trovami avversario* — cerco io qualcuno del tuo livello.\n🎯 *Sparapalline* — allenamento da solo con la macchina.\n\nPuoi anche scrivere \"prenotazioni\" per le tue prenotazioni o \"profilo\" per modificare i tuoi dati.",
-
-        // Prenotazione
-        'chiedi_quando'            => "Ottimo, prenotiamo il campo!\n\nDimmi giorno e ora in cui vorresti giocare.\nEsempi: \"domani alle 18\", \"sabato mattina\", \"28 aprile alle 17\".",
-        'chiedi_quando_match'      => "Perfetto, cerco un avversario del tuo livello!\n\nDimmi giorno e ora in cui saresti disponibile.\nEsempi: \"domani alle 18\", \"sabato pomeriggio\", \"28 aprile alle 17\".",
-        'chiedi_quando_sparapalline' => "Allenamento con lo sparapalline, ottima scelta!\n\nDimmi giorno e ora in cui vorresti il campo.\nEsempi: \"domani alle 18\", \"sabato mattina\", \"28 aprile alle 17\".",
-        'chiedi_durata'            => "Per quanto tempo ti serve il campo?\n\n{tariffe}\n\nScegli la durata:",
-        'durata_non_capita'        => 'Non ho capito la durata. Scegli tra le opzioni qui sotto.',
-        'data_nel_passato'         => 'La data che hai indicato è già passata! Scegli una data futura.',
-        'data_non_capita'          => 'Non ho capito quando vorresti venire. Prova con qualcosa tipo "domani alle 17" o "sabato pomeriggio".',
-        'verifico_disponibilita'   => 'Un attimo, verifico la disponibilità... ⏳',
-        'slot_disponibile'         => "Il campo è libero!\n\n📅 {slot}\n⏱ Durata: {duration}\n💰 Prezzo: €{price}\n\nVuoi prenotare questo slot?",
-        'slot_non_disponibile'     => 'Quell\'orario è occupato. Ho trovato questi slot liberi nello stesso giorno:',
-        'nessuna_alternativa'      => 'Mi dispiace, non ci sono slot liberi in quel giorno. Vuoi provare un altro giorno?',
-        'proposta_non_capita'      => 'Non ho capito. Vuoi prenotare questo slot oppure cambiare orario?',
-
-        // Conferma
-        'riepilogo_prenotazione'   => "Riepilogo prenotazione:\n\n📅 {slot}\n⏱ Durata: {duration}\n💰 Prezzo: €{price}\n\nCome preferisci pagare?",
-        'scegli_pagamento'         => 'Vuoi pagare online o di persona?',
-        'conferma_non_capita'      => 'Scusa, non ho capito. Vuoi confermare, pagare online, o annullare?',
-        'prenotazione_annullata'   => 'Prenotazione annullata. Nessun problema! Cosa vuoi fare?',
-        'link_pagamento'           => 'Ecco il link per il pagamento. Una volta completato, la prenotazione sarà confermata!',
-        'prenotazione_confermata'  => "Prenotazione confermata! ✅\n\n📅 {slot}\n⏱ Durata: {duration}\n\nTi aspettiamo al circolo!",
-
-        // Modifica profilo
+        'registrazione_completa' => 'Ottimo {name}, sei nel sistema! 🎾',
+        'menu_non_capito'        => 'Non ho capito la tua scelta.',
+        'menu_ritorno'           => 'Cosa vuoi fare?',
+        'chiedi_quando'          => 'Dimmi giorno e ora in cui vorresti giocare.',
+        'chiedi_quando_match'    => 'Dimmi giorno e ora in cui saresti disponibile.',
+        'chiedi_quando_sparapalline' => 'Dimmi giorno e ora in cui vorresti il campo.',
+        'chiedi_durata'          => 'Per quanto tempo ti serve il campo?',
+        'durata_non_capita'      => 'Non ho capito la durata. Scegli tra le opzioni qui sotto.',
+        'data_nel_passato'       => 'La data che hai indicato è già passata! Scegli una data futura.',
+        'data_non_capita'        => 'Non ho capito quando vorresti venire. Prova con "domani alle 17" o "sabato pomeriggio".',
+        'verifico_disponibilita' => 'Un attimo, verifico la disponibilità... ⏳',
+        'slot_disponibile'       => 'Il campo è libero! {slot} — Prezzo: €{price}. Vuoi prenotare?',
+        'slot_non_disponibile'   => "Quell'orario è occupato. Ho trovato questi slot liberi:",
+        'nessuna_alternativa'    => 'Mi dispiace, non ci sono slot liberi in quel giorno.',
+        'proposta_non_capita'    => 'Non ho capito. Vuoi prenotare questo slot oppure cambiare orario?',
+        'riepilogo_prenotazione' => 'Riepilogo: {slot} — €{price}. Come preferisci pagare?',
+        'scegli_pagamento'       => 'Vuoi pagare online o di persona?',
+        'conferma_non_capita'    => 'Scusa, non ho capito. Vuoi confermare, pagare online, o annullare?',
+        'prenotazione_annullata' => 'Prenotazione annullata. Cosa vuoi fare?',
+        'link_pagamento'         => 'Ecco il link per il pagamento.',
+        'prenotazione_confermata' => 'Prenotazione confermata! ✅ {slot}. Ti aspettiamo!',
         'modifica_profilo_scelta' => 'Cosa vuoi modificare nel tuo profilo?',
-        'profilo_aggiornato'      => 'Perfetto, profilo aggiornato! Cosa vuoi fare?',
-        'chiedi_nome_nuovo'       => 'Come ti chiami?',
-        'indietro_onboarding'     => 'Nessun problema, torniamo al passo precedente.',
-
-        // Gestione prenotazioni
-        'nessuna_prenotazione'       => 'Non hai prenotazioni attive al momento. Cosa vuoi fare?',
-        'scegli_prenotazione'        => 'Ecco le tue prossime prenotazioni. Quale vuoi gestire?',
-        'azione_prenotazione'        => 'Prenotazione: {slot}. Cosa vuoi fare?',
-        'prenotazione_cancellata_ok' => 'Prenotazione annullata. A presto in campo! 🎾 Cosa vuoi fare?',
-        'prenotazione_modifica_quando' => 'Ok! Quando vorresti spostare la prenotazione? Dimmi il nuovo giorno e orario.',
-
-        // Matchmaking
-        'matchmaking_attesa'              => 'Sto cercando il tuo avversario ideale. Ti avviso appena trovo qualcuno! 🔍',
-        'cerca_avversario'                => 'Perfetto! Cerco un avversario per {slot}. Ti scrivo appena lo trovo! 🔍',
-        'nessun_avversario'               => 'Non ho trovato avversari disponibili per questo slot. Vuoi provare un altro orario?',
-        'invito_match'                    => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Accetti?',
-        'invito_match_disparita'          => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Nota: c\'è una differenza di livello ({delta} ELO). Accetti?',
-        'match_trovato_disparita'         => 'Ho trovato un avversario! C\'è una differenza di livello ({delta} ELO). Ti ho inviato l\'invito. ⚡',
-        'match_accettato_challenger' => '{opponent_name} ha accettato! Prenotazione confermata per {slot}. ✅',
-        'match_rifiutato_challenger' => '{opponent_name} non è disponibile. Cerca un altro avversario?',
-        'match_accettato_opponent'   => 'Perfetto! Hai accettato. Ci vediamo il {slot}! 🎾',
-        'match_rifiutato_opponent'   => 'Ok, sfida rifiutata. A presto al circolo! 🎾',
-
-        // Risultati partita
-        'chiedi_risultato'         => 'Com\'è andata la partita di {slot}? Inserisci il risultato! 🎾',
-        'risultato_ricevuto'       => 'Grazie! Risultato registrato. Ti avviso appena anche l\'avversario conferma.',
-        'risultato_non_capito'     => 'Non ho capito. Hai vinto, hai perso, o la partita non si è giocata?',
-        'risultato_non_giocata'    => 'Ok, partita segnata come non giocata. A presto in campo! 🎾',
-        'risultato_discordante'    => 'Il tuo avversario ha dichiarato un risultato diverso. L\'admin verificherà.',
-        'elo_aggiornato_vinto'     => 'ELO aggiornato! Ottima vittoria. Eri a {elo_before}, ora sei a {elo_after} (+{delta}). 🏆',
-        'elo_aggiornato_perso'     => 'ELO aggiornato. Eri a {elo_before}, ora sei a {elo_after} ({delta}). Alla prossima! 💪',
-
-        // Feedback
-        'chiedi_feedback_rating'   => "Come valuteresti la tua esperienza al circolo? Dai un voto da 1 a 5.\n\n⭐ 1 = Pessima\n⭐⭐⭐ 3 = Nella media\n⭐⭐⭐⭐⭐ 5 = Ottima",
-        'chiedi_feedback_commento' => 'Grazie! Vuoi aggiungere un commento? Scrivi pure, oppure scrivi "no" per saltare.',
-        'feedback_rating_non_valido' => 'Non ho capito. Dammi un voto da 1 a 5 (es. "4" o "quattro stelle").',
-        'feedback_ricevuto'        => 'Grazie per il feedback! Ci aiuta a migliorare. 🙏',
-        'feedback_dopo_partita'    => "Com'è andata al circolo? Lasciaci un voto da 1 a 5! La tua opinione conta.",
-
-        // Promemoria
-        'reminder_giorno_prima'    => 'Promemoria: hai una prenotazione domani — {slot}. Ti aspettiamo al circolo! 🎾',
-        'reminder_ore_prima'       => 'Ci siamo quasi! La tua prenotazione è tra {hours} ore — {slot}. A tra poco! 🎾',
-
-        // Errore
-        'errore_generico'          => 'Scusa, c\'è stato un problema. Riproviamo: quando vorresti giocare?',
+        'profilo_aggiornato'     => 'Perfetto, profilo aggiornato! Cosa vuoi fare?',
+        'chiedi_nome_nuovo'      => 'Come ti chiami?',
+        'indietro_onboarding'    => 'Nessun problema, torniamo al passo precedente.',
+        'nessuna_prenotazione'   => 'Non hai prenotazioni attive al momento.',
+        'scegli_prenotazione'    => 'Ecco le tue prossime prenotazioni. Quale vuoi gestire?',
+        'azione_prenotazione'    => 'Prenotazione: {slot}. Cosa vuoi fare?',
+        'prenotazione_cancellata_ok' => 'Prenotazione annullata. A presto! 🎾',
+        'prenotazione_modifica_quando' => 'Quando vorresti spostare la prenotazione?',
+        'matchmaking_attesa'     => 'Sto cercando il tuo avversario ideale. Ti avviso! 🔍',
+        'cerca_avversario'       => 'Cerco un avversario per {slot}. Ti scrivo appena lo trovo! 🔍',
+        'nessun_avversario'      => 'Nessun avversario disponibile. Vuoi provare un altro orario?',
+        'invito_match'           => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Accetti?',
+        'invito_match_disparita' => 'Ciao {opponent_name}! {challenger_name} ti sfida il {slot}. Differenza: {delta} ELO. Accetti?',
+        'match_trovato_disparita' => 'Avversario trovato! Differenza: {delta} ELO. Invito inviato. ⚡',
+        'match_accettato_challenger' => '{opponent_name} ha accettato! Confermata per {slot}. ✅',
+        'match_rifiutato_challenger' => '{opponent_name} non è disponibile. Cerca un altro?',
+        'match_accettato_opponent' => 'Hai accettato. Ci vediamo il {slot}! 🎾',
+        'match_rifiutato_opponent' => 'Sfida rifiutata. A presto! 🎾',
+        'chiedi_risultato'       => "Com'è andata la partita di {slot}? 🎾",
+        'risultato_ricevuto'     => 'Risultato registrato. Ti avviso alla conferma.',
+        'risultato_non_capito'   => 'Non ho capito. Hai vinto, hai perso, o non si è giocata?',
+        'risultato_non_giocata'  => 'Ok, partita non giocata. A presto! 🎾',
+        'risultato_discordante'  => "Risultato diverso dall'avversario. L'admin verificherà.",
+        'elo_aggiornato_vinto'   => 'ELO aggiornato! Da {elo_before} a {elo_after} (+{delta}). 🏆',
+        'elo_aggiornato_perso'   => 'ELO aggiornato. Da {elo_before} a {elo_after} ({delta}). 💪',
+        'chiedi_feedback_rating' => 'Come valuteresti la tua esperienza? Voto da 1 a 5.',
+        'chiedi_feedback_commento' => 'Grazie! Vuoi aggiungere un commento? Scrivi "no" per saltare.',
+        'feedback_rating_non_valido' => 'Non ho capito. Dammi un voto da 1 a 5.',
+        'feedback_ricevuto'      => 'Grazie per il feedback! 🙏',
+        'feedback_dopo_partita'  => "Com'è andata? Lasciaci un voto da 1 a 5!",
+        'reminder_giorno_prima'  => 'Promemoria: prenotazione domani — {slot}. Ti aspettiamo! 🎾',
+        'reminder_ore_prima'     => 'Ci siamo! Prenotazione tra {hours} ore — {slot}. A tra poco! 🎾',
+        'errore_generico'        => "Scusa, c'è stato un problema. Riprova!",
     ];
 
     /**
-     * Riformula un messaggio template in modo naturale.
+     * Restituisce il messaggio template con variabili sostituite.
      *
-     * Usa l'AI per variare il tono mantenendo il significato.
-     * Se l'AI fallisce, usa il template di fallback.
+     * Legge dal DB (con cache), fallback alla costante hardcoded.
+     * NON usa più Gemini per riformulare — i messaggi sono quelli configurati nel pannello.
      */
     public function rephrase(string $templateId, string $persona, array $vars = []): string
     {
-        $fallback = $this->renderTemplate($templateId, $vars);
-
-        try {
-            $prompt = $this->buildRephrasePrompt($persona, $fallback, $templateId);
-            $reply  = $this->gemini->generate($prompt);
-            $clean  = $this->cleanAiReply($reply);
-
-            if (empty($clean)) {
-                return $fallback;
-            }
-
-            // Se l'AI ha troncato (output molto più corto del fallback con variabili),
-            // usa il fallback per evitare messaggi tagliati
-            if (mb_strlen($clean) < mb_strlen($fallback) * 0.6) {
-                Log::info('TextGenerator: AI reply too short, using fallback', [
-                    'template'   => $templateId,
-                    'ai_len'     => mb_strlen($clean),
-                    'fallback_len' => mb_strlen($fallback),
-                ]);
-                return $fallback;
-            }
-
-            return $clean;
-        } catch (\Throwable $e) {
-            Log::warning('TextGenerator: AI rephrase fallback', [
-                'template' => $templateId,
-                'error'    => $e->getMessage(),
-            ]);
-
-            return $fallback;
-        }
+        return $this->renderTemplate($templateId, $vars);
     }
 
     /**
@@ -173,6 +121,65 @@ class TextGenerator
 
         // Fallback AI solo per input davvero complessi
         return $this->parseDateTimeWithAi($input);
+    }
+
+    /**
+     * Classifica l'input utente rispetto ai bottoni disponibili usando Gemini.
+     *
+     * Usato come fallback quando il matching deterministico (keyword) fallisce.
+     * Restituisce l'indice del bottone più probabile, o null se incerto.
+     *
+     * @param string $input Testo dell'utente
+     * @param array  $buttonLabels Lista delle label dei bottoni
+     * @return int|null Indice del bottone matchato, o null
+     */
+    public function classifyInput(string $input, array $buttonLabels): ?int
+    {
+        if (empty($buttonLabels)) {
+            return null;
+        }
+
+        $options = '';
+        foreach ($buttonLabels as $i => $label) {
+            $options .= ($i + 1) . ". {$label}\n";
+        }
+
+        $prompt = <<<PROMPT
+Sei un classificatore di intenti per un bot WhatsApp di un circolo tennis. L'utente ha scritto un messaggio e deve scegliere tra queste opzioni:
+
+{$options}
+Messaggio dell'utente: "{$input}"
+
+Quale opzione intende l'utente? Rispondi SOLO con il numero dell'opzione (es. "1", "2", "3").
+Se il messaggio non corrisponde chiaramente a nessuna opzione, rispondi "0".
+Rispondi SOLO con un numero, nient'altro.
+PROMPT;
+
+        try {
+            $reply = $this->gemini->generate($prompt);
+            $number = (int) trim($reply);
+
+            if ($number >= 1 && $number <= count($buttonLabels)) {
+                Log::info('TextGenerator: AI classified input', [
+                    'input'   => $input,
+                    'matched' => $buttonLabels[$number - 1],
+                    'index'   => $number - 1,
+                ]);
+                return $number - 1;
+            }
+
+            Log::info('TextGenerator: AI could not classify input', [
+                'input' => $input,
+                'reply' => $reply,
+            ]);
+            return null;
+        } catch (\Throwable $e) {
+            Log::warning('TextGenerator: AI classification failed', [
+                'input' => $input,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
     }
 
     /**
@@ -409,7 +416,8 @@ PROMPT;
 
     private function renderTemplate(string $templateId, array $vars): string
     {
-        $text = self::TEMPLATES[$templateId] ?? 'Mi scusi, qualcosa è andato storto.';
+        $fallback = self::FALLBACKS[$templateId] ?? 'Mi scusi, qualcosa è andato storto.';
+        $text = BotMessage::get($templateId, $fallback);
 
         foreach ($vars as $key => $value) {
             if (is_string($value) || is_numeric($value)) {
@@ -418,35 +426,5 @@ PROMPT;
         }
 
         return $text;
-    }
-
-    private function buildRephrasePrompt(string $persona, string $text, string $templateId): string
-    {
-        return <<<PROMPT
-Sei {$persona}, assistente virtuale del circolo Le Cercle Tennis Club.
-Tono: amichevole, diretto, sportivo. Parli in italiano.
-No emoji eccessive (max 1).
-
-Riformula questo messaggio mantenendo ESATTAMENTE lo stesso significato e TUTTE le informazioni.
-REGOLE TASSATIVE:
-- NON troncare MAI il messaggio: ogni dato (date, orari, prezzi, nomi) DEVE apparire nella risposta.
-- NON aggiungere domande extra. NON cambiare il senso.
-- Se il messaggio contiene numeri, prezzi o orari, riportali TUTTI identici.
-
-Messaggio originale: "{$text}"
-
-Rispondi SOLO con il testo riformulato, senza virgolette né spiegazioni.
-PROMPT;
-    }
-
-    private function cleanAiReply(string $reply): string
-    {
-        $clean = trim($reply);
-        // Rimuovi virgolette esterne
-        $clean = trim($clean, '"\'');
-        // Rimuovi eventuali prefissi tipo "Ecco:" o "Risposta:"
-        $clean = preg_replace('/^(ecco|risposta|riformulazione)\s*:\s*/i', '', $clean);
-
-        return $clean;
     }
 }

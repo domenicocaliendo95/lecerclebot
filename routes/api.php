@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\BotSessionController;
 use App\Http\Controllers\Api\MatchResultController;
 use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\BotMessageController;
+use App\Http\Controllers\Api\BotFlowStateController;
 
 // ── WhatsApp Webhook (nessuna auth) ──────────────────────────────────
 Route::get('/webhook', [WhatsAppController::class, 'verify']);
@@ -51,4 +53,12 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/settings', [SettingsController::class, 'index']);
     Route::get('/settings/{key}', [SettingsController::class, 'show']);
     Route::put('/settings/{key}', [SettingsController::class, 'update']);
+
+    // Bot Messages
+    Route::get('/bot-messages', [BotMessageController::class, 'index']);
+    Route::put('/bot-messages/{key}', [BotMessageController::class, 'update']);
+
+    // Bot Flow States
+    Route::get('/bot-flow-states', [BotFlowStateController::class, 'index']);
+    Route::put('/bot-flow-states/{state}', [BotFlowStateController::class, 'update']);
 });

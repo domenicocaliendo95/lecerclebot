@@ -10,6 +10,8 @@ import { Giocatori } from '@/pages/giocatori'
 import { Sessioni } from '@/pages/sessioni'
 import { Match } from '@/pages/match'
 import { Impostazioni } from '@/pages/impostazioni'
+import { Messaggi } from '@/pages/messaggi'
+import { Flusso } from '@/pages/flusso'
 
 export default function App() {
   return (
@@ -30,6 +32,8 @@ export default function App() {
             <Route path="giocatori" element={<Giocatori />} />
             <Route path="sessioni" element={<Sessioni />} />
             <Route path="match" element={<Match />} />
+            <Route path="messaggi" element={<Messaggi />} />
+            <Route path="flusso" element={<Flusso />} />
             <Route path="impostazioni" element={<Impostazioni />} />
           </Route>
         </Routes>

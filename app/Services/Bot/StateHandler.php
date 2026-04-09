@@ -3,6 +3,7 @@
 namespace App\Services\Bot;
 
 use App\Models\Booking;
+use App\Models\BotFlowState;
 use App\Models\BotSession;
 use App\Models\PricingRule;
 use App\Models\User;
@@ -21,6 +22,9 @@ use Illuminate\Support\Facades\Log;
  */
 class StateHandler
 {
+    /** Flag per evitare ricorsione infinita nella classificazione AI. */
+    private bool $aiClassificationAttempted = false;
+
     public function __construct(
         private readonly CalendarService $calendar,
         private readonly TextGenerator   $textGenerator,
@@ -40,7 +44,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
                     BotState::MENU,
-                    ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                    $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
                 );
             }
 
@@ -52,7 +56,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('chiedi_feedback_rating', $session->persona()),
                     BotState::FEEDBACK,
-                    ['1', '2', '3', '4', '5'],
+                    $this->getButtons('FEEDBACK', ['1', '2', '3', '4', '5']),
                 );
             }
 
@@ -60,7 +64,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('modifica_profilo_scelta', $session->persona()),
                     BotState::MODIFICA_PROFILO,
-                    ['Stato FIT', 'Livello gioco', 'Fascia oraria'],
+                    $this->getButtons('MODIFICA_PROFILO', ['Stato FIT', 'Livello gioco', 'Fascia oraria']),
                 );
             }
         }
@@ -126,7 +130,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('chiedi_fit', $session->persona(), ['name' => $name]),
             BotState::ONBOARD_FIT,
-            ["Sì, sono tesserato", "Non sono tesserato"],
+            $this->getButtons('ONBOARD_FIT', ["Sì, sono tesserato", "Non sono tesserato"]),
         );
     }
 
@@ -144,10 +148,20 @@ class StateHandler
         $isFit = !$isNotFit && ($this->matchesYes($normalized) || str_contains($normalized, 'tesserato'));
 
         if (!$isFit && !$isNotFit) {
+            // Fallback AI: classifica l'input rispetto ai bottoni
+            $aiMatch = $this->classifyWithAi($input, 'ONBOARD_FIT');
+            if ($aiMatch !== null) {
+                $aiNorm = mb_strtolower($aiMatch);
+                $isNotFit = str_contains($aiNorm, 'non');
+                $isFit = !$isNotFit;
+            }
+        }
+
+        if (!$isFit && !$isNotFit) {
             return BotResponse::make(
                 $this->textGenerator->rephrase('fit_non_capito', $session->persona()),
                 BotState::ONBOARD_FIT,
-                ["Sì, sono tesserato", "Non sono tesserato"],
+                $this->getButtons('ONBOARD_FIT', ["Sì, sono tesserato", "Non sono tesserato"]),
             );
         }
 
@@ -163,7 +177,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('chiedi_livello', $session->persona()),
             BotState::ONBOARD_LIVELLO,
-            ['Neofita', 'Dilettante', 'Avanzato'],
+            $this->getButtons('ONBOARD_LIVELLO', ['Neofita', 'Dilettante', 'Avanzato']),
         );
     }
 
@@ -190,11 +204,19 @@ class StateHandler
     {
         $level = $this->parseLivello($input);
 
+        // Fallback AI se il parser deterministico fallisce
+        if ($level === null) {
+            $aiMatch = $this->classifyWithAi($input, 'ONBOARD_LIVELLO');
+            if ($aiMatch !== null) {
+                $level = $this->parseLivello($aiMatch);
+            }
+        }
+
         if ($level === null) {
             return BotResponse::make(
                 $this->textGenerator->rephrase('livello_non_valido', $session->persona()),
                 BotState::ONBOARD_LIVELLO,
-                ['Neofita', 'Dilettante', 'Avanzato'],
+                $this->getButtons('ONBOARD_LIVELLO', ['Neofita', 'Dilettante', 'Avanzato']),
             );
         }
 
@@ -222,7 +244,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('chiedi_fascia_oraria', $session->persona()),
             BotState::ONBOARD_SLOT_PREF,
-            ['Mattina', 'Pomeriggio', 'Sera'],
+            $this->getButtons('ONBOARD_SLOT_PREF', ['Mattina', 'Pomeriggio', 'Sera']),
         );
     }
 
@@ -230,11 +252,19 @@ class StateHandler
     {
         $slot = $this->parseFasciaOraria($input);
 
+        // Fallback AI
+        if ($slot === null) {
+            $aiMatch = $this->classifyWithAi($input, 'ONBOARD_SLOT_PREF');
+            if ($aiMatch !== null) {
+                $slot = $this->parseFasciaOraria($aiMatch);
+            }
+        }
+
         if ($slot === null) {
             return BotResponse::make(
                 $this->textGenerator->rephrase('fascia_non_valida', $session->persona()),
                 BotState::ONBOARD_SLOT_PREF,
-                ['Mattina', 'Pomeriggio', 'Sera'],
+                $this->getButtons('ONBOARD_SLOT_PREF', ['Mattina', 'Pomeriggio', 'Sera']),
             );
         }
 
@@ -247,7 +277,7 @@ class StateHandler
                 'name' => $profile['name'] ?? 'Giocatore',
             ]),
             BotState::ONBOARD_COMPLETO,
-            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            $this->getButtons('ONBOARD_COMPLETO', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
         )->withProfileToSave($profile);
     }
 
@@ -305,11 +335,17 @@ class StateHandler
             );
         }
 
+        // Fallback AI: classifica l'input rispetto ai bottoni del menu
+        $aiMatch = $this->classifyWithAi($input, 'MENU');
+        if ($aiMatch !== null) {
+            return $this->handleMenuChoice($session, $aiMatch);
+        }
+
         // Input non riconosciuto: riproponi il menu
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_non_capito', $session->persona()),
             BotState::MENU,
-            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
         );
     }
 
@@ -449,7 +485,7 @@ class StateHandler
                     'price'    => number_format($price, 0),
                 ]),
                 BotState::PROPONI_SLOT,
-                ['Sì, prenota', 'No, cambia orario'],
+                $this->getButtons('PROPONI_SLOT', ['Sì, prenota', 'No, cambia orario']),
             );
         }
 
@@ -532,7 +568,7 @@ class StateHandler
                         'slot' => $friendly,
                     ]),
                     BotState::PROPONI_SLOT,
-                    ['Sì, prenota', 'No, cambia orario'],
+                    $this->getButtons('PROPONI_SLOT', ['Sì, prenota', 'No, cambia orario']),
                 );
             }
         }
@@ -549,7 +585,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('proposta_non_capita', $session->persona()),
             BotState::PROPONI_SLOT,
-            ['Sì, prenota', 'No, cambia orario'],
+            $this->getButtons('PROPONI_SLOT', ['Sì, prenota', 'No, cambia orario']),
         );
     }
 
@@ -568,7 +604,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('prenotazione_annullata', $session->persona()),
                     BotState::MENU,
-                    ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                    $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
                 );
             }
 
@@ -586,7 +622,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('prenotazione_annullata', $session->persona()),
                 BotState::MENU,
-                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
             );
         }
 
@@ -615,14 +651,14 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('scegli_pagamento', $session->persona()),
                 BotState::CONFERMA,
-                ['Paga online', 'Pago di persona', 'Annulla'],
+                $this->getButtons('CONFERMA', ['Paga online', 'Pago di persona', 'Annulla']),
             );
         }
 
         return BotResponse::make(
             $this->textGenerator->rephrase('conferma_non_capita', $session->persona()),
             BotState::CONFERMA,
-            ['Paga online', 'Pago di persona', 'Annulla'],
+            $this->getButtons('CONFERMA', ['Paga online', 'Pago di persona', 'Annulla']),
         );
     }
 
@@ -644,7 +680,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
             BotState::MENU,
-            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
         );
     }
 
@@ -673,7 +709,7 @@ class StateHandler
                         'name' => $profile['name'] ?? '',
                     ]),
                     BotState::ONBOARD_FIT,
-                    ['Sì, sono tesserato', 'Non sono tesserato'],
+                    $this->getButtons('ONBOARD_FIT', ['Sì, sono tesserato', 'Non sono tesserato']),
                 ),
 
             BotState::ONBOARD_ETA =>
@@ -685,7 +721,7 @@ class StateHandler
                     : BotResponse::make(
                         $prefix . $this->textGenerator->rephrase('chiedi_livello', $persona),
                         BotState::ONBOARD_LIVELLO,
-                        ['Neofita', 'Dilettante', 'Avanzato'],
+                        $this->getButtons('ONBOARD_LIVELLO', ['Neofita', 'Dilettante', 'Avanzato']),
                     ),
 
             BotState::ONBOARD_SLOT_PREF =>
@@ -718,7 +754,7 @@ class StateHandler
                     'name' => $user?->name ?? '',
                 ]),
                 BotState::MODIFICA_RISPOSTA,
-                ['Sì, sono tesserato', 'Non sono tesserato'],
+                $this->getButtons('ONBOARD_FIT', ['Sì, sono tesserato', 'Non sono tesserato']),
             );
         }
 
@@ -734,7 +770,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('chiedi_livello', $persona),
                 BotState::MODIFICA_RISPOSTA,
-                ['Neofita', 'Dilettante', 'Avanzato'],
+                $this->getButtons('ONBOARD_LIVELLO', ['Neofita', 'Dilettante', 'Avanzato']),
             );
         }
 
@@ -743,15 +779,21 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('chiedi_fascia_oraria', $persona),
                 BotState::MODIFICA_RISPOSTA,
-                ['Mattina', 'Pomeriggio', 'Sera'],
+                $this->getButtons('ONBOARD_SLOT_PREF', ['Mattina', 'Pomeriggio', 'Sera']),
             );
+        }
+
+        // Fallback AI
+        $aiMatch = $this->classifyWithAi($input, 'MODIFICA_PROFILO');
+        if ($aiMatch !== null) {
+            return $this->handleModificaProfilo($session, $aiMatch, $user);
         }
 
         // Non riconosciuto: riproponi le opzioni
         return BotResponse::make(
             $this->textGenerator->rephrase('modifica_profilo_scelta', $persona),
             BotState::MODIFICA_PROFILO,
-            ['Stato FIT', 'Livello gioco', 'Fascia oraria'],
+            $this->getButtons('MODIFICA_PROFILO', ['Stato FIT', 'Livello gioco', 'Fascia oraria']),
         );
     }
 
@@ -773,7 +815,7 @@ class StateHandler
                     return BotResponse::make(
                         $this->textGenerator->rephrase('fit_non_capito', $persona),
                         BotState::MODIFICA_RISPOSTA,
-                        ['Sì, sono tesserato', 'Non sono tesserato'],
+                        $this->getButtons('ONBOARD_FIT', ['Sì, sono tesserato', 'Non sono tesserato']),
                     );
                 }
                 $profileUpdate = ['is_fit' => $isFit, 'fit_rating' => null, 'self_level' => null];
@@ -796,7 +838,7 @@ class StateHandler
                     return BotResponse::make(
                         $this->textGenerator->rephrase('livello_non_valido', $persona),
                         BotState::MODIFICA_RISPOSTA,
-                        ['Neofita', 'Dilettante', 'Avanzato'],
+                        $this->getButtons('ONBOARD_LIVELLO', ['Neofita', 'Dilettante', 'Avanzato']),
                     );
                 }
                 $profileUpdate = ['self_level' => $level];
@@ -808,7 +850,7 @@ class StateHandler
                     return BotResponse::make(
                         $this->textGenerator->rephrase('fascia_non_valida', $persona),
                         BotState::MODIFICA_RISPOSTA,
-                        ['Mattina', 'Pomeriggio', 'Sera'],
+                        $this->getButtons('ONBOARD_SLOT_PREF', ['Mattina', 'Pomeriggio', 'Sera']),
                     );
                 }
                 $profileUpdate = ['slot' => $slot];
@@ -818,7 +860,7 @@ class StateHandler
                 return BotResponse::make(
                     $this->textGenerator->rephrase('menu_ritorno', $persona),
                     BotState::MENU,
-                    ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                    $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
                 );
         }
 
@@ -829,7 +871,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('profilo_aggiornato', $persona),
             BotState::MENU,
-            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
         )->withProfileToSave($merged);
     }
 
@@ -854,7 +896,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('nessuna_prenotazione', $session->persona()),
                 BotState::MENU,
-                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
             );
         }
 
@@ -936,7 +978,7 @@ class StateHandler
                 'slot' => $slotFriendly,
             ]),
             BotState::AZIONE_PRENOTAZIONE,
-            ['Modifica orario', 'Cancella', 'Torna al menu'],
+            $this->getButtons('AZIONE_PRENOTAZIONE', ['Modifica orario', 'Cancella', 'Torna al menu']),
         );
     }
 
@@ -962,7 +1004,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('prenotazione_cancellata_ok', $session->persona()),
                 BotState::MENU,
-                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
             )->withBookingToCancel(true);
         }
 
@@ -970,7 +1012,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
             BotState::MENU,
-            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
         );
     }
 
@@ -987,7 +1029,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
                 BotState::MENU,
-                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
             );
         }
 
@@ -1017,8 +1059,14 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('match_rifiutato_opponent', $session->persona()),
                 BotState::MENU,
-                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
             )->withMatchRefused(true);
+        }
+
+        // Fallback AI
+        $aiMatch = $this->classifyWithAi($input, 'RISPOSTA_MATCH');
+        if ($aiMatch !== null) {
+            return $this->handleRispostaMatch($session, $aiMatch);
         }
 
         // Non capito: riproponi l'invito
@@ -1029,7 +1077,7 @@ class StateHandler
                 'slot'            => $invitedSlot,
             ]),
             BotState::RISPOSTA_MATCH,
-            ['Accetta', 'Rifiuta'],
+            $this->getButtons('RISPOSTA_MATCH', ['Accetta', 'Rifiuta']),
         );
     }
 
@@ -1054,7 +1102,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('risultato_non_giocata', $session->persona()),
                 BotState::MENU,
-                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+                $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
             )->withMatchResultToSave(true);
         }
 
@@ -1065,7 +1113,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('risultato_non_capito', $session->persona()),
                 BotState::INSERISCI_RISULTATO,
-                ['Ho vinto', 'Ho perso', 'Non giocata'],
+                $this->getButtons('INSERISCI_RISULTATO', ['Ho vinto', 'Ho perso', 'Non giocata']),
             );
         }
 
@@ -1083,7 +1131,7 @@ class StateHandler
             $this->textGenerator->rephrase('risultato_ricevuto', $session->persona())
                 . "\n\n" . $this->textGenerator->rephrase('feedback_dopo_partita', $session->persona()),
             BotState::FEEDBACK,
-            ['1', '2', '3', '4', '5'],
+            $this->getButtons('FEEDBACK', ['1', '2', '3', '4', '5']),
         )->withMatchResultToSave(true);
     }
 
@@ -1096,7 +1144,7 @@ class StateHandler
             return BotResponse::make(
                 $this->textGenerator->rephrase('feedback_rating_non_valido', $session->persona()),
                 BotState::FEEDBACK,
-                ['1', '2', '3', '4', '5'],
+                $this->getButtons('FEEDBACK', ['1', '2', '3', '4', '5']),
             );
         }
 
@@ -1121,7 +1169,7 @@ class StateHandler
         return BotResponse::make(
             $this->textGenerator->rephrase('feedback_ricevuto', $session->persona()),
             BotState::MENU,
-            ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
         )->withFeedbackToSave(true);
     }
 
@@ -1311,5 +1359,49 @@ class StateHandler
     private function matchesNo(string $input): bool
     {
         return (bool) preg_match('/^(no|nah|nope|non|neanche)\b/i', $input);
+    }
+
+    /**
+     * Legge le label dei bottoni dal DB (BotFlowState), con fallback ai valori hardcoded.
+     */
+    private function getButtons(string $state, array $default): array
+    {
+        $flowState = BotFlowState::getCached($state);
+
+        if ($flowState && !empty($flowState->buttons)) {
+            return $flowState->buttonLabels();
+        }
+
+        return $default;
+    }
+
+    /**
+     * Classifica l'input utente tramite AI quando il matching deterministico fallisce.
+     * Restituisce la label del bottone matchato, o null.
+     * Usa un flag per evitare ricorsione infinita.
+     */
+    private function classifyWithAi(string $input, string $state): ?string
+    {
+        // Evita ricorsione: se già tentato AI in questo ciclo, skip
+        if ($this->aiClassificationAttempted) {
+            return null;
+        }
+
+        $flowState = BotFlowState::getCached($state);
+
+        if (!$flowState || empty($flowState->buttons)) {
+            return null;
+        }
+
+        $this->aiClassificationAttempted = true;
+
+        $labels = $flowState->buttonLabels();
+        $index = $this->textGenerator->classifyInput($input, $labels);
+
+        if ($index !== null) {
+            return $labels[$index];
+        }
+
+        return null;
     }
 }

@@ -13,7 +13,28 @@
       "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/resources/views/filament/pages/calendar-bookings.blade.php 2>&1)",
       "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Pages/CalendarBookings.php)",
       "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Resources/BookingResource.php)",
-      "Bash(ls /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Pages/Dashboard*)"
+      "Bash(ls /Users/domenicocaliendo/Desktop/lecerclebot/app/Filament/Pages/Dashboard*)",
+      "Bash(php8.3 artisan:*)",
+      "Bash(php8.2 artisan:*)",
+      "Bash(which php*)",
+      "Bash(ls /usr/local/bin/php*)",
+      "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/app/Services/Bot/TextGenerator.php)",
+      "Bash(/opt/homebrew/Cellar/php/8.4.8/bin/php -l /Users/domenicocaliendo/Desktop/lecerclebot/app/Services/Bot/StateHandler.php)",
+      "Bash(npm --version)",
+      "Bash(export PATH=\"$HOME/.nvm/versions/node/v24.11.1/bin:$PATH\")",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest add card badge table separator avatar dropdown-menu sheet dialog tabs -y)",
+      "Bash(npx shadcn@latest add card badge table separator avatar dropdown-menu sheet dialog tabs --overwrite)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(for f:*)",
+      "Bash(do /opt/homebrew/Cellar/php/8.4.8/bin/php -l \"$f\")",
+      "Bash(done)",
+      "Bash(xargs ls:*)",
+      "Bash(find /Users/domenicocaliendo/Desktop/lecerclebot -type f -name *auth* -o -name *sanctum* -o -name *cors*)",
+      "Bash(find .:*)"
     ]
   }
 }

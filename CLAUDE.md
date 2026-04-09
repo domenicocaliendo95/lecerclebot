@@ -1,5 +1,5 @@
 # Le Cercle Tennis Club — Bot WhatsApp
-## Bibbia del Progetto — Aggiornata al 2026-04-01
+## Bibbia del Progetto — Aggiornata al 2026-04-06
 
 ---
 
@@ -16,7 +16,7 @@ Bot WhatsApp per **Le Cercle Tennis Club**, circolo tennistico a **San Gennaro V
 | Framework | Laravel 11 + Filament 3 (legacy admin) |
 | Frontend | React SPA (Vite + Tailwind v4 + Shadcn/UI) in `frontend/`, build → `public/panel/` |
 | Database | MySQL (`lecercle_db`) |
-| AI testi | Google Gemini API (`gemini-2.5-flash`) — SOLO rephrase + date parsing |
+| AI testi | Google Gemini API (`gemini-2.5-flash`) — SOLO date parsing (rephrase eliminato, template da DB) |
 | Calendario | Google Calendar API (service account JSON) |
 | Messaggistica | WhatsApp Business API (Meta Cloud API v21.0) |
 | Server | `bot.lecercleclub.it` su Plesk |
@@ -37,8 +37,11 @@ WhatsAppController          → Sottile: valida webhook, estrae input, delega
             │
             ├─▶ StateHandler        → Macchina a stati DETERMINISTICA (tutta la logica)
             │       │
-            │       └─▶ TextGenerator   → UNICO punto AI (Gemini)
-            │                              Solo: riformulare testi + parsare date
+            │       └─▶ TextGenerator   → Template da DB (BotMessage) + parsing date (Gemini)
+            │                              + classificazione AI input (Gemini fallback per bottoni)
+            │
+            ├─▶ BotFlowState (DB)   → Configurazione stati: bottoni, transizioni, messaggi
+            │                          Editabile da pannello admin (/panel/flusso)
             │
             ├─▶ CalendarService     → Google Calendar: verifica slot + crea/elimina eventi
             ├─▶ UserProfileService  → Persistenza utente su DB (con stima ELO)
@@ -65,6 +68,8 @@ app/
 │   │   │   ├── BotSessionController.php← Lista sessioni + chat history
 │   │   │   ├── MatchResultController.php← Risultati partite
 │   │   │   ├── PricingRuleController.php← CRUD regole prezzi
+│   │   │   ├── BotMessageController.php← CRUD messaggi bot (template configurabili)
+│   │   │   ├── BotFlowStateController.php← Flusso stati: lista + aggiorna bottoni
 │   │   │   └── SettingsController.php  ← Lettura/scrittura bot_settings
 │   │   └── WhatsAppController.php      ← Webhook verify + handle (risponde sempre 200)
 │   ├── Middleware/
@@ -78,6 +83,8 @@ app/
 │   ├── EloHistory.php                  ← Storico variazioni ELO
 │   ├── Feedback.php                    ← Feedback utenti (rating 1-5 + commento)
 │   ├── BotSetting.php                  ← Settings chiave-valore (reminder, ecc.)
+│   ├── BotMessage.php                  ← Template messaggi bot (chiave→testo, con cache)
+│   ├── BotFlowState.php                ← Configurazione stati flusso (bottoni, transizioni, con cache)
 │   └── User.php                        ← Modello utente con profilo tennis
 └── Services/
     ├── CalendarService.php             ← Google Calendar API (checkUserRequest, createEvent, deleteEvent)
@@ -89,7 +96,7 @@ app/
         ├── BotResponse.php             ← DTO risposta (messaggio, stato, pulsanti, flag side-effect)
         ├── BotOrchestrator.php         ← Coordinatore: DB tx, side-effects, invio messaggi
         ├── StateHandler.php            ← Macchina a stati (tutti gli handle*)
-        ├── TextGenerator.php           ← AI: rephrase templates + parseDateTime
+        ├── TextGenerator.php           ← Template da DB (BotMessage) + parseDateTime (Gemini fallback)
         ├── UserProfileService.php      ← saveFromBot(): crea/aggiorna User con stima ELO
         └── EloService.php              ← Calcolo ELO dopo partita
 frontend/                               ← React SPA (monorepo)
@@ -106,6 +113,8 @@ frontend/                               ← React SPA (monorepo)
 │   │   ├── giocatori.tsx               ← CRUD giocatori con sort/search
 │   │   ├── sessioni.tsx                ← Lista sessioni + chat view
 │   │   ├── match.tsx                   ← Risultati + classifica ELO
+│   │   ├── messaggi.tsx                ← CRUD messaggi bot raggruppati per categoria
+│   │   ├── flusso.tsx                  ← Flow editor: stati, bottoni, transizioni, AI fallback
 │   │   └── impostazioni.tsx            ← Pricing rules CRUD + config reminder
 │   ├── hooks/
 │   │   ├── use-api.ts                  ← Fetch wrapper con auth
@@ -201,6 +210,38 @@ booking_id   FK bookings
 receiver_id  FK users (avversario)
 status       VARCHAR  -- pending / accepted / refused
 ```
+
+### Tabella `bot_messages`
+
+```sql
+key          VARCHAR PK           -- es. 'chiedi_fit', 'menu_ritorno'
+text         TEXT                  -- testo del messaggio (con variabili {name}, {slot}, ecc.)
+category     VARCHAR(50)           -- raggruppamento: onboarding, menu, prenotazione, conferma, gestione, profilo, matchmaking, risultati, feedback, promemoria, errore
+description  VARCHAR NULLABLE      -- descrizione per l'admin (es. "Chiedi se tesserato FIT")
+created_at   TIMESTAMP
+updated_at   TIMESTAMP
+```
+
+Gestita tramite `BotMessage` model con cache (1h TTL). Fallback hardcoded in `TextGenerator::FALLBACKS` se il record DB mancasse. Configurabile da pannello admin `/panel/messaggi`.
+
+### Tabella `bot_flow_states`
+
+```sql
+state         VARCHAR(30) PK        -- nome stato (es. 'ONBOARD_FIT', 'MENU')
+type          VARCHAR(10)            -- 'simple' (configurabile) | 'complex' (logica custom)
+message_key   VARCHAR(100)           -- FK bot_messages
+fallback_key  VARCHAR(100) NULLABLE  -- FK bot_messages (input non capito)
+buttons       JSON NULLABLE          -- [{label, target_state, value?, side_effect?}]
+category      VARCHAR(50)            -- raggruppamento UI
+description   VARCHAR NULLABLE
+sort_order    SMALLINT DEFAULT 0
+```
+
+Gestita tramite `BotFlowState` model con cache (1h TTL). I bottoni configurati qui vengono letti dal `StateHandler` (con fallback hardcoded). Configurabile da pannello admin `/panel/flusso`.
+
+**Tipo `simple`**: bottoni e transizioni completamente editabili da pannello. Se l'input non matcha nessun bottone, la **classificazione AI** (Gemini) tenta di capire quale bottone l'utente intendeva.
+
+**Tipo `complex`**: logica nel codice (parsing date, calcoli prezzi, API Calendar), ma le label dei bottoni e i messaggi sono comunque editabili.
 
 ---
 
@@ -470,8 +511,9 @@ Durante l'onboarding: keyword `indietro`, `back`, `torna`, `annulla`, `precedent
 
 ## Template Messaggi (tutti i template attivi)
 
-Ogni template ha un fallback fisso. Gemini lo riformula per variare il tono; se fallisce, si usa il fallback.
-**Regola**: i template devono essere corti (< 100 caratteri idealmente) per evitare troncature da Gemini.
+I messaggi sono salvati nella tabella `bot_messages` e configurabili dal pannello admin (`/panel/messaggi`).
+`TextGenerator::rephrase()` legge direttamente dal DB (con cache 1h), **senza riformulazione AI**.
+Fallback hardcoded in `TextGenerator::FALLBACKS` se il record DB mancasse.
 
 ```
 Onboarding
@@ -791,6 +833,10 @@ La dashboard usa 4 widget custom auto-discovered da `app/Filament/Widgets/`:
 | `/pricing-rules/{id}` | PUT/DELETE | Modifica / Elimina |
 | `/settings` | GET | Tutte le impostazioni |
 | `/settings/{key}` | GET/PUT | Leggi / Aggiorna setting |
+| `/bot-messages` | GET | Lista messaggi bot raggruppati per categoria |
+| `/bot-messages/{key}` | PUT | Aggiorna testo di un messaggio |
+| `/bot-flow-states` | GET | Lista stati flusso raggruppati per categoria (con testi) |
+| `/bot-flow-states/{state}` | PUT | Aggiorna bottoni/transizioni di uno stato |
 
 ### Tabella `bot_settings`
 ```sql
@@ -813,10 +859,10 @@ Chiave `reminders`: `{enabled: bool, slots: [{hours_before: int, enabled: bool}]
 ## Regole di Sviluppo
 
 1. **La logica di stato va SOLO in `StateHandler`**. Nessuna altra classe decide transizioni.
-2. **L'AI va SOLO in `TextGenerator`**. Nessun `generate()` in altri file.
+2. **L'AI va SOLO in `TextGenerator`** (date parsing + classificazione input bottoni). I messaggi vengono dalla tabella `bot_messages`, nessuna riformulazione AI. La classificazione AI è un fallback: se l'input non matcha nessun bottone, Gemini determina quale bottone l'utente intendeva.
 3. **I side-effect** (Calendar, DB, WhatsApp) vengono segnalati con flag su `BotResponse` ed eseguiti dall'orchestrator. Mai dall'handler direttamente.
 4. **Le transizioni** sono validate da `BotState::transitionTo()`. Transizioni non dichiarate vengono ignorate silenziosamente.
-5. **Ogni template ha un fallback**. Il bot deve funzionare con Gemini completamente offline.
+5. **Ogni template ha un fallback hardcoded** in `TextGenerator::FALLBACKS`. Il bot funziona anche senza DB (e senza Gemini).
 6. **Il parser di date locale ha la priorità**. Gemini è fallback solo per input complessi.
 7. **Max 3 pulsanti** per messaggio WhatsApp. Max 20 caratteri per label pulsante.
 8. **Template corti** (< 100 caratteri idealmente). Template lunghi vengono troncati da Gemini.

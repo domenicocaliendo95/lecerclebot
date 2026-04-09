@@ -4,6 +4,8 @@ import {
   Calendar,
   Users,
   MessageSquare,
+  MessageSquareText,
+  GitBranch,
   Settings,
   Trophy,
   LogOut,
@@ -24,6 +26,8 @@ const navigation: NavItem[] = [
   { label: 'Giocatori', to: '/giocatori', icon: Users },
   { label: 'Sessioni Bot', to: '/sessioni', icon: MessageSquare },
   { label: 'Match', to: '/match', icon: Trophy },
+  { label: 'Messaggi Bot', to: '/messaggi', icon: MessageSquareText },
+  { label: 'Flusso', to: '/flusso', icon: GitBranch },
   { label: 'Impostazioni', to: '/impostazioni', icon: Settings },
 ]
 
