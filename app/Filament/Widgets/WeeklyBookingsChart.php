@@ -25,7 +25,10 @@ class WeeklyBookingsChart extends ChartWidget
 
         $grouped = [];
         foreach ($rows as $r) {
-            $grouped[$r->booking_date][$r->status] = $r->cnt;
+            $key = $r->booking_date instanceof \Carbon\Carbon
+                ? $r->booking_date->format('Y-m-d')
+                : (string) $r->booking_date;
+            $grouped[$key][$r->status] = $r->cnt;
         }
 
         $dayLabels = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
