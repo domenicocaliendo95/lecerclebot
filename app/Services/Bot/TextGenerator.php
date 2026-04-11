@@ -91,6 +91,25 @@ class TextGenerator
         'reminder_giorno_prima'  => 'Promemoria: prenotazione domani — {slot}. Ti aspettiamo! 🎾',
         'reminder_ore_prima'     => 'Ci siamo! Prenotazione tra {hours} ore — {slot}. A tra poco! 🎾',
         'errore_generico'        => "Scusa, c'è stato un problema. Riprova!",
+
+        // ── Avversario (flusso ASK_OPPONENT) ────────────────────────
+        'chiedi_avversario'           => "Con chi giochi? Dimmi nome e cognome dell'avversario.\nSe non lo conosci o non è del circolo, scrivi \"salta\".",
+        'avversario_nome_corto'       => 'Mi serve almeno il nome. Puoi scriverlo per intero?',
+        'avversario_lista'            => 'Ho trovato più giocatori con quel nome. Quale di questi è il tuo avversario?',
+        'avversario_conferma_uno'     => 'Ho trovato {name}. È lui/lei il tuo avversario?',
+        'avversario_confermato'       => 'Perfetto, ho segnato {name} come tuo avversario! Ora dimmi quando vuoi giocare.',
+        'avversario_riprova'          => "Ok, riproviamo. Dimmi nome e cognome dell'avversario.",
+        'avversario_non_trovato'      => '{name} non risulta tra i nostri tesserati. Lo segno comunque come avversario esterno. Quando vuoi giocare?',
+        'avversario_esterno'          => 'Ok, segno {name} come avversario esterno. Quando vuoi giocare?',
+        'avversario_saltato'          => 'Nessun problema, prenotiamo senza nome avversario. Quando vuoi giocare?',
+
+        // ── Conferma bidirezionale (lato avversario taggato) ────────
+        'opp_invite_richiesta'        => "Ciao! {challenger_name} ti ha segnato come avversario per la partita di {slot}. Confermi?",
+        'opp_invite_confermato'       => "Perfetto, confermato! Ci vediamo il {slot} con {challenger_name}. 🎾",
+        'opp_invite_rifiutato'        => 'Ok, ho corretto la prenotazione. Grazie per avercelo detto!',
+        'opp_invite_non_capito'       => "Scusa, non ho capito. {challenger_name} ti ha segnato come avversario per il {slot}. Confermi?",
+        'opp_invite_notify_challenger_ok' => '{opponent_name} ha confermato di essere il tuo avversario per il {slot}! ✅',
+        'opp_invite_notify_challenger_ko' => '{opponent_name} ha detto di non essere il tuo avversario per il {slot}. La prenotazione resta valida ma senza tracking ELO.',
     ];
 
     /**

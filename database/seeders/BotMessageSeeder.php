@@ -97,6 +97,25 @@ class BotMessageSeeder extends Seeder
 
             // ── Errore ──────────────────────────────────────────────
             ['key' => 'errore_generico',        'category' => 'errore',     'description' => 'Errore generico, riprova',                            'text' => "Scusa, c'è stato un problema. Riproviamo: quando vorresti giocare?"],
+
+            // ── Avversario (flusso ASK_OPPONENT, "con_avversario") ──
+            ['key' => 'chiedi_avversario',          'category' => 'avversario', 'description' => 'Chiedi nome avversario (input libero)',          'text' => "Con chi giochi? Dimmi nome e cognome dell'avversario.\nSe non lo conosci o non è del circolo, scrivi \"salta\"."],
+            ['key' => 'avversario_nome_corto',      'category' => 'avversario', 'description' => 'Nome troppo corto, richiedi',                    'text' => 'Mi serve almeno il nome. Puoi scriverlo per intero?'],
+            ['key' => 'avversario_lista',           'category' => 'avversario', 'description' => 'Più match trovati, scegli',                       'text' => 'Ho trovato più giocatori con quel nome. Quale di questi è il tuo avversario?'],
+            ['key' => 'avversario_conferma_uno',    'category' => 'avversario', 'description' => 'Match singolo, conferma ({name})',                'text' => 'Ho trovato {name}. È lui/lei il tuo avversario?'],
+            ['key' => 'avversario_confermato',      'category' => 'avversario', 'description' => 'Avversario confermato ({name})',                  'text' => 'Perfetto, ho segnato {name} come tuo avversario! Ora dimmi quando vuoi giocare.'],
+            ['key' => 'avversario_riprova',         'category' => 'avversario', 'description' => 'Conferma negata, ricerca daccapo',                'text' => "Ok, riproviamo. Dimmi nome e cognome dell'avversario."],
+            ['key' => 'avversario_non_trovato',     'category' => 'avversario', 'description' => 'Nessun match nel circolo, salva libero ({name})', 'text' => '{name} non risulta tra i nostri tesserati. Lo segno comunque come avversario esterno. Quando vuoi giocare?'],
+            ['key' => 'avversario_esterno',         'category' => 'avversario', 'description' => 'Esplicitamente esterno ({name})',                 'text' => 'Ok, segno {name} come avversario esterno. Quando vuoi giocare?'],
+            ['key' => 'avversario_saltato',         'category' => 'avversario', 'description' => 'Skip avversario, no tracking',                    'text' => 'Nessun problema, prenotiamo senza nome avversario. Quando vuoi giocare?'],
+
+            // ── Conferma bidirezionale (lato avversario taggato) ────
+            ['key' => 'opp_invite_richiesta',           'category' => 'avversario', 'description' => "Notifica all'avversario taggato ({challenger_name}, {slot})", 'text' => 'Ciao! {challenger_name} ti ha segnato come avversario per la partita di {slot}. Confermi?'],
+            ['key' => 'opp_invite_confermato',          'category' => 'avversario', 'description' => 'Avversario conferma il link ({challenger_name}, {slot})',  'text' => 'Perfetto, confermato! Ci vediamo il {slot} con {challenger_name}. 🎾'],
+            ['key' => 'opp_invite_rifiutato',           'category' => 'avversario', 'description' => 'Avversario nega il link',                        'text' => 'Ok, ho corretto la prenotazione. Grazie per avercelo detto!'],
+            ['key' => 'opp_invite_non_capito',          'category' => 'avversario', 'description' => 'Conferma non capita ({challenger_name}, {slot})', 'text' => 'Scusa, non ho capito. {challenger_name} ti ha segnato come avversario per il {slot}. Confermi?'],
+            ['key' => 'opp_invite_notify_challenger_ok','category' => 'avversario', 'description' => 'Notifica al challenger: avversario ha confermato', 'text' => '{opponent_name} ha confermato di essere il tuo avversario per il {slot}! ✅'],
+            ['key' => 'opp_invite_notify_challenger_ko','category' => 'avversario', 'description' => 'Notifica al challenger: avversario ha negato',     'text' => '{opponent_name} ha detto di non essere il tuo avversario per il {slot}. La prenotazione resta valida ma senza tracking ELO.'],
         ];
 
         foreach ($messages as $msg) {

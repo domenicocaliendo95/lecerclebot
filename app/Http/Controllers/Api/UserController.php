@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\UserSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -73,19 +74,12 @@ class UserController extends Controller
 
     /**
      * Ricerca veloce per autocomplete (max 10 risultati).
+     * Usa UserSearchService per matching tollerante (LIKE + Levenshtein).
      */
-    public function search(Request $request): AnonymousResourceCollection
+    public function search(Request $request, UserSearchService $searchService): AnonymousResourceCollection
     {
-        $q = $request->input('q', '');
-
-        $users = User::where('is_admin', false)
-            ->where(function ($query) use ($q) {
-                $query->where('name', 'like', "%{$q}%")
-                      ->orWhere('phone', 'like', "%{$q}%");
-            })
-            ->orderBy('name')
-            ->limit(10)
-            ->get();
+        $q     = (string) $request->input('q', '');
+        $users = $searchService->search($q, 10);
 
         return UserResource::collection($users);
     }

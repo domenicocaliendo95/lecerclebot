@@ -22,6 +22,7 @@ enum BotState: string
     case MENU = 'MENU';
 
     /* ── Flusso prenotazione ── */
+    case ASK_OPPONENT   = 'ASK_OPPONENT';
     case SCEGLI_QUANDO  = 'SCEGLI_QUANDO';
     case SCEGLI_DURATA  = 'SCEGLI_DURATA';
     case VERIFICA_SLOT  = 'VERIFICA_SLOT';
@@ -33,6 +34,9 @@ enum BotState: string
     /* ── Matchmaking ── */
     case ATTESA_MATCH    = 'ATTESA_MATCH';
     case RISPOSTA_MATCH  = 'RISPOSTA_MATCH';
+
+    /* ── Conferma link avversario (lato avversario taggato) ── */
+    case CONFERMA_INVITO_OPP = 'CONFERMA_INVITO_OPP';
 
     /* ── Risultati & Feedback ── */
     case INSERISCI_RISULTATO = 'INSERISCI_RISULTATO';
@@ -62,9 +66,10 @@ enum BotState: string
             self::ONBOARD_LIVELLO    => [self::ONBOARD_ETA, self::ONBOARD_FIT],
             self::ONBOARD_ETA        => [self::ONBOARD_SLOT_PREF, self::ONBOARD_CLASSIFICA, self::ONBOARD_LIVELLO],
             self::ONBOARD_SLOT_PREF  => [self::ONBOARD_COMPLETO, self::ONBOARD_ETA],
-            self::ONBOARD_COMPLETO   => [self::MENU, self::SCEGLI_QUANDO, self::ATTESA_MATCH],
+            self::ONBOARD_COMPLETO   => [self::MENU, self::ASK_OPPONENT, self::SCEGLI_QUANDO, self::ATTESA_MATCH],
 
-            self::MENU           => [self::SCEGLI_QUANDO, self::ATTESA_MATCH, self::GESTIONE_PRENOTAZIONI, self::MODIFICA_PROFILO, self::RISPOSTA_MATCH],
+            self::MENU           => [self::ASK_OPPONENT, self::SCEGLI_QUANDO, self::ATTESA_MATCH, self::GESTIONE_PRENOTAZIONI, self::MODIFICA_PROFILO, self::RISPOSTA_MATCH],
+            self::ASK_OPPONENT   => [self::ASK_OPPONENT, self::SCEGLI_QUANDO, self::MENU],
             self::SCEGLI_QUANDO  => [self::VERIFICA_SLOT, self::SCEGLI_DURATA, self::MENU, self::GESTIONE_PRENOTAZIONI],
             self::SCEGLI_DURATA  => [self::VERIFICA_SLOT, self::SCEGLI_QUANDO, self::MENU],
             self::VERIFICA_SLOT  => [self::PROPONI_SLOT, self::MENU, self::GESTIONE_PRENOTAZIONI],
@@ -75,6 +80,7 @@ enum BotState: string
 
             self::ATTESA_MATCH          => [self::SCEGLI_QUANDO, self::MENU, self::GESTIONE_PRENOTAZIONI, self::RISPOSTA_MATCH],
             self::RISPOSTA_MATCH        => [self::CONFERMATO, self::MENU],
+            self::CONFERMA_INVITO_OPP   => [self::MENU, self::CONFERMA_INVITO_OPP],
             self::GESTIONE_PRENOTAZIONI => [self::AZIONE_PRENOTAZIONE, self::MENU],
             self::AZIONE_PRENOTAZIONE   => [self::SCEGLI_QUANDO, self::MENU],
 

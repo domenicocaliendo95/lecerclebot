@@ -60,5 +60,10 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 
     // Bot Flow States
     Route::get('/bot-flow-states', [BotFlowStateController::class, 'index']);
+    Route::get('/bot-flow-states/graph', [BotFlowStateController::class, 'graph']);
+    Route::get('/bot-flow-states/meta', [BotFlowStateController::class, 'meta']);
+    Route::post('/bot-flow-states', [BotFlowStateController::class, 'store']);
+    Route::put('/bot-flow-states/positions', [BotFlowStateController::class, 'savePositions']);
     Route::put('/bot-flow-states/{state}', [BotFlowStateController::class, 'update']);
+    Route::delete('/bot-flow-states/{state}', [BotFlowStateController::class, 'destroy']);
 });

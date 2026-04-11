@@ -19,19 +19,36 @@ class BotResponse
     private bool  $matchRefused        = false;
     private bool  $matchResultToSave   = false;
     private bool  $feedbackToSave      = false;
+    private bool  $opponentLinkConfirmed = false;
+    private bool  $opponentLinkRejected  = false;
     private ?array $profileToSave      = null;
 
     private function __construct(
-        public readonly string   $message,
-        public readonly BotState $nextState,
-        public readonly array    $buttons,
+        public readonly string          $message,
+        public readonly BotState|string $nextState,
+        public readonly array           $buttons,
     ) {}
 
     /* ───────── Factory ───────── */
 
-    public static function make(string $message, BotState $nextState, array $buttons = []): self
+    /**
+     * Crea una risposta. `$nextState` può essere un BotState enum (built-in)
+     * o una stringa (stato custom creato dal pannello).
+     */
+    public static function make(string $message, BotState|string $nextState, array $buttons = []): self
     {
         return new self($message, $nextState, $buttons);
+    }
+
+    /**
+     * Restituisce il valore stringa dello stato successivo,
+     * indipendentemente che sia un enum case o una stringa custom.
+     */
+    public function nextStateValue(): string
+    {
+        return $this->nextState instanceof BotState
+            ? $this->nextState->value
+            : $this->nextState;
     }
 
     /* ───────── Builder fluente per side-effect ───────── */
@@ -90,6 +107,18 @@ class BotResponse
         return $this;
     }
 
+    public function withOpponentLinkConfirmed(bool $flag): self
+    {
+        $this->opponentLinkConfirmed = $flag;
+        return $this;
+    }
+
+    public function withOpponentLinkRejected(bool $flag): self
+    {
+        $this->opponentLinkRejected = $flag;
+        return $this;
+    }
+
     public function withProfileToSave(?array $profile): self
     {
         $this->profileToSave = $profile;
@@ -141,6 +170,16 @@ class BotResponse
     public function needsFeedbackSave(): bool
     {
         return $this->feedbackToSave;
+    }
+
+    public function needsOpponentLinkConfirm(): bool
+    {
+        return $this->opponentLinkConfirmed;
+    }
+
+    public function needsOpponentLinkReject(): bool
+    {
+        return $this->opponentLinkRejected;
     }
 
     public function profileToSave(): ?array

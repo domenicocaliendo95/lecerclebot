@@ -1,5 +1,5 @@
 # Le Cercle Tennis Club — Bot WhatsApp
-Bibbia progetto — agg. 2026-04-06
+Bibbia progetto — agg. 2026-04-11
 
 ## Identità
 Bot WhatsApp per **Le Cercle Tennis Club** (San Gennaro Vesuviano, NA). Gestisce registrazione, prenotazione campi, matchmaking, profilo. Italiano, tono amichevole/diretto/sportivo. Max 3 righe per messaggio, max 1 emoji.
@@ -15,6 +15,8 @@ Bot WhatsApp per **Le Cercle Tennis Club** (San Gennaro Vesuviano, NA). Gestisce
 
 ## Architettura — Principio
 **L'AI NON controlla la logica.** Macchina a stati deterministica. Gemini solo per (1) parsing date NL fallback, (2) classificazione bottone se input non matcha.
+
+**Stati ibridi**: gli stati possono essere **built-in** (definiti come case in `BotState` enum, hanno handler PHP dedicato) o **custom** (creati dal pannello, vivono solo in `bot_flow_states`, gestiti dal `handleGenericSimple` universale). I custom sono **sempre** `type=simple` e supportano solo bottoni + side_effect dalla whitelist.
 
 ```
 WhatsAppController → BotOrchestrator → StateHandler → TextGenerator
@@ -37,7 +39,7 @@ app/
 ├ Models/{BotSession,Booking,MatchInvitation,MatchResult,EloHistory,
 │         Feedback,BotSetting,BotMessage,BotFlowState,User}.php
 └ Services/
-   ├ {Calendar,Gemini,WhatsApp}Service.php
+   ├ {Calendar,Gemini,WhatsApp,UserSearch}Service.php
    └ Bot/
       ├ BotState.php           (enum + transitionTo validate)
       ├ BotPersona.php         (nomi tennisti + saluti)
@@ -60,13 +62,13 @@ frontend/src/
 ### `bot_sessions`
 `id`, `phone` UNIQUE, `state` VARCHAR(30) DEFAULT 'NEW', `data` JSON, timestamps.
 
-**`data` keys**: `persona`, `history` (max 40, `[{role,content}]`), `profile` ({name,is_fit,fit_rating,self_level,age,slot}), `booking_type` (con_avversario/matchmaking/sparapalline), `requested_{date,time,friendly,raw}`, `calendar_result` ({available,alternatives}), `alternatives`, `payment_method` (online/in_loco), `editing_booking_id`, `selected_booking_id`, `bookings_list`, `update_field` (fit/classifica/livello/slot), `pending_booking_id`, `opponent_{name,phone}`, `invited_by_{phone,name}`, `invited_{slot,booking_id}`.
+**`data` keys**: `persona`, `history` (max 40, `[{role,content}]`), `profile` ({name,is_fit,fit_rating,self_level,age,slot}), `booking_type` (con_avversario/matchmaking/sparapalline), `requested_{date,time,friendly,raw}`, `calendar_result` ({available,alternatives}), `alternatives`, `payment_method` (online/in_loco), `editing_booking_id`, `selected_booking_id`, `bookings_list`, `update_field` (fit/classifica/livello/slot), `pending_booking_id`, `opponent_{user_id,name,phone}` (lato challenger, ASK_OPPONENT), `opponent_search_results[]` (top 3 candidati), `opponent_pending_confirm` ({user_id,name}), `invited_by_{phone,name}`, `invited_{slot,booking_id}`, `opp_invite_{booking_id,challenger_id,challenger_name,slot}` (lato avversario taggato in CONFERMA_INVITO_OPP).
 
 ### `users`
 `id`, `name`, `email` (`wa_XXX@lecercleclub.bot`), `phone` UNIQUE, `password`, `is_fit`, `fit_rating` (NC/4.1/3.3..), `self_level` VARCHAR (neofita/dilettante/avanzato), `age`, `elo_rating` DEFAULT 1200, `matches_played`, `matches_won`, `is_elo_established`, `preferred_slots` JSON.
 
 ### `bookings`
-`id`, `player1_id` FK, `player2_id` FK NULL, `booking_date`, `start_time`, `end_time`, `price`, `is_peak`, `status` (pending_match/confirmed/cancelled), `gcal_event_id`, `stripe_payment_link_p1/p2`, `payment_status_p1/p2`.
+`id`, `player1_id` FK, `player2_id` FK NULL, `player2_name_text` VARCHAR(100) NULL (avversario non tracciato/esterno), `player2_confirmed_at` TIMESTAMP NULL (settato quando l'avversario tesserato conferma il link, abilita ELO), `booking_date`, `start_time`, `end_time`, `price`, `is_peak`, `status` (pending_match/confirmed/cancelled), `gcal_event_id`, `stripe_payment_link_p1/p2`, `payment_status_p1/p2`.
 
 ### `match_invitations`
 `id`, `booking_id`, `receiver_id`, `status` (pending/accepted/refused).
@@ -75,18 +77,38 @@ frontend/src/
 `key` PK, `text` (con `{vars}`), `category` (onboarding/menu/prenotazione/conferma/gestione/profilo/matchmaking/risultati/feedback/promemoria/errore), `description`, timestamps. Cache 1h. Fallback hardcoded in `TextGenerator::FALLBACKS`. Editabile in `/panel/messaggi`.
 
 ### `bot_flow_states`
-`state` PK, `type` (`simple`=editabile / `complex`=logica custom), `message_key` FK, `fallback_key` FK NULL, `buttons` JSON `[{label,target_state,value?,side_effect?}]`, `category`, `description`, `sort_order`. Cache 1h. Editabile in `/panel/flusso`. `simple`: input non matchato → classificazione AI Gemini. `complex`: logica nel codice ma label/messaggi editabili.
+`state` PK, `type` (`simple`=editabile / `complex`=logica custom), `message_key` FK, `fallback_key` FK NULL, `buttons` JSON `[{label,target_state,value?,side_effect?}]`, `category`, `description`, `sort_order`, `position` JSON `{x,y}` (per flow editor visuale), `is_custom` BOOL. Cache 1h. Editabile in `/panel/flusso` con flow editor visuale (React Flow). `simple`: input non matchato → classificazione AI Gemini. `complex`: logica nel codice ma label/messaggi editabili. `is_custom=true`: creato dal pannello, sempre `simple`, gestito da `StateHandler::handleGenericSimple()`, eliminabile se nessuno lo referenzia.
 
 ### `bot_settings`
 `key` PK, `value` JSON, timestamps. Es. `reminders`: `{enabled, slots:[{hours_before,enabled}]}`.
+
+## Stati custom dal pannello (`handleGenericSimple`)
+Quando `BotState::tryFrom($state)` restituisce `null` (= stato non in enum), `StateHandler::handle()` delega a `handleGenericSimple($session, $input, $user, $stateValue)`:
+1. Carica `BotFlowState::getCached($stateValue)` (cache 1h)
+2. Matcha l'input con le label dei `buttons` (case-insensitive substring)
+3. Fallback Gemini se nessun match
+4. Se trovato → applica `side_effect` dalla whitelist + transita a `target_state`
+5. Se non trovato → ripete il messaggio (o `fallback_key`) con gli stessi bottoni
+
+**`BotResponse::nextState`** è ora `BotState|string` per supportare target custom. `nextStateValue()` restituisce sempre la stringa.
+
+**Validazione transizione** in `BotOrchestrator::resolveNextStateValue()`:
+- Source + target entrambi enum → `BotState::transitionTo()` (validation rigida da `allowedTransitions()`)
+- Target enum (anche se source custom) → ok
+- Target custom presente in `bot_flow_states` → ok
+- Altrimenti → resta sullo stato corrente (log warning)
+
+**Side-effect whitelist** (mappata in `StateHandler::availableSideEffects()`, esposta a `/api/admin/bot-flow-states/meta`):
+`calendarCheck`, `paymentRequired`, `bookingToCreate`, `bookingToCancel`, `matchmakingSearch`, `matchAccepted`, `matchRefused`, `matchResultToSave`, `feedbackToSave`, `opponentLinkConfirmed`, `opponentLinkRejected`.
 
 ## Stati `BotState`
 
 **Onboarding**: NEW, ONBOARD_NOME, ONBOARD_FIT, ONBOARD_CLASSIFICA, ONBOARD_LIVELLO, ONBOARD_ETA, ONBOARD_SLOT_PREF, ONBOARD_COMPLETO
 **Menu**: MENU
-**Prenotazione**: SCEGLI_QUANDO, SCEGLI_DURATA, VERIFICA_SLOT, PROPONI_SLOT, CONFERMA, PAGAMENTO, CONFERMATO
+**Prenotazione**: ASK_OPPONENT, SCEGLI_QUANDO, SCEGLI_DURATA, VERIFICA_SLOT, PROPONI_SLOT, CONFERMA, PAGAMENTO, CONFERMATO
 **Risultati/Feedback**: INSERISCI_RISULTATO, FEEDBACK, FEEDBACK_COMMENTO
 **Matchmaking**: ATTESA_MATCH, RISPOSTA_MATCH
+**Conferma avversario (bidir.)**: CONFERMA_INVITO_OPP
 **Gestione**: GESTIONE_PRENOTAZIONI, AZIONE_PRENOTAZIONE
 **Profilo**: MODIFICA_PROFILO, MODIFICA_RISPOSTA
 
@@ -99,8 +121,9 @@ ONBOARD_CLASSIFICA   → ONBOARD_ETA | ONBOARD_FIT
 ONBOARD_LIVELLO      → ONBOARD_ETA | ONBOARD_FIT
 ONBOARD_ETA          → ONBOARD_SLOT_PREF | ONBOARD_CLASSIFICA | ONBOARD_LIVELLO
 ONBOARD_SLOT_PREF    → ONBOARD_COMPLETO | ONBOARD_ETA
-ONBOARD_COMPLETO     → MENU | SCEGLI_QUANDO | ATTESA_MATCH
-MENU                 → SCEGLI_QUANDO | ATTESA_MATCH | GESTIONE_PRENOTAZIONI | MODIFICA_PROFILO | RISPOSTA_MATCH
+ONBOARD_COMPLETO     → MENU | ASK_OPPONENT | SCEGLI_QUANDO | ATTESA_MATCH
+MENU                 → ASK_OPPONENT | SCEGLI_QUANDO | ATTESA_MATCH | GESTIONE_PRENOTAZIONI | MODIFICA_PROFILO | RISPOSTA_MATCH
+ASK_OPPONENT         → ASK_OPPONENT | SCEGLI_QUANDO | MENU
 SCEGLI_QUANDO        → VERIFICA_SLOT | MENU | GESTIONE_PRENOTAZIONI
 VERIFICA_SLOT        → PROPONI_SLOT | MENU | GESTIONE_PRENOTAZIONI
 PROPONI_SLOT         → CONFERMA | SCEGLI_QUANDO | MENU | GESTIONE_PRENOTAZIONI
@@ -109,6 +132,7 @@ PAGAMENTO            → CONFERMATO | MENU | GESTIONE_PRENOTAZIONI
 CONFERMATO           → MENU | GESTIONE_PRENOTAZIONI
 ATTESA_MATCH         → SCEGLI_QUANDO | MENU | GESTIONE_PRENOTAZIONI | RISPOSTA_MATCH
 RISPOSTA_MATCH       → CONFERMATO | MENU
+CONFERMA_INVITO_OPP  → MENU | CONFERMA_INVITO_OPP
 GESTIONE_PRENOTAZIONI→ AZIONE_PRENOTAZIONE | MENU
 AZIONE_PRENOTAZIONE  → SCEGLI_QUANDO | MENU
 MODIFICA_PROFILO     → MODIFICA_RISPOSTA | MENU
@@ -126,9 +150,28 @@ Keyword `indietro`/sinonimi → step precedente (non in ONBOARD_NOME).
 **Validazioni**: nome (lettere/spazi/apostrofi 2-60, Title Case auto); FIT (negativo prima del positivo); classifica (4.1-1.1, NC, "terza categoria"→3.1); livello (sinonimi: principiante→neofita, intermedio→dilettante, esperto→avanzato); età (primo num, 5-99); fascia (mattino→mattina, serale/tardi/dopo cena→sera). Input invalido → ripeti domanda.
 
 ### 2. Prenotazione (con_avversario / sparapalline)
-Da MENU. SCEGLI_QUANDO → VERIFICA_SLOT (orchestrator: invia "verifico..." fuori tx, poi `checkUserRequest`, ri-processa) → PROPONI_SLOT (libero: `["Sì, prenota","No, cambia orario"]`; occupato: max 3 alternative come bottoni; nessuna: torna a SCEGLI_QUANDO) → CONFERMA (`["Paga online","Pago di persona","Annulla"]`) → PAGAMENTO o CONFERMATO (crea Booking + gcal event) → MENU.
+Da MENU.
+
+**Solo `con_avversario`**: passa prima da **ASK_OPPONENT** (vedi flusso 2b), poi continua. `sparapalline` salta direttamente a SCEGLI_QUANDO.
+
+SCEGLI_QUANDO → VERIFICA_SLOT (orchestrator: invia "verifico..." fuori tx, poi `checkUserRequest`, ri-processa) → PROPONI_SLOT (libero: `["Sì, prenota","No, cambia orario"]`; occupato: max 3 alternative come bottoni; nessuna: torna a SCEGLI_QUANDO) → CONFERMA (`["Paga online","Pago di persona","Annulla"]`) → PAGAMENTO o CONFERMATO (crea Booking + gcal event, popola `player2_id`/`player2_name_text` da sessione) → MENU.
 
 **Modifica**: `editing_booking_id` → `createBooking()` cancella vecchio (gcal+DB) prima di crearne uno nuovo.
+
+### 2b. ASK_OPPONENT (sotto-flusso di "con_avversario")
+Stato `complex`. Obiettivo: identificare l'avversario per popolare `player2_id` (tracciato per ELO) o `player2_name_text` (libero, no ELO).
+
+1. Bot chiede "Con chi giochi?" (template `chiedi_avversario`)
+2. Input "salta"/"non lo so"/"esterno" → opponent svuotato → `SCEGLI_QUANDO`
+3. Input nome → `UserSearchService::search($q,5)` (LIKE + Levenshtein, escludi challenger)
+   - **0 match** → salva input come `opponent_name` libero, `opponent_user_id=null` → `SCEGLI_QUANDO` (template `avversario_non_trovato`)
+   - **1 match** → propone `"Ho trovato {name}. È lui/lei?"` con bottoni `["Sì, è lui","No, è un altro","Salta"]`. Salva `opponent_pending_confirm` in sessione.
+     - Sì → salva `opponent_user_id` + `opponent_phone` → `SCEGLI_QUANDO`
+     - No → riprova ricerca (`avversario_riprova`)
+   - **2-3 match** → mostra fino a 3 nomi come bottoni (label troncata a 20 char). Salva `opponent_search_results[]`. Selezione (per label o per posizione 1/2/3) → conferma diretta → `SCEGLI_QUANDO`.
+4. Quando `createBooking()` parte, legge dalla sessione e popola il Booking.
+
+Dopo creazione: se `opponent_user_id` settato e `opponent_phone` presente → `notifyOpponentForConfirmation()` (vedi flusso 3b).
 
 ### 3. Matchmaking
 Da MENU "Trovami avversario", `booking_type=matchmaking`. SCEGLI_QUANDO → VERIFICA_SLOT → PROPONI_SLOT → CONFERMA (`["Cerca avversario","Annulla"]`) → ATTESA_MATCH + flag `matchmakingToSearch`.
@@ -136,8 +179,21 @@ Da MENU "Trovami avversario", `booking_type=matchmaking`. SCEGLI_QUANDO → VERI
 `triggerMatchmaking()`: cerca user con `elo_rating ±200`, ≠ challenger, con phone. Non trovato → "nessun avversario" + MENU. Trovato → crea Booking (`pending_match`), MatchInvitation (`pending`), aggiorna sessione avversario in `RISPOSTA_MATCH` con `invited_*`, invia WA invito + `["Accetta","Rifiuta"]`.
 
 Challenger in ATTESA_MATCH (può `annulla`→MENU). Avversario in RISPOSTA_MATCH:
-- Accetta → `confirmMatch()`: invitation=accepted, crea gcal event, booking=confirmed, notifica challenger, challenger→CONFERMATO
+- Accetta → `confirmMatch()`: invitation=accepted, crea gcal event, booking=confirmed, **`player2_confirmed_at=now()`** (abilita ELO), notifica challenger, challenger→CONFERMATO
 - Rifiuta → `refuseMatch()`: invitation=refused, booking=cancelled, notifica challenger, challenger→MENU
+
+### 3b. Conferma bidirezionale avversario (CONFERMA_INVITO_OPP)
+Attivata automaticamente da `createBooking()` SOLO se `con_avversario` ha `opponent_user_id` settato e l'avversario tesserato ha un `phone`.
+
+`notifyOpponentForConfirmation()`:
+1. Trova/crea sessione dell'avversario, stato → `CONFERMA_INVITO_OPP`, salva `opp_invite_{booking_id,challenger_id,challenger_name,slot}` in `data`
+2. Invia WA: `"Ciao! {challenger_name} ti ha segnato come avversario per {slot}. Confermi?"` + `["Sì, confermo","No, sbagliato"]`
+
+L'avversario in `CONFERMA_INVITO_OPP`:
+- **Sì** → flag `withOpponentLinkConfirmed` → `confirmOpponentLink()`: setta `player2_confirmed_at=now()` (abilita ELO), notifica challenger (`opp_invite_notify_challenger_ok`), opponent → MENU
+- **No** → flag `withOpponentLinkRejected` → `rejectOpponentLink()`: sbianca `player2_id`, salva nome dell'avversario in `player2_name_text` (traccia storica), notifica challenger (`opp_invite_notify_challenger_ko`), opponent → MENU. Il booking resta `confirmed` (lo slot è del challenger), ma niente ELO.
+
+**Caso edge**: avversario tesserato senza `phone` → `player2_id` viene salvato ma nessuna notifica WA. Resta non confermato (`player2_confirmed_at=null`), quindi niente ELO finché un admin non lo conferma manualmente.
 
 ### 4. Gestione prenotazioni
 Keyword `prenotazioni` da qualsiasi stato non-onboarding. `handleMostraPrenotazioni()`: prossime 3 (`confirmed`/`pending_match`, da oggi) come bottoni `Lun 6 apr 18:00`. GESTIONE_PRENOTAZIONI → match label/orario → AZIONE_PRENOTAZIONE (`["Modifica orario","Cancella","Torna al menu"]`):
@@ -149,7 +205,16 @@ Keyword `prenotazioni` da qualsiasi stato non-onboarding. `handleMostraPrenotazi
 Keyword `profilo`. MODIFICA_PROFILO (`["Stato FIT","Livello gioco","Fascia oraria"]`) → MODIFICA_RISPOSTA (riusa parser onboarding) → `withProfileToSave()` → MENU.
 
 ### 6. Risultati partita
-Scheduler `bot:send-result-requests` (15 min, 1h post partita) crea MatchResult e mette sessioni in INSERISCI_RISULTATO. Bottoni `["Ho vinto","Ho perso","Non giocata"]`. Keywords: vinto/perso/non giocata/annullata. Punteggio opzionale `\b(\d{1,2})[-\/](\d{1,2})\b`. Flag `withMatchResultToSave` → `processMatchResult()` aggiorna ruolo. Entrambi confermati → `finalizeMatchResult()` + `EloService::processResult()`. Discordanza → notifica entrambi, admin verifica. No_show → completata senza ELO. Poi → FEEDBACK.
+Scheduler `bot:send-result-requests` (15 min, 1h post partita).
+
+**Selezione bookings**: `status=confirmed`, `result_requested_at=null`, fine partita +1h ≤ now, e (`player2_id` settato OPPURE `player2_name_text` settato).
+
+**Comportamento per booking**:
+- **Tracked** (player2_id ≠ null AND player2_confirmed_at ≠ null): crea MatchResult, manda WA a entrambi, ELO normale
+- **Half-tracked** (player2_id ≠ null ma player2_confirmed_at = null): manda solo a player1, **NO ELO** (il link non è validato)
+- **Untracked** (solo player2_name_text): manda solo a player1, **NO ELO** (avversario esterno o rifiutato)
+
+Sessione opponent → INSERISCI_RISULTATO. Bottoni `["Ho vinto","Ho perso","Non giocata"]`. Keywords: vinto/perso/non giocata/annullata. Punteggio opzionale `\b(\d{1,2})[-\/](\d{1,2})\b`. Flag `withMatchResultToSave` → `processMatchResult()` aggiorna ruolo. Entrambi confermati → `finalizeMatchResult()` + `EloService::processResult()`. Discordanza → notifica entrambi, admin verifica. No_show → completata senza ELO. Poi → FEEDBACK.
 
 ### 7. Feedback
 Keyword `feedback` o post-risultato. FEEDBACK (`["1","2","3","4","5"]`, parser: numeri/parole/emoji) → FEEDBACK_COMMENTO (no/skip/niente → senza commento). Flag `withFeedbackToSave` → `saveFeedback()` su tabella `feedbacks` (tipo, rating, contenuto, user/booking).
@@ -192,6 +257,11 @@ Matchmaking: cerca_avversario, matchmaking_attesa, nessun_avversario,
 Gestione: nessuna_prenotazione, scegli_prenotazione, azione_prenotazione,
   prenotazione_cancellata_ok, prenotazione_modifica_quando
 Profilo: modifica_profilo_scelta, profilo_aggiornato
+Avversario: chiedi_avversario, avversario_nome_corto, avversario_lista,
+  avversario_conferma_uno, avversario_confermato, avversario_riprova,
+  avversario_non_trovato, avversario_esterno, avversario_saltato,
+  opp_invite_richiesta, opp_invite_confermato, opp_invite_rifiutato,
+  opp_invite_non_capito, opp_invite_notify_challenger_{ok,ko}
 Errori: errore_generico
 ```
 
@@ -237,6 +307,8 @@ Eseguiti dall'orchestrator:
 | `withMatchRefused` | `refuseMatch()`: cancelled, notifica |
 | `withMatchResultToSave` | `processMatchResult()` + ELO se entrambi confermati |
 | `withFeedbackToSave` | `saveFeedback()` |
+| `withOpponentLinkConfirmed` | `confirmOpponentLink()`: `player2_confirmed_at=now()`, notifica challenger |
+| `withOpponentLinkRejected` | `rejectOpponentLink()`: sbianca `player2_id`, salva nome in `player2_name_text`, notifica challenger |
 | `withPaymentRequired` | Flag (online non integrato) |
 
 ## Conversione classifica/livello → ELO
@@ -258,6 +330,19 @@ Default 1200. FIT prevale su autodichiarato.
 | Neofita | 1000 |
 | Dilettante | 1200 |
 | Avanzato | 1400 |
+
+## UserSearchService
+`app/Services/UserSearchService.php` — fuzzy search condivisa tra bot (`StateHandler::handleAskOpponent`) e pannello (`UserController::search`).
+
+**`search(string $q, int $limit=10, bool $requirePhone=false): Collection<User>`**
+1. Normalizza (lowercase, no accenti, spazi unificati)
+2. Step SQL: LIKE su tokens (e su `phone` se la query contiene cifre), limit $limit*4
+3. Step scoring (Levenshtein + esatto/substring/prefisso parola): ordina per `score` desc
+4. Esclude `is_admin=true`. Se `requirePhone=true`, filtra `whereNotNull('phone')`
+
+Punteggi (additivi): match esatto +1000, substring +500, phone match +800, parola intera +100, prefisso parola +50, similarità Levenshtein > 0.6 → +(similarity*100).
+
+**`bestMatchOrNull($q, $requirePhone=false): ?User`** — restituisce il primo solo se il gap col secondo > 30%, altrimenti `null` (anti-ambiguità).
 
 ## Errori
 - Chiamate esterne in `try/catch`
@@ -322,7 +407,16 @@ Rimosso `FilamentInfoWidget`, mantenuto `AccountWidget`.
 | PricingRuleResource | PricingRule | CRUD reorderable | 6 |
 
 ## React SPA `/panel`
-Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide. Build → `public/panel/` + `.htaccess` SPA. URL `https://bot.lecercleclub.it/panel/`.
+Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide, **@xyflow/react** + **@dagrejs/dagre** (per il flow editor visuale). Build → `public/panel/` + `.htaccess` SPA. URL `https://bot.lecercleclub.it/panel/`.
+
+**`/panel/flusso`** — Flow editor visuale (React Flow):
+- Custom node component con state name, badge custom/simple/complex, message preview, lista bottoni
+- Edge button-driven (verde solido) e code-driven (grigio tratteggiato, read-only)
+- Side panel di edit: descrizione, message_key, fallback_key, bottoni con dropdown target_state e side_effect, eliminazione (solo custom)
+- Toolbar: nuovo stato, salva tutto (mostra count modifiche pending), search, toggle code edges
+- Drag handle source → handle target = crea nuovo bottone collegato
+- Autolayout dagre se almeno uno stato non ha posizione salvata
+- Posizioni salvate in bulk via `/bot-flow-states/positions`
 
 **Auth**: session-based (stessa di Filament, no Sanctum). `POST /api/auth/login` (verifica `is_admin`), `GET /api/auth/me`. Middleware `auth+admin` su `/api/admin/*`. Frontend: `AuthProvider` + `RequireAuth`.
 
@@ -346,8 +440,11 @@ Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide. Build �
 | `/settings/{key}` | GET/PUT | |
 | `/bot-messages` | GET | grouped per categoria |
 | `/bot-messages/{key}` | PUT | |
-| `/bot-flow-states` | GET | grouped + testi |
-| `/bot-flow-states/{state}` | PUT | bottoni/transizioni |
+| `/bot-flow-states` | GET / POST | lista grouped / crea custom (force simple+is_custom) |
+| `/bot-flow-states/graph` | GET | nodes + buttonEdges (editable) + codeEdges (read-only da `BotState::allowedTransitions`) |
+| `/bot-flow-states/meta` | GET | side_effect whitelist + bot_messages list + built_in cases + categorie |
+| `/bot-flow-states/positions` | PUT | bulk save posizioni nodi (drag&drop) |
+| `/bot-flow-states/{state}` | PUT / DELETE | aggiorna / elimina (custom only, blocco se referenziato) |
 
 ## Scheduler
 | Comando | Freq | |

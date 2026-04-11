@@ -1,9 +1,39 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Check, Search, ArrowRight, Pencil, Cpu, Cog, X, Save, MessageSquareText } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  MiniMap,
+  Panel,
+  Handle,
+  Position,
+  MarkerType,
+  applyNodeChanges,
+  applyEdgeChanges,
+  type Node,
+  type Edge,
+  type NodeChange,
+  type EdgeChange,
+  type NodeProps,
+  type Connection,
+  useReactFlow,
+} from '@xyflow/react'
+import dagre from '@dagrejs/dagre'
+import {
+  Loader2, Save, Plus, Trash2, X, Cpu, Cog, MessageSquareText,
+  Zap, AlertTriangle, Check, Search,
+} from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { apiFetch } from '@/hooks/use-api'
+
+import '@xyflow/react/dist/style.css'
+
+/* ═════════════════════════════════════════════════════════════════
+ *  Types
+ * ═════════════════════════════════════════════════════════════════ */
 
 interface FlowButton {
   label: string
@@ -12,326 +42,827 @@ interface FlowButton {
   side_effect?: string
 }
 
-interface FlowState {
+interface FlowStateNode {
+  id: string
   state: string
   type: 'simple' | 'complex'
-  message_key: string
-  fallback_key: string | null
-  buttons: FlowButton[] | null
+  is_custom: boolean
   category: string
   description: string | null
-  sort_order: number
+  message_key: string
   message_text: string | null
+  fallback_key: string | null
   fallback_text: string | null
+  buttons: FlowButton[]
+  position: { x: number; y: number } | null
+  sort_order: number
 }
 
-type GroupedFlowStates = Record<string, FlowState[]>
-
-const categoryLabels: Record<string, string> = {
-  onboarding: 'Onboarding',
-  menu: 'Menu',
-  prenotazione: 'Prenotazione',
-  conferma: 'Conferma & Pagamento',
-  matchmaking: 'Matchmaking',
-  gestione: 'Gestione Prenotazioni',
-  profilo: 'Modifica Profilo',
-  risultati: 'Risultati Partita',
-  feedback: 'Feedback',
+interface ButtonEdge {
+  id: string
+  source: string
+  target: string
+  label: string
+  kind: 'button'
+  side_effect: string | null
+  editable: boolean
 }
 
-const categoryColors: Record<string, string> = {
-  onboarding: 'border-l-blue-500',
-  menu: 'border-l-emerald-500',
-  prenotazione: 'border-l-amber-500',
-  conferma: 'border-l-purple-500',
-  matchmaking: 'border-l-orange-500',
-  gestione: 'border-l-cyan-500',
-  profilo: 'border-l-pink-500',
-  risultati: 'border-l-red-500',
-  feedback: 'border-l-yellow-500',
+interface CodeEdge {
+  id: string
+  source: string
+  target: string
+  label: null
+  kind: 'code'
+  side_effect: null
+  editable: false
 }
 
-const categoryOrder = Object.keys(categoryLabels)
-
-function StateTypeBadge({ type }: { type: 'simple' | 'complex' }) {
-  return type === 'simple' ? (
-    <Badge variant="secondary" className="text-[10px] gap-1"><Cog className="h-2.5 w-2.5" /> Configurabile</Badge>
-  ) : (
-    <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700 dark:text-amber-400"><Cpu className="h-2.5 w-2.5" /> Logica custom</Badge>
-  )
+interface GraphResponse {
+  nodes: FlowStateNode[]
+  buttonEdges: ButtonEdge[]
+  codeEdges: CodeEdge[]
 }
 
-function HighlightVars({ text }: { text: string }) {
-  const parts = text.split(/(\{[a-z_]+\})/g)
-  return (
-    <>{parts.map((part, i) =>
-      /^\{[a-z_]+\}$/.test(part)
-        ? <span key={i} className="rounded bg-amber-100 px-0.5 text-amber-800 font-mono text-[10px] dark:bg-amber-900/30 dark:text-amber-300">{part}</span>
-        : <span key={i}>{part}</span>
-    )}</>
-  )
+interface MetaResponse {
+  side_effects: Record<string, string>
+  messages: { key: string; category: string; description: string | null }[]
+  built_in: string[]
+  categories: string[]
 }
 
-function ButtonEditor({ flowState, onSave, saving }: {
-  flowState: FlowState
-  onSave: (buttons: FlowButton[]) => void
-  saving: boolean
-}) {
-  const [buttons, setButtons] = useState<FlowButton[]>(flowState.buttons ?? [])
-  const [dirty, setDirty] = useState(false)
+type FlowNodeData = FlowStateNode & { selected?: boolean }
 
-  const updateButton = (index: number, field: keyof FlowButton, value: string) => {
-    setButtons(prev => prev.map((b, i) => i === index ? { ...b, [field]: value } : b))
-    setDirty(true)
-  }
+/* ═════════════════════════════════════════════════════════════════
+ *  Color helpers
+ * ═════════════════════════════════════════════════════════════════ */
 
-  const removeButton = (index: number) => {
-    setButtons(prev => prev.filter((_, i) => i !== index))
-    setDirty(true)
-  }
-
-  const addButton = () => {
-    if (buttons.length >= 3) return
-    setButtons(prev => [...prev, { label: '', target_state: '', value: '' }])
-    setDirty(true)
-  }
-
-  return (
-    <div className="space-y-3 mt-3">
-      <p className="text-xs font-medium text-muted-foreground">Pulsanti WhatsApp (max 3, max 20 char)</p>
-      {buttons.map((btn, i) => (
-        <div key={i} className="flex items-start gap-2">
-          <div className="flex-1 grid grid-cols-2 gap-2">
-            <input
-              value={btn.label}
-              onChange={e => updateButton(i, 'label', e.target.value)}
-              maxLength={20}
-              placeholder="Label"
-              className="rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
-            />
-            <div className="flex items-center gap-1">
-              <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-              <input
-                value={btn.target_state}
-                onChange={e => updateButton(i, 'target_state', e.target.value)}
-                placeholder="Stato destinazione"
-                className="rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 w-full font-mono"
-              />
-            </div>
-          </div>
-          <button onClick={() => removeButton(i)} className="p-1 text-red-400 hover:text-red-600 mt-0.5">
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      ))}
-      <div className="flex gap-2">
-        {buttons.length < 3 && (
-          <Button size="sm" variant="outline" onClick={addButton} className="text-xs h-7">
-            + Aggiungi pulsante
-          </Button>
-        )}
-        {dirty && (
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700 text-xs h-7"
-            onClick={() => { onSave(buttons); setDirty(false) }}
-            disabled={saving}
-          >
-            {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Save className="mr-1 h-3 w-3" />}
-            Salva pulsanti
-          </Button>
-        )}
-      </div>
-    </div>
-  )
+const categoryColors: Record<string, { bg: string; border: string; text: string }> = {
+  onboarding:  { bg: 'bg-blue-50',    border: 'border-blue-400',    text: 'text-blue-700' },
+  menu:        { bg: 'bg-emerald-50', border: 'border-emerald-400', text: 'text-emerald-700' },
+  prenotazione:{ bg: 'bg-amber-50',   border: 'border-amber-400',   text: 'text-amber-700' },
+  conferma:    { bg: 'bg-purple-50',  border: 'border-purple-400',  text: 'text-purple-700' },
+  matchmaking: { bg: 'bg-orange-50',  border: 'border-orange-400',  text: 'text-orange-700' },
+  gestione:    { bg: 'bg-cyan-50',    border: 'border-cyan-400',    text: 'text-cyan-700' },
+  profilo:     { bg: 'bg-pink-50',    border: 'border-pink-400',    text: 'text-pink-700' },
+  risultati:   { bg: 'bg-red-50',     border: 'border-red-400',     text: 'text-red-700' },
+  feedback:    { bg: 'bg-yellow-50',  border: 'border-yellow-400',  text: 'text-yellow-700' },
+  avversario:  { bg: 'bg-violet-50',  border: 'border-violet-400',  text: 'text-violet-700' },
+  errore:      { bg: 'bg-gray-100',   border: 'border-gray-400',    text: 'text-gray-700' },
+  custom:      { bg: 'bg-teal-50',    border: 'border-teal-400',    text: 'text-teal-700' },
 }
 
-function FlowStateCard({ flowState, allStates, onUpdate }: {
-  flowState: FlowState
-  allStates: FlowState[]
-  onUpdate: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+function getCategoryColor(category: string) {
+  return categoryColors[category] ?? categoryColors.errore
+}
 
-  const saveButtons = async (buttons: FlowButton[]) => {
-    setSaving(true)
-    try {
-      await apiFetch(`/admin/bot-flow-states/${flowState.state}`, {
-        method: 'PUT',
-        body: JSON.stringify({ buttons }),
-      })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-      onUpdate()
-    } catch { /* */ }
-    setSaving(false)
-  }
+/* ═════════════════════════════════════════════════════════════════
+ *  Custom node component
+ * ═════════════════════════════════════════════════════════════════ */
 
-  const targetStates = (flowState.buttons ?? []).map(b => b.target_state)
-  const hasAiClassification = flowState.type === 'simple' || (flowState.buttons?.length ?? 0) > 0
+function StateNode({ data, selected }: NodeProps) {
+  const node = data as unknown as FlowNodeData
+  const colors = getCategoryColor(node.category)
+  const messagePreview = node.message_text
+    ? node.message_text.length > 80
+      ? node.message_text.slice(0, 77) + '…'
+      : node.message_text
+    : '—'
 
   return (
     <div
-      className={`rounded-lg border border-l-4 ${categoryColors[flowState.category] ?? 'border-l-gray-400'} bg-card transition-all hover:shadow-sm`}
+      className={`rounded-lg border-2 shadow-sm transition-all ${colors.bg} ${
+        selected ? 'border-emerald-500 ring-2 ring-emerald-300' : colors.border
+      }`}
+      style={{ minWidth: 240, maxWidth: 280 }}
     >
-      <div
-        className="px-4 py-3 cursor-pointer select-none"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <code className="text-xs font-bold font-mono">{flowState.state}</code>
-              <StateTypeBadge type={flowState.type} />
-              {hasAiClassification && (
-                <Badge variant="outline" className="text-[10px] gap-1 border-violet-300 text-violet-600 dark:text-violet-400">
-                  AI fallback
-                </Badge>
-              )}
-              {saved && (
-                <span className="text-xs text-emerald-600 flex items-center gap-1">
-                  <Check className="h-3 w-3" /> Salvato
-                </span>
-              )}
-            </div>
-            {flowState.description && (
-              <p className="text-xs text-muted-foreground mt-0.5">{flowState.description}</p>
-            )}
-          </div>
-          <Pencil className={`h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5 transition-transform ${expanded ? 'rotate-45' : ''}`} />
+      <Handle type="target" position={Position.Top} className="!bg-emerald-500 !w-2 !h-2" />
+
+      {/* Header */}
+      <div className="px-3 py-2 border-b border-black/10 flex items-center justify-between gap-2">
+        <code className={`text-xs font-bold font-mono ${colors.text}`}>{node.state}</code>
+        <div className="flex items-center gap-1">
+          {node.is_custom && (
+            <span className="inline-flex items-center gap-0.5 rounded bg-teal-200 px-1 py-0.5 text-[9px] font-bold text-teal-800">
+              <Zap className="h-2.5 w-2.5" /> custom
+            </span>
+          )}
+          {node.type === 'simple' ? (
+            <Cog className="h-3 w-3 text-gray-500" />
+          ) : (
+            <Cpu className="h-3 w-3 text-amber-600" />
+          )}
         </div>
-
-        {/* Messaggio preview */}
-        {flowState.message_text && (
-          <div className="mt-2 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1.5 line-clamp-2">
-            <HighlightVars text={flowState.message_text} />
-          </div>
-        )}
-
-        {/* Bottoni e connessioni (compact) */}
-        {!expanded && flowState.buttons && flowState.buttons.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {flowState.buttons.map((btn, i) => (
-              <span key={i} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px]">
-                {btn.label}
-                <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
-                <span className="font-mono text-muted-foreground">{btn.target_state}</span>
-              </span>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Expanded: editor */}
-      {expanded && (
-        <div className="px-4 pb-4 border-t pt-3">
-          {/* Messaggio */}
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <MessageSquareText className="h-3 w-3" />
-              Messaggio: <code className="font-mono bg-muted px-1 rounded">{flowState.message_key}</code>
-            </p>
-            {flowState.message_text && (
-              <div className="text-sm whitespace-pre-wrap bg-muted/30 rounded-md px-3 py-2 border">
-                <HighlightVars text={flowState.message_text} />
-              </div>
-            )}
-            <p className="text-[10px] text-muted-foreground">
-              Per modificare il testo, vai alla pagina <a href="/panel/messaggi" className="text-emerald-600 underline">Messaggi Bot</a>.
-            </p>
-          </div>
+      {/* Message preview */}
+      <div className="px-3 py-2">
+        <div className="flex items-start gap-1.5 text-[10px] text-gray-600 mb-1">
+          <MessageSquareText className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+          <code className="font-mono bg-white/60 rounded px-1">{node.message_key}</code>
+        </div>
+        <p className="text-[11px] text-gray-700 leading-snug whitespace-pre-line">
+          {messagePreview}
+        </p>
+      </div>
 
-          {/* Fallback */}
-          {flowState.fallback_key && (
-            <div className="mt-3 space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">
-                Fallback (input non capito): <code className="font-mono bg-muted px-1 rounded">{flowState.fallback_key}</code>
-              </p>
-              {flowState.fallback_text && (
-                <div className="text-xs text-muted-foreground bg-red-50 dark:bg-red-950/20 rounded px-2 py-1.5 border border-red-200 dark:border-red-800/30">
-                  <HighlightVars text={flowState.fallback_text} />
-                </div>
-              )}
+      {/* Buttons */}
+      {node.buttons.length > 0 && (
+        <div className="px-3 pb-2 space-y-1">
+          {node.buttons.map((btn, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between gap-1 rounded bg-white/70 border border-black/10 px-2 py-1 text-[10px]"
+            >
+              <span className="truncate font-medium">{btn.label}</span>
+              <span className="font-mono text-gray-500 truncate text-[9px]">
+                → {btn.target_state}
+              </span>
             </div>
-          )}
-
-          {/* Bottoni editor */}
-          {flowState.type === 'simple' ? (
-            <ButtonEditor flowState={flowState} onSave={saveButtons} saving={saving} />
-          ) : flowState.buttons && flowState.buttons.length > 0 ? (
-            <div className="mt-3">
-              <p className="text-xs font-medium text-muted-foreground mb-2">
-                Pulsanti (gestiti dal codice — le label sono editabili)
-              </p>
-              <ButtonEditor flowState={flowState} onSave={saveButtons} saving={saving} />
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-muted-foreground italic">
-              Nessun pulsante — input libero (testo)
-            </div>
-          )}
-
-          {/* Connessioni in uscita */}
-          {targetStates.length > 0 && (
-            <div className="mt-3 pt-2 border-t">
-              <p className="text-[10px] font-medium text-muted-foreground mb-1">Transizioni in uscita:</p>
-              <div className="flex flex-wrap gap-1">
-                {[...new Set(targetStates)].map(ts => {
-                  const target = allStates.find(s => s.state === ts)
-                  return (
-                    <span key={ts} className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono">
-                      <ArrowRight className="h-2.5 w-2.5 text-emerald-500" />
-                      {ts}
-                      {target && <span className="text-muted-foreground font-sans">({categoryLabels[target.category] ?? target.category})</span>}
-                    </span>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+          ))}
         </div>
       )}
+
+      <Handle type="source" position={Position.Bottom} className="!bg-emerald-500 !w-2 !h-2" />
     </div>
   )
 }
 
-export function Flusso() {
-  const [grouped, setGrouped] = useState<GroupedFlowStates>({})
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
+const nodeTypes = { stateNode: StateNode }
 
-  const fetchStates = useCallback(async () => {
-    try {
-      const data = await apiFetch<GroupedFlowStates>('/admin/bot-flow-states')
-      setGrouped(data)
-    } catch { /* */ }
-    setLoading(false)
-  }, [])
+/* ═════════════════════════════════════════════════════════════════
+ *  Auto-layout (dagre)
+ * ═════════════════════════════════════════════════════════════════ */
 
-  useEffect(() => { fetchStates() }, [fetchStates])
+function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
+  const g = new dagre.graphlib.Graph()
+  g.setDefaultEdgeLabel(() => ({}))
+  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 90, marginx: 40, marginy: 40 })
 
-  const allStates = Object.values(grouped).flat()
+  nodes.forEach(n => g.setNode(n.id, { width: 260, height: 160 }))
+  edges.forEach(e => g.setEdge(e.source, e.target))
 
-  const sortedCategories = Object.keys(grouped).sort(
-    (a, b) => (categoryOrder.indexOf(a) === -1 ? 99 : categoryOrder.indexOf(a)) - (categoryOrder.indexOf(b) === -1 ? 99 : categoryOrder.indexOf(b))
+  dagre.layout(g)
+
+  return nodes.map(n => {
+    const pos = g.node(n.id)
+    return {
+      ...n,
+      position: { x: pos.x - 130, y: pos.y - 80 },
+    }
+  })
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ *  Side panel: edit selected node
+ * ═════════════════════════════════════════════════════════════════ */
+
+function NodeEditPanel({
+  node, allNodes, meta, onClose, onChange, onDelete, saving,
+}: {
+  node: FlowStateNode
+  allNodes: FlowStateNode[]
+  meta: MetaResponse | null
+  onClose: () => void
+  onChange: (updated: FlowStateNode) => void
+  onDelete: () => void
+  saving: boolean
+}) {
+  const isComplex = node.type === 'complex' && !node.is_custom
+  const allTargets = useMemo(
+    () => [...new Set([...allNodes.map(n => n.state), ...(meta?.built_in ?? [])])].sort(),
+    [allNodes, meta],
   )
 
-  const searchLower = search.toLowerCase()
-  const filteredCategories = sortedCategories.map(cat => ({
-    cat,
-    states: grouped[cat].filter(s =>
-      !search ||
-      s.state.toLowerCase().includes(searchLower) ||
-      (s.description ?? '').toLowerCase().includes(searchLower) ||
-      (s.message_text ?? '').toLowerCase().includes(searchLower) ||
-      (s.buttons ?? []).some(b => b.label.toLowerCase().includes(searchLower))
-    ),
-  })).filter(g => g.states.length > 0)
+  const updateButton = (i: number, patch: Partial<FlowButton>) => {
+    onChange({
+      ...node,
+      buttons: node.buttons.map((b, idx) => idx === i ? { ...b, ...patch } : b),
+    })
+  }
 
-  const totalStates = allStates.length
-  const simpleCount = allStates.filter(s => s.type === 'simple').length
+  const addButton = () => {
+    if (node.buttons.length >= 3) return
+    onChange({
+      ...node,
+      buttons: [...node.buttons, { label: '', target_state: 'MENU' }],
+    })
+  }
+
+  const removeButton = (i: number) => {
+    onChange({ ...node, buttons: node.buttons.filter((_, idx) => idx !== i) })
+  }
+
+  return (
+    <div className="fixed top-0 right-0 z-40 h-full w-[420px] border-l bg-background shadow-2xl overflow-y-auto">
+      {/* Header */}
+      <div className="sticky top-0 bg-background border-b px-4 py-3 flex items-center justify-between z-10">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <code className="text-sm font-mono font-bold">{node.state}</code>
+            {node.is_custom && (
+              <Badge variant="secondary" className="bg-teal-100 text-teal-700 text-[10px]">
+                custom
+              </Badge>
+            )}
+            {isComplex && (
+              <Badge variant="outline" className="border-amber-300 text-amber-700 text-[10px]">
+                logica nel codice
+              </Badge>
+            )}
+          </div>
+          {node.description && (
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{node.description}</p>
+          )}
+        </div>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="p-4 space-y-5">
+        {/* Descrizione */}
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Descrizione</label>
+          <textarea
+            value={node.description ?? ''}
+            onChange={e => onChange({ ...node, description: e.target.value })}
+            placeholder="Cosa fa questo stato..."
+            rows={2}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {/* Categoria (solo custom) */}
+        {node.is_custom && (
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Categoria</label>
+            <select
+              value={node.category}
+              onChange={e => onChange({ ...node, category: e.target.value })}
+              className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+            >
+              {(meta?.categories ?? []).map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Message key */}
+        <div>
+          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+            <MessageSquareText className="h-3 w-3" /> Messaggio
+          </label>
+          <select
+            value={node.message_key}
+            onChange={e => onChange({ ...node, message_key: e.target.value })}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
+          >
+            {(meta?.messages ?? []).map(m => (
+              <option key={m.key} value={m.key}>
+                [{m.category}] {m.key}
+              </option>
+            ))}
+          </select>
+          {node.message_text && (
+            <div className="mt-2 text-xs bg-muted/50 rounded p-2 whitespace-pre-line border">
+              {node.message_text}
+            </div>
+          )}
+        </div>
+
+        {/* Fallback key */}
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Messaggio fallback (input non capito)</label>
+          <select
+            value={node.fallback_key ?? ''}
+            onChange={e => onChange({ ...node, fallback_key: e.target.value || null })}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
+          >
+            <option value="">— nessuno —</option>
+            {(meta?.messages ?? []).map(m => (
+              <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Buttons */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Pulsanti WhatsApp ({node.buttons.length}/3)
+            </label>
+            {node.buttons.length < 3 && (
+              <Button size="sm" variant="outline" onClick={addButton} className="h-6 text-[10px] px-2">
+                <Plus className="h-3 w-3 mr-1" /> Aggiungi
+              </Button>
+            )}
+          </div>
+
+          {isComplex && (
+            <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2 flex gap-1.5">
+              <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+              Stato con logica nel codice. Le label sono editabili ma le transizioni sono nel PHP.
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {node.buttons.map((btn, i) => (
+              <div key={i} className="rounded border bg-muted/30 p-2 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <input
+                    value={btn.label}
+                    onChange={e => updateButton(i, { label: e.target.value })}
+                    maxLength={20}
+                    placeholder="Label (max 20)"
+                    className="flex-1 rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    onClick={() => removeButton(i)}
+                    className="p-1 text-red-400 hover:text-red-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-muted-foreground">Target state</span>
+                  <select
+                    value={btn.target_state}
+                    onChange={e => updateButton(i, { target_state: e.target.value })}
+                    className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+                  >
+                    {allTargets.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-muted-foreground">Side effect (opzionale)</span>
+                  <select
+                    value={btn.side_effect ?? ''}
+                    onChange={e => updateButton(i, { side_effect: e.target.value || undefined })}
+                    className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+                  >
+                    <option value="">— nessuno —</option>
+                    {Object.entries(meta?.side_effects ?? {}).map(([k, v]) => (
+                      <option key={k} value={k}>{v} ({k})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ))}
+            {node.buttons.length === 0 && (
+              <p className="text-[10px] text-muted-foreground italic">
+                Nessun pulsante. L'utente deve rispondere con testo libero.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Delete (solo custom) */}
+        {node.is_custom && (
+          <div className="pt-3 border-t">
+            <Button
+              variant="outline"
+              onClick={onDelete}
+              disabled={saving}
+              className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+            >
+              <Trash2 className="h-3 w-3 mr-1.5" /> Elimina stato
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ *  Add new state dialog
+ * ═════════════════════════════════════════════════════════════════ */
+
+function AddStateDialog({
+  open, onClose, onCreate, existingStates, meta,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreate: (data: { state: string; message_key: string; description?: string; category?: string }) => Promise<void>
+  existingStates: string[]
+  meta: MetaResponse | null
+}) {
+  const [stateName, setStateName] = useState('')
+  const [messageKey, setMessageKey] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('custom')
+  const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  if (!open) return null
+
+  const validate = (): string | null => {
+    const trimmed = stateName.trim().toUpperCase()
+    if (!trimmed) return 'Inserisci un nome.'
+    if (!/^[A-Z][A-Z0-9_]*$/.test(trimmed)) return 'Solo lettere maiuscole, cifre e underscore. Inizia con una lettera.'
+    if (trimmed.length > 30) return 'Massimo 30 caratteri.'
+    if (existingStates.includes(trimmed)) return 'Questo stato esiste già.'
+    if (meta?.built_in.includes(trimmed)) return 'Questo nome è riservato a uno stato built-in.'
+    if (!messageKey) return 'Scegli un messaggio.'
+    return null
+  }
+
+  const submit = async () => {
+    const err = validate()
+    if (err) { setError(err); return }
+    setError(null)
+    setCreating(true)
+    try {
+      await onCreate({
+        state: stateName.trim().toUpperCase(),
+        message_key: messageKey,
+        description: description.trim() || undefined,
+        category,
+      })
+      setStateName('')
+      setMessageKey('')
+      setDescription('')
+      setCategory('custom')
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Errore sconosciuto')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-background rounded-lg shadow-2xl w-[460px] max-w-[90vw] p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Zap className="h-4 w-4 text-teal-600" /> Nuovo stato custom
+          </h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Nome stato</label>
+          <input
+            value={stateName}
+            onChange={e => setStateName(e.target.value.toUpperCase())}
+            placeholder="ES. PROMO_QUIZ"
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:border-emerald-500 font-mono"
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Solo MAIUSCOLE, cifre e _. Es. <code>PROMO_QUIZ</code>, <code>STATO_X</code>
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Messaggio principale</label>
+          <select
+            value={messageKey}
+            onChange={e => setMessageKey(e.target.value)}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
+          >
+            <option value="">— scegli un messaggio —</option>
+            {(meta?.messages ?? []).map(m => (
+              <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
+            ))}
+          </select>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            I messaggi si gestiscono nella pagina <a href="/panel/messaggi" className="underline">Messaggi</a>.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Categoria</label>
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+          >
+            {(meta?.categories ?? []).map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Descrizione</label>
+          <input
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="A cosa serve questo stato..."
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {error && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex gap-1.5">
+            <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose} disabled={creating}>
+            Annulla
+          </Button>
+          <Button onClick={submit} disabled={creating} className="bg-teal-600 hover:bg-teal-700">
+            {creating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+            Crea stato
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ *  Main editor (inside ReactFlowProvider)
+ * ═════════════════════════════════════════════════════════════════ */
+
+function FlowEditor() {
+  const [graph, setGraph] = useState<GraphResponse | null>(null)
+  const [meta, setMeta] = useState<MetaResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [edges, setEdges] = useState<Edge[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [showCodeEdges, setShowCodeEdges] = useState(true)
+  const [showAddDialog, setShowAddDialog] = useState(false)
+  const [search, setSearch] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [dirtyNodes, setDirtyNodes] = useState<Set<string>>(new Set())
+  const [editedData, setEditedData] = useState<Map<string, FlowStateNode>>(new Map())
+  const dirtyPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const { fitView } = useReactFlow()
+
+  /* ── Fetch graph + meta ───────────────────────────────────────── */
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [g, m] = await Promise.all([
+        apiFetch<GraphResponse>('/admin/bot-flow-states/graph'),
+        apiFetch<MetaResponse>('/admin/bot-flow-states/meta'),
+      ])
+      setGraph(g)
+      setMeta(m)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchAll() }, [fetchAll])
+
+  /* ── Build nodes/edges from graph ─────────────────────────────── */
+
+  useEffect(() => {
+    if (!graph) return
+
+    const rfNodes: Node[] = graph.nodes.map(n => ({
+      id: n.id,
+      type: 'stateNode',
+      position: n.position ?? { x: 0, y: 0 },
+      data: n as unknown as Record<string, unknown>,
+    }))
+
+    // Auto-layout solo se almeno uno stato non ha posizione
+    const needsLayout = graph.nodes.some(n => !n.position)
+    const allEdgesForLayout: Edge[] = graph.buttonEdges.map(e => ({
+      id: e.id, source: e.source, target: e.target,
+    }))
+    const layoutedNodes = needsLayout ? autoLayout(rfNodes, allEdgesForLayout) : rfNodes
+
+    const rfEdges: Edge[] = []
+    for (const e of graph.buttonEdges) {
+      rfEdges.push({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        label: e.label,
+        type: 'smoothstep',
+        animated: !!e.side_effect,
+        style: {
+          stroke: e.side_effect ? '#f59e0b' : '#10b981',
+          strokeWidth: 2,
+        },
+        labelStyle: { fontSize: 10, fontWeight: 600 },
+        labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: e.side_effect ? '#f59e0b' : '#10b981' },
+        data: { kind: 'button', side_effect: e.side_effect },
+      })
+    }
+    if (showCodeEdges) {
+      for (const e of graph.codeEdges) {
+        rfEdges.push({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          type: 'smoothstep',
+          style: { stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
+          data: { kind: 'code' },
+        })
+      }
+    }
+
+    setNodes(layoutedNodes)
+    setEdges(rfEdges)
+
+    // Se servito autolayout, segna tutti i nodi come "posizione da salvare"
+    if (needsLayout) {
+      layoutedNodes.forEach(n => {
+        dirtyPositions.current.set(n.id, n.position)
+      })
+    }
+
+    setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 100)
+  }, [graph, showCodeEdges, fitView])
+
+  /* ── Node/edge change handlers ────────────────────────────────── */
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes(nds => applyNodeChanges(changes, nds))
+    // Track position changes per drag
+    for (const c of changes) {
+      if (c.type === 'position' && c.position && !c.dragging) {
+        dirtyPositions.current.set(c.id, c.position)
+      }
+    }
+  }, [])
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges(eds => applyEdgeChanges(changes, eds))
+  }, [])
+
+  /* ── Selezione nodo ───────────────────────────────────────────── */
+
+  const selectedNode = useMemo<FlowStateNode | null>(() => {
+    if (!selectedId || !graph) return null
+    const fromEdited = editedData.get(selectedId)
+    if (fromEdited) return fromEdited
+    return graph.nodes.find(n => n.id === selectedId) ?? null
+  }, [selectedId, graph, editedData])
+
+  const handleNodeChange = useCallback((updated: FlowStateNode) => {
+    setEditedData(prev => {
+      const next = new Map(prev)
+      next.set(updated.id, updated)
+      return next
+    })
+    setDirtyNodes(prev => new Set(prev).add(updated.id))
+
+    // Aggiorna live anche il nodo sul canvas
+    setNodes(nds => nds.map(n => n.id === updated.id ? { ...n, data: updated as unknown as Record<string, unknown> } : n))
+  }, [])
+
+  /* ── Save all ─────────────────────────────────────────────────── */
+
+  const saveAll = useCallback(async () => {
+    setSaving(true)
+    try {
+      // 1) Save dirty nodes
+      const updates: Promise<unknown>[] = []
+      for (const id of dirtyNodes) {
+        const data = editedData.get(id)
+        if (!data) continue
+        updates.push(
+          apiFetch(`/admin/bot-flow-states/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              message_key: data.message_key,
+              fallback_key: data.fallback_key,
+              description: data.description,
+              category: data.is_custom ? data.category : undefined,
+              buttons: data.buttons,
+            }),
+          }),
+        )
+      }
+
+      // 2) Save dirty positions in bulk
+      if (dirtyPositions.current.size > 0) {
+        const positions = Array.from(dirtyPositions.current.entries()).map(([state, position]) => ({
+          state, position,
+        }))
+        updates.push(
+          apiFetch('/admin/bot-flow-states/positions', {
+            method: 'PUT',
+            body: JSON.stringify({ positions }),
+          }),
+        )
+      }
+
+      await Promise.all(updates)
+
+      dirtyPositions.current.clear()
+      setDirtyNodes(new Set())
+      setEditedData(new Map())
+      setSavedFlash(true)
+      setTimeout(() => setSavedFlash(false), 2500)
+
+      // Refresh per riallineare cache backend
+      await fetchAll()
+    } catch (e) {
+      console.error('Save failed', e)
+      alert('Errore durante il salvataggio. Controlla la console.')
+    } finally {
+      setSaving(false)
+    }
+  }, [dirtyNodes, editedData, fetchAll])
+
+  /* ── Create new state ─────────────────────────────────────────── */
+
+  const handleCreate = useCallback(async (data: { state: string; message_key: string; description?: string; category?: string }) => {
+    const created = await apiFetch<FlowStateNode>('/admin/bot-flow-states', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...data,
+        position: { x: 200, y: 200 },
+        buttons: [],
+      }),
+    })
+    await fetchAll()
+    setSelectedId(created.state)
+  }, [fetchAll])
+
+  /* ── Delete selected ──────────────────────────────────────────── */
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedNode) return
+    if (!confirm(`Eliminare lo stato ${selectedNode.state}?`)) return
+    try {
+      await apiFetch(`/admin/bot-flow-states/${selectedNode.state}`, { method: 'DELETE' })
+      setSelectedId(null)
+      setEditedData(prev => {
+        const next = new Map(prev)
+        next.delete(selectedNode.state)
+        return next
+      })
+      setDirtyNodes(prev => {
+        const next = new Set(prev)
+        next.delete(selectedNode.state)
+        return next
+      })
+      await fetchAll()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Errore sconosciuto'
+      alert(`Eliminazione fallita: ${msg}`)
+    }
+  }, [selectedNode, fetchAll])
+
+  /* ── Connection (drag handle to handle = create new button) ─── */
+
+  const onConnect = useCallback((conn: Connection) => {
+    if (!conn.source || !conn.target || !graph) return
+    const sourceNode = (editedData.get(conn.source) ?? graph.nodes.find(n => n.id === conn.source))
+    if (!sourceNode) return
+    if (sourceNode.buttons.length >= 3) {
+      alert('Massimo 3 bottoni per stato.')
+      return
+    }
+    const newButton: FlowButton = {
+      label: 'Nuovo bottone',
+      target_state: conn.target,
+    }
+    handleNodeChange({
+      ...sourceNode,
+      buttons: [...sourceNode.buttons, newButton],
+    })
+    setSelectedId(conn.source)
+  }, [graph, editedData, handleNodeChange])
+
+  /* ── Search filter ────────────────────────────────────────────── */
+
+  const filteredNodes = useMemo(() => {
+    if (!search.trim()) return nodes
+    const q = search.toLowerCase()
+    const matchingIds = new Set(
+      (graph?.nodes ?? [])
+        .filter(n =>
+          n.state.toLowerCase().includes(q) ||
+          n.description?.toLowerCase().includes(q) ||
+          n.message_text?.toLowerCase().includes(q) ||
+          n.buttons.some(b => b.label.toLowerCase().includes(q)),
+        )
+        .map(n => n.id),
+    )
+    return nodes.map(n => ({
+      ...n,
+      style: { ...n.style, opacity: matchingIds.has(n.id) ? 1 : 0.25 },
+    }))
+  }, [nodes, search, graph])
+
+  /* ── Render ───────────────────────────────────────────────────── */
 
   if (loading) {
     return (
@@ -341,73 +872,147 @@ export function Flusso() {
     )
   }
 
+  const dirtyCount = dirtyNodes.size + dirtyPositions.current.size
+  const hasChanges = dirtyCount > 0
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Flusso Conversazione</h1>
-        <p className="text-muted-foreground">
-          {totalStates} stati ({simpleCount} configurabili, {totalStates - simpleCount} con logica custom).
-          Modifica pulsanti e transizioni del bot.
-        </p>
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Cerca stati, pulsanti, messaggi..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full rounded-lg border bg-background py-2 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+    <div className="relative w-full" style={{ height: 'calc(100vh - 130px)' }}>
+      <ReactFlow
+        nodes={filteredNodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeClick={(_, n) => setSelectedId(n.id)}
+        onPaneClick={() => setSelectedId(null)}
+        nodeTypes={nodeTypes}
+        fitView
+        minZoom={0.2}
+        maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background gap={20} size={1} color="#e5e7eb" />
+        <Controls position="bottom-left" />
+        <MiniMap
+          position="bottom-right"
+          nodeColor={(n) => {
+            const data = n.data as unknown as FlowNodeData
+            return getCategoryColor(data?.category ?? 'errore').border.replace('border-', '#').replace('-400', '')
+          }}
+          maskColor="rgba(0,0,0,0.04)"
         />
-      </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-xs">
-        <span className="flex items-center gap-1.5">
-          <Badge variant="secondary" className="text-[10px] gap-1"><Cog className="h-2.5 w-2.5" /> Configurabile</Badge>
-          Pulsanti e transizioni editabili
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700"><Cpu className="h-2.5 w-2.5" /> Logica custom</Badge>
-          Logica nel codice, label pulsanti editabili
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Badge variant="outline" className="text-[10px] gap-1 border-violet-300 text-violet-600">AI fallback</Badge>
-          Se l'utente non clicca un pulsante, l'AI classifica l'intento
-        </span>
-      </div>
+        {/* ── Toolbar top ──────────────────────────────── */}
+        <Panel position="top-left" className="!m-3">
+          <div className="bg-background border rounded-lg shadow-sm p-2 flex items-center gap-2">
+            <h1 className="text-sm font-bold pl-1">Flusso Bot</h1>
+            <div className="h-5 w-px bg-border" />
+            <Button
+              size="sm"
+              onClick={() => setShowAddDialog(true)}
+              className="bg-teal-600 hover:bg-teal-700 h-7 text-xs"
+            >
+              <Plus className="h-3 w-3 mr-1" /> Nuovo stato
+            </Button>
+            <Button
+              size="sm"
+              variant={hasChanges ? 'default' : 'outline'}
+              onClick={saveAll}
+              disabled={!hasChanges || saving}
+              className={`h-7 text-xs ${hasChanges ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
+            >
+              {saving
+                ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                : savedFlash
+                  ? <Check className="h-3 w-3 mr-1" />
+                  : <Save className="h-3 w-3 mr-1" />
+              }
+              {savedFlash ? 'Salvato!' : hasChanges ? `Salva (${dirtyCount})` : 'Salva'}
+            </Button>
+          </div>
+        </Panel>
 
-      {/* Flow categories */}
-      {filteredCategories.map(({ cat, states }) => (
-        <Card key={cat} className="overflow-hidden">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${categoryColors[cat]?.replace('border-l-', 'bg-') ?? 'bg-gray-400'}`} />
-              {categoryLabels[cat] ?? cat}
-              <Badge variant="secondary" className="text-xs ml-1">{states.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {states.map(flowState => (
-              <FlowStateCard
-                key={flowState.state}
-                flowState={flowState}
-                allStates={allStates}
-                onUpdate={fetchStates}
+        {/* ── Toolbar top right: search + toggle code edges ── */}
+        <Panel position="top-right" className="!m-3">
+          <div className="bg-background border rounded-lg shadow-sm p-2 flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Cerca stati..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-7 pr-2 py-1 text-xs rounded border bg-background outline-none focus:border-emerald-500 w-40"
               />
-            ))}
-          </CardContent>
-        </Card>
-      ))}
+            </div>
+            <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showCodeEdges}
+                onChange={e => setShowCodeEdges(e.target.checked)}
+                className="cursor-pointer"
+              />
+              <span>Transizioni codice</span>
+            </label>
+          </div>
+        </Panel>
 
-      {filteredCategories.length === 0 && (
-        <div className="text-center py-16">
-          <Search className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-          <p className="text-muted-foreground">Nessuno stato trovato per "{search}"</p>
-        </div>
+        {/* ── Legenda ─────────────────────────────────── */}
+        <Panel position="bottom-center" className="!m-3">
+          <div className="bg-background border rounded-lg shadow-sm px-3 py-1.5 flex items-center gap-3 text-[10px]">
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-px bg-emerald-500" />
+              <span>Bottone</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-px bg-amber-500" />
+              <span>Bottone con side-effect</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-px border-t border-dashed border-gray-400" />
+              <span>Logica nel codice</span>
+            </div>
+            <div className="h-3 w-px bg-border" />
+            <span className="flex items-center gap-1"><Cog className="h-2.5 w-2.5" /> Simple</span>
+            <span className="flex items-center gap-1"><Cpu className="h-2.5 w-2.5 text-amber-600" /> Complex</span>
+            <span className="flex items-center gap-1"><Zap className="h-2.5 w-2.5 text-teal-600" /> Custom</span>
+          </div>
+        </Panel>
+      </ReactFlow>
+
+      {/* ── Side panel ─────────────────────────────────── */}
+      {selectedNode && (
+        <NodeEditPanel
+          node={selectedNode}
+          allNodes={graph?.nodes ?? []}
+          meta={meta}
+          onClose={() => setSelectedId(null)}
+          onChange={handleNodeChange}
+          onDelete={handleDelete}
+          saving={saving}
+        />
       )}
+
+      {/* ── Add dialog ─────────────────────────────────── */}
+      <AddStateDialog
+        open={showAddDialog}
+        onClose={() => setShowAddDialog(false)}
+        onCreate={handleCreate}
+        existingStates={graph?.nodes.map(n => n.state) ?? []}
+        meta={meta}
+      />
     </div>
+  )
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ *  Outer wrapper with provider
+ * ═════════════════════════════════════════════════════════════════ */
+
+export function Flusso() {
+  return (
+    <ReactFlowProvider>
+      <FlowEditor />
+    </ReactFlowProvider>
   )
 }

@@ -3,6 +3,7 @@
 namespace App\Services\Bot;
 
 use App\Models\Booking;
+use App\Models\BotFlowState;
 use App\Models\BotSession;
 use App\Models\MatchInvitation;
 use App\Models\MatchResult;
@@ -55,9 +56,8 @@ class BotOrchestrator
             // Processa tramite la macchina a stati
             $response = $this->stateHandler->handle($session, $input, $user);
 
-            // Valida la transizione di stato
-            $currentState = BotState::from($session->state);
-            $newState     = $currentState->transitionTo($response->nextState);
+            // Valida la transizione di stato (supporta enum e custom string)
+            $newStateValue = $this->resolveNextStateValue($session->state, $response);
 
             // Esegui side-effects
             $this->executeSideEffects($session, $response, $phone, $user);
@@ -76,12 +76,12 @@ class BotOrchestrator
                 $session->update(['state' => BotState::VERIFICA_SLOT->value]);
 
                 // Ri-processa lo stato VERIFICA_SLOT con i risultati
-                $response = $this->stateHandler->handle($session, '', $user);
-                $newState  = BotState::from($session->state)->transitionTo($response->nextState);
+                $response      = $this->stateHandler->handle($session, '', $user);
+                $newStateValue = $this->resolveNextStateValue($session->state, $response);
             }
 
             // Aggiorna sessione
-            $session->update(['state' => $newState->value]);
+            $session->update(['state' => $newStateValue]);
             $session->appendHistory('user', $input);
             $session->appendHistory('model', $response->message);
 
@@ -102,6 +102,45 @@ class BotOrchestrator
 
             $this->sendFallbackError($phone);
         }
+    }
+
+    /**
+     * Calcola il prossimo stato (come stringa) gestendo sia stati built-in che custom.
+     *
+     *  - Se sia source che target sono enum case → applica la validazione
+     *    rigida di BotState::transitionTo() (allowedTransitions hardcoded)
+     *  - Altrimenti (uno dei due è custom) → permetti la transizione purché
+     *    il target esista (in enum o in bot_flow_states)
+     *  - Se il target non esiste in nessun posto → resta sullo stato corrente
+     */
+    private function resolveNextStateValue(string $currentValue, BotResponse $response): string
+    {
+        $targetValue = $response->nextStateValue();
+
+        $currentEnum = BotState::tryFrom($currentValue);
+        $targetEnum  = BotState::tryFrom($targetValue);
+
+        // Caso 1: entrambi built-in → validazione enum classica
+        if ($currentEnum !== null && $targetEnum !== null) {
+            return $currentEnum->transitionTo($targetEnum)->value;
+        }
+
+        // Caso 2: target è built-in (anche se source custom) → ok
+        if ($targetEnum !== null) {
+            return $targetEnum->value;
+        }
+
+        // Caso 3: target custom → ok solo se esiste in DB
+        if (BotFlowState::find($targetValue) !== null) {
+            return $targetValue;
+        }
+
+        // Caso 4: target sconosciuto → resta dove sei (silenzioso, come da regola enum)
+        Log::warning('Unknown target state, staying on current', [
+            'current' => $currentValue,
+            'target'  => $targetValue,
+        ]);
+        return $currentValue;
     }
 
     /* ───────── Sessione ───────── */
@@ -194,6 +233,16 @@ class BotOrchestrator
         // Salvataggio feedback
         if ($response->needsFeedbackSave()) {
             $this->saveFeedback($session, $phone);
+        }
+
+        // Conferma link avversario (lato avversario taggato)
+        if ($response->needsOpponentLinkConfirm()) {
+            $this->confirmOpponentLink($session, $phone);
+        }
+
+        // Rifiuto link avversario (l'utente taggato dichiara che non è lui/lei)
+        if ($response->needsOpponentLinkReject()) {
+            $this->rejectOpponentLink($session, $phone);
         }
     }
 
@@ -292,10 +341,13 @@ class BotOrchestrator
                 $session->mergeData(['editing_booking_id' => null, 'selected_booking_id' => null]);
             }
 
-            $date        = $session->getData('requested_date');  // Y-m-d
-            $time        = $session->getData('requested_time');  // H:i
-            $bookingType = $session->getData('booking_type') ?? 'con_avversario';
-            $payment     = $session->getData('payment_method') ?? 'in_loco';
+            $date           = $session->getData('requested_date');  // Y-m-d
+            $time           = $session->getData('requested_time');  // H:i
+            $bookingType    = $session->getData('booking_type') ?? 'con_avversario';
+            $payment        = $session->getData('payment_method') ?? 'in_loco';
+            $opponentUserId = $session->getData('opponent_user_id');
+            $opponentName   = $session->getData('opponent_name');
+            $opponentPhone  = $session->getData('opponent_phone');
 
             if (empty($date) || empty($time)) {
                 Log::error('Cannot create booking: missing date/time', [
@@ -319,14 +371,32 @@ class BotOrchestrator
             ];
             $typeLabel = $typeLabels[$bookingType] ?? 'Prenotazione campo';
 
-            $summary     = "{$typeLabel} - {$user->name}";
-            $description = implode("\n", [
+            // Etichetta avversario per descrizione
+            $opponentLabel = '';
+            if ($opponentUserId && $opponentName) {
+                $opponentLabel = "{$opponentName} (tesserato)";
+            } elseif ($opponentName) {
+                $opponentLabel = "{$opponentName} (esterno)";
+            }
+
+            // Summary include avversario se "con_avversario" e nome noto
+            if ($bookingType === 'con_avversario' && $opponentName) {
+                $summary = "Partita singolo - {$user->name} vs {$opponentName}";
+            } else {
+                $summary = "{$typeLabel} - {$user->name}";
+            }
+
+            $descLines = [
                 "Giocatore: {$user->name}",
                 "Telefono: {$phone}",
                 "Tipo: {$typeLabel}",
                 "Pagamento: {$payment}",
-                "Prenotato via: WhatsApp Bot",
-            ]);
+            ];
+            if ($opponentLabel !== '') {
+                $descLines[] = "Avversario: {$opponentLabel}";
+            }
+            $descLines[] = "Prenotato via: WhatsApp Bot";
+            $description = implode("\n", $descLines);
 
             // Calcola il prezzo usando PricingRule
             $price = \App\Models\PricingRule::getPriceForSlot($startDateTime, $durationMinutes);
@@ -340,27 +410,52 @@ class BotOrchestrator
             );
 
             // Salva prenotazione nel DB
-            Booking::create([
-                'player1_id'   => $user->id,
-                'booking_date' => $startDateTime->format('Y-m-d'),
-                'start_time'   => $startDateTime->format('H:i:s'),
-                'end_time'     => $endDateTime->format('H:i:s'),
-                'price'        => $price,
-                'is_peak'      => $startDateTime->hour >= 18,
-                'status'       => 'confirmed',
-                'gcal_event_id'=> $gcalEvent->getId(),
+            $booking = Booking::create([
+                'player1_id'        => $user->id,
+                'player2_id'        => $opponentUserId,
+                'player2_name_text' => $opponentUserId ? null : $opponentName,
+                'booking_date'      => $startDateTime->format('Y-m-d'),
+                'start_time'        => $startDateTime->format('H:i:s'),
+                'end_time'          => $endDateTime->format('H:i:s'),
+                'price'             => $price,
+                'is_peak'           => $startDateTime->hour >= 18,
+                'status'            => 'confirmed',
+                'gcal_event_id'     => $gcalEvent->getId(),
             ]);
 
             Log::info('Booking created on Google Calendar', [
-                'user_id'   => $user->id,
-                'user_name' => $user->name,
-                'date'      => $date,
-                'time'      => $time,
-                'type'      => $bookingType,
-                'payment'   => $payment,
-                'start'     => $startDateTime->toIso8601String(),
-                'end'       => $endDateTime->toIso8601String(),
+                'booking_id'   => $booking->id,
+                'user_id'      => $user->id,
+                'user_name'    => $user->name,
+                'opponent_id'  => $opponentUserId,
+                'opponent_name'=> $opponentName,
+                'date'         => $date,
+                'time'         => $time,
+                'type'         => $bookingType,
+                'payment'      => $payment,
+                'start'        => $startDateTime->toIso8601String(),
+                'end'          => $endDateTime->toIso8601String(),
             ]);
+
+            // Pulisci dati avversario dalla sessione del challenger
+            $session->mergeData([
+                'opponent_user_id'        => null,
+                'opponent_name'           => null,
+                'opponent_phone'          => null,
+                'opponent_search_results' => null,
+                'opponent_pending_confirm'=> null,
+            ]);
+
+            // Notifica all'avversario tesserato (se ha phone) per conferma bidirezionale
+            if ($opponentUserId && $opponentPhone) {
+                $this->notifyOpponentForConfirmation(
+                    $booking,
+                    $user,
+                    $opponentUserId,
+                    $opponentPhone,
+                    $session->getData('requested_friendly') ?? "{$date} {$time}",
+                );
+            }
 
         } catch (\Throwable $e) {
             Log::error('Booking creation failed', [
@@ -368,6 +463,168 @@ class BotOrchestrator
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+        }
+    }
+
+    /**
+     * Invia un messaggio WhatsApp all'avversario taggato chiedendogli di confermare
+     * (o rifiutare) di essere effettivamente l'avversario indicato.
+     *
+     * Setta lo stato dell'avversario a CONFERMA_INVITO_OPP.
+     */
+    private function notifyOpponentForConfirmation(
+        Booking $booking,
+        User $challenger,
+        int $opponentUserId,
+        string $opponentPhone,
+        string $friendlySlot,
+    ): void {
+        try {
+            $oppData = [
+                'opp_invite_booking_id'      => $booking->id,
+                'opp_invite_challenger_id'   => $challenger->id,
+                'opp_invite_challenger_name' => $challenger->name,
+                'opp_invite_slot'            => $friendlySlot,
+            ];
+
+            $oppSession = BotSession::where('phone', $opponentPhone)->first();
+            if ($oppSession) {
+                $oppSession->update(['state' => BotState::CONFERMA_INVITO_OPP->value]);
+                $oppSession->mergeData($oppData);
+            } else {
+                BotSession::create([
+                    'phone' => $opponentPhone,
+                    'state' => BotState::CONFERMA_INVITO_OPP->value,
+                    'data'  => array_merge([
+                        'persona' => BotPersona::pickRandom(),
+                        'history' => [],
+                        'profile' => [],
+                    ], $oppData),
+                ]);
+            }
+
+            $msg = $this->textGenerator->rephrase('opp_invite_richiesta', 'Bot', [
+                'challenger_name' => $challenger->name,
+                'slot'            => $friendlySlot,
+            ]);
+
+            $this->whatsApp->sendButtons($opponentPhone, $msg, ['Sì, confermo', 'No, sbagliato']);
+
+            Log::info('Opponent confirmation invite sent', [
+                'booking_id'   => $booking->id,
+                'challenger'   => $challenger->id,
+                'opponent_id'  => $opponentUserId,
+                'phone'        => $opponentPhone,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('notifyOpponentForConfirmation failed', [
+                'booking_id' => $booking->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * L'avversario taggato ha CONFERMATO di essere lui.
+     * Setta player2_confirmed_at = now() e notifica il challenger.
+     */
+    private function confirmOpponentLink(BotSession $session, string $phone): void
+    {
+        try {
+            $bookingId   = $session->getData('opp_invite_booking_id');
+            $challengerId = $session->getData('opp_invite_challenger_id');
+
+            if (!$bookingId) {
+                return;
+            }
+
+            $booking = Booking::find($bookingId);
+            if (!$booking) {
+                return;
+            }
+
+            $booking->update(['player2_confirmed_at' => now()]);
+
+            // Notifica al challenger
+            $challenger = User::find($challengerId);
+            if ($challenger && $challenger->phone) {
+                $opponent = User::where('phone', $phone)->first();
+                $msg = $this->textGenerator->rephrase('opp_invite_notify_challenger_ok', 'Bot', [
+                    'opponent_name' => $opponent?->name ?? 'Il tuo avversario',
+                    'slot'          => $session->getData('opp_invite_slot') ?? '',
+                ]);
+                $this->whatsApp->sendText($challenger->phone, $msg);
+            }
+
+            // Pulisci sessione avversario
+            $session->mergeData([
+                'opp_invite_booking_id'      => null,
+                'opp_invite_challenger_id'   => null,
+                'opp_invite_challenger_name' => null,
+                'opp_invite_slot'            => null,
+            ]);
+
+            Log::info('Opponent link confirmed', [
+                'booking_id' => $bookingId,
+                'opponent'   => $phone,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('confirmOpponentLink failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * L'avversario taggato ha NEGATO di essere lui.
+     * Sbianca player2_id, salva il nome come testo libero, notifica il challenger.
+     */
+    private function rejectOpponentLink(BotSession $session, string $phone): void
+    {
+        try {
+            $bookingId    = $session->getData('opp_invite_booking_id');
+            $challengerId = $session->getData('opp_invite_challenger_id');
+
+            if (!$bookingId) {
+                return;
+            }
+
+            $booking = Booking::find($bookingId);
+            if (!$booking) {
+                return;
+            }
+
+            // Sbianca player2_id (non sarà tracciato per ELO).
+            // Mantieni il nome come testo libero per traccia storica.
+            $opponent = User::where('phone', $phone)->first();
+            $booking->update([
+                'player2_id'           => null,
+                'player2_name_text'    => $opponent?->name,
+                'player2_confirmed_at' => null,
+            ]);
+
+            // Notifica al challenger
+            $challenger = User::find($challengerId);
+            if ($challenger && $challenger->phone) {
+                $msg = $this->textGenerator->rephrase('opp_invite_notify_challenger_ko', 'Bot', [
+                    'opponent_name' => $opponent?->name ?? 'L\'avversario indicato',
+                    'slot'          => $session->getData('opp_invite_slot') ?? '',
+                ]);
+                $this->whatsApp->sendText($challenger->phone, $msg);
+            }
+
+            // Pulisci sessione avversario
+            $session->mergeData([
+                'opp_invite_booking_id'      => null,
+                'opp_invite_challenger_id'   => null,
+                'opp_invite_challenger_name' => null,
+                'opp_invite_slot'            => null,
+            ]);
+
+            Log::info('Opponent link rejected', [
+                'booking_id' => $bookingId,
+                'opponent'   => $phone,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('rejectOpponentLink failed', ['phone' => $phone, 'error' => $e->getMessage()]);
         }
     }
 
@@ -615,12 +872,16 @@ class BotOrchestrator
                     endTime:     $endDT,
                 );
                 $booking->update([
-                    'status'        => 'confirmed',
-                    'gcal_event_id' => $gcalEvent->getId(),
+                    'status'               => 'confirmed',
+                    'gcal_event_id'        => $gcalEvent->getId(),
+                    'player2_confirmed_at' => now(),
                 ]);
             } catch (\Throwable $e) {
                 Log::warning('confirmMatch: calendar event failed', ['error' => $e->getMessage()]);
-                $booking->update(['status' => 'confirmed']);
+                $booking->update([
+                    'status'               => 'confirmed',
+                    'player2_confirmed_at' => now(),
+                ]);
             }
 
             // Notifica il challenger

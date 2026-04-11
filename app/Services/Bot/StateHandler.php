@@ -8,6 +8,7 @@ use App\Models\BotSession;
 use App\Models\PricingRule;
 use App\Models\User;
 use App\Services\CalendarService;
+use App\Services\UserSearchService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -26,8 +27,9 @@ class StateHandler
     private bool $aiClassificationAttempted = false;
 
     public function __construct(
-        private readonly CalendarService $calendar,
-        private readonly TextGenerator   $textGenerator,
+        private readonly CalendarService   $calendar,
+        private readonly TextGenerator     $textGenerator,
+        private readonly UserSearchService $userSearch,
     ) {}
 
     /**
@@ -35,8 +37,17 @@ class StateHandler
      */
     public function handle(BotSession $session, string $input, ?User $user): BotResponse
     {
-        $state      = BotState::from($session->state);
+        // Reset del flag AI per ogni nuovo messaggio in arrivo
+        $this->aiClassificationAttempted = false;
+
+        $stateValue = $session->state;
+        $state      = BotState::tryFrom($stateValue);          // null se è un custom state
         $normalized = mb_strtolower(trim($input));
+
+        // ── Stato custom (creato dal pannello, non in enum) ─────────────────
+        if ($state === null) {
+            return $this->handleGenericSimple($session, $input, $user, $stateValue);
+        }
 
         // ── Parole chiave globali (solo utenti non in onboarding) ──────────
         if (!$state->isOnboarding()) {
@@ -84,6 +95,7 @@ class StateHandler
             BotState::ONBOARD_SLOT_PREF  => $this->handleOnboardSlotPref($session, $input),
             BotState::ONBOARD_COMPLETO   => $this->handleOnboardCompleto($session, $input),
             BotState::MENU               => $this->handleMenu($session, $input, $user),
+            BotState::ASK_OPPONENT       => $this->handleAskOpponent($session, $input, $user),
             BotState::SCEGLI_QUANDO      => $this->handleScegliQuando($session, $input),
             BotState::SCEGLI_DURATA      => $this->handleScegliDurata($session, $input),
             BotState::VERIFICA_SLOT      => $this->handleVerificaSlot($session, $input),
@@ -93,6 +105,7 @@ class StateHandler
             BotState::CONFERMATO              => $this->handleConfermato($session, $input),
             BotState::ATTESA_MATCH            => $this->handleAttesaMatch($session, $input),
             BotState::RISPOSTA_MATCH          => $this->handleRispostaMatch($session, $input),
+            BotState::CONFERMA_INVITO_OPP     => $this->handleConfermaInvitoOpponent($session, $input),
             BotState::GESTIONE_PRENOTAZIONI   => $this->handleSelezionaPrenotazione($session, $input, $user),
             BotState::AZIONE_PRENOTAZIONE     => $this->handleAzionePrenotazione($session, $input),
             BotState::MODIFICA_PROFILO        => $this->handleModificaProfilo($session, $input, $user),
@@ -316,11 +329,18 @@ class StateHandler
         if (str_contains($normalized, 'avversario') && str_contains($normalized, 'già')
             || str_contains($normalized, 'prenota campo') || str_contains($normalized, 'prenota')
             || str_contains($normalized, 'ho un compagno') || str_contains($normalized, 'con un amico')) {
-            $session->mergeData(['booking_type' => 'con_avversario']);
+            // Reset eventuali dati avversario lasciati da una sessione precedente
+            $session->mergeData([
+                'booking_type'      => 'con_avversario',
+                'opponent_user_id'  => null,
+                'opponent_name'     => null,
+                'opponent_phone'    => null,
+                'opponent_search_results' => null,
+            ]);
 
             return BotResponse::make(
-                $this->textGenerator->rephrase('chiedi_quando', $session->persona()),
-                BotState::SCEGLI_QUANDO,
+                $this->textGenerator->rephrase('chiedi_avversario', $session->persona()),
+                BotState::ASK_OPPONENT,
             );
         }
 
@@ -347,6 +367,455 @@ class StateHandler
             BotState::MENU,
             $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
         );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  ASK_OPPONENT — Chi è l'avversario? (solo per "con_avversario")
+     * ═══════════════════════════════════════════════════════════════ */
+
+    private function handleAskOpponent(BotSession $session, string $input, ?User $user): BotResponse
+    {
+        $normalized = mb_strtolower(trim($input));
+
+        // ── 1) "Salta" / "Non lo conoscete" → procedi senza tracking ELO
+        if (in_array($normalized, ['salta', 'skip', 'non lo so', 'preferisco non dirlo', 'passo', 'no'], true)
+            || str_contains($normalized, 'non è del circolo')
+            || str_contains($normalized, 'non e del circolo')
+            || str_contains($normalized, 'esterno')
+            || str_contains($normalized, 'amico esterno')) {
+            $session->mergeData([
+                'opponent_user_id'        => null,
+                'opponent_name'           => null,
+                'opponent_phone'          => null,
+                'opponent_search_results' => null,
+            ]);
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('avversario_saltato', $session->persona()),
+                BotState::SCEGLI_QUANDO,
+            );
+        }
+
+        // ── 2) Conferma "Sì/No" su un match già proposto
+        $pendingMatch = $session->getData('opponent_pending_confirm');
+        if (is_array($pendingMatch) && isset($pendingMatch['user_id'])) {
+            if ($this->matchesYes($normalized) || str_contains($normalized, 'è lui')
+                || str_contains($normalized, 'e lui') || str_contains($normalized, 'è lei')
+                || str_contains($normalized, 'esatto') || str_contains($normalized, 'corretto')) {
+
+                $opponent = User::find($pendingMatch['user_id']);
+                if ($opponent && (!$user || $opponent->id !== $user->id)) {
+                    $session->mergeData([
+                        'opponent_user_id'        => $opponent->id,
+                        'opponent_name'           => $opponent->name,
+                        'opponent_phone'          => $opponent->phone,
+                        'opponent_pending_confirm'=> null,
+                        'opponent_search_results' => null,
+                    ]);
+
+                    return BotResponse::make(
+                        $this->textGenerator->rephrase('avversario_confermato', $session->persona(), [
+                            'name' => $opponent->name,
+                        ]),
+                        BotState::SCEGLI_QUANDO,
+                    );
+                }
+            }
+
+            if ($this->matchesNo($normalized) || str_contains($normalized, 'non è') || str_contains($normalized, 'altro')) {
+                // L'utente nega: chiedi di nuovo il nome
+                $session->mergeData(['opponent_pending_confirm' => null]);
+
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('avversario_riprova', $session->persona()),
+                    BotState::ASK_OPPONENT,
+                );
+            }
+            // Altrimenti: tratta l'input come nuova ricerca (cade nel blocco 3)
+            $session->mergeData(['opponent_pending_confirm' => null]);
+        }
+
+        // ── 3) Selezione da lista risultati (input numerico o match per label)
+        $previousResults = $session->getData('opponent_search_results');
+        if (is_array($previousResults) && !empty($previousResults)) {
+            // Match numerico (1, 2, 3)
+            if (preg_match('/^([1-3])\b/', $normalized, $m)) {
+                $idx = (int) $m[1] - 1;
+                if (isset($previousResults[$idx])) {
+                    return $this->confirmOpponentSelection($session, $previousResults[$idx], $user);
+                }
+            }
+            // Match per nome esatto sui risultati proposti
+            foreach ($previousResults as $r) {
+                $rName = mb_strtolower($r['name'] ?? '');
+                if ($rName !== '' && (str_contains($normalized, $rName) || str_contains($rName, $normalized))) {
+                    return $this->confirmOpponentSelection($session, $r, $user);
+                }
+            }
+            // Match "nessuno"/"non è in lista"
+            if (str_contains($normalized, 'nessuno') || str_contains($normalized, 'non è in lista')
+                || str_contains($normalized, 'non e in lista')) {
+                $session->mergeData([
+                    'opponent_user_id'        => null,
+                    'opponent_name'           => trim($input),
+                    'opponent_phone'          => null,
+                    'opponent_search_results' => null,
+                ]);
+                return BotResponse::make(
+                    $this->textGenerator->rephrase('avversario_esterno', $session->persona(), [
+                        'name' => trim($input),
+                    ]),
+                    BotState::SCEGLI_QUANDO,
+                );
+            }
+        }
+
+        // ── 4) Input troppo corto → rifiuta
+        $cleanInput = trim($input);
+        if (mb_strlen($cleanInput) < 2) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('avversario_nome_corto', $session->persona()),
+                BotState::ASK_OPPONENT,
+            );
+        }
+
+        // ── 5) Ricerca fuzzy nel DB
+        $results = $this->userSearch->search($cleanInput, 5, false);
+
+        // Escludi il challenger stesso
+        if ($user) {
+            $results = $results->filter(fn(User $u) => $u->id !== $user->id)->values();
+        }
+
+        // ── 5a) Nessun match → salva come stringa libera
+        if ($results->isEmpty()) {
+            $session->mergeData([
+                'opponent_user_id'        => null,
+                'opponent_name'           => $cleanInput,
+                'opponent_phone'          => null,
+                'opponent_search_results' => null,
+            ]);
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('avversario_non_trovato', $session->persona(), [
+                    'name' => $cleanInput,
+                ]),
+                BotState::SCEGLI_QUANDO,
+            );
+        }
+
+        // ── 5b) Match singolo → proponi conferma "È lui?"
+        if ($results->count() === 1) {
+            $only = $results->first();
+            $session->mergeData([
+                'opponent_pending_confirm' => [
+                    'user_id' => $only->id,
+                    'name'    => $only->name,
+                ],
+                'opponent_search_results' => null,
+            ]);
+
+            return BotResponse::make(
+                $this->textGenerator->rephrase('avversario_conferma_uno', $session->persona(), [
+                    'name' => $only->name,
+                ]),
+                BotState::ASK_OPPONENT,
+                ['Sì, è lui', 'No, è un altro', 'Salta'],
+            );
+        }
+
+        // ── 5c) Match multipli → mostra max 3 come bottoni
+        $top = $results->take(3)->values();
+        $serialized = $top->map(fn(User $u) => [
+            'user_id' => $u->id,
+            'name'    => $u->name,
+            'phone'   => $u->phone,
+        ])->toArray();
+
+        $session->mergeData([
+            'opponent_search_results' => $serialized,
+            'opponent_pending_confirm' => null,
+        ]);
+
+        // Le label dei bottoni sono i nomi (max 20 char)
+        $buttons = $top->map(function (User $u) {
+            $label = $u->name;
+            if (mb_strlen($label) > 20) {
+                $label = mb_substr($label, 0, 19) . '…';
+            }
+            return $label;
+        })->toArray();
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('avversario_lista', $session->persona()),
+            BotState::ASK_OPPONENT,
+            $buttons,
+        );
+    }
+
+    /**
+     * Conferma diretta della selezione (da lista) e passa a SCEGLI_QUANDO.
+     * Usato quando l'utente sceglie esplicitamente uno dei risultati proposti.
+     */
+    private function confirmOpponentSelection(BotSession $session, array $selected, ?User $user): BotResponse
+    {
+        $opponent = User::find($selected['user_id'] ?? 0);
+
+        if (!$opponent || ($user && $opponent->id === $user->id)) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('avversario_riprova', $session->persona()),
+                BotState::ASK_OPPONENT,
+            );
+        }
+
+        $session->mergeData([
+            'opponent_user_id'        => $opponent->id,
+            'opponent_name'           => $opponent->name,
+            'opponent_phone'          => $opponent->phone,
+            'opponent_search_results' => null,
+            'opponent_pending_confirm'=> null,
+        ]);
+
+        return BotResponse::make(
+            $this->textGenerator->rephrase('avversario_confermato', $session->persona(), [
+                'name' => $opponent->name,
+            ]),
+            BotState::SCEGLI_QUANDO,
+        );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  CONFERMA_INVITO_OPP — L'avversario taggato conferma il link
+     * ═══════════════════════════════════════════════════════════════ */
+
+    private function handleConfermaInvitoOpponent(BotSession $session, string $input): BotResponse
+    {
+        $normalized      = mb_strtolower(trim($input));
+        $challengerName  = $session->getData('opp_invite_challenger_name') ?? 'Un giocatore';
+        $slot            = $session->getData('opp_invite_slot') ?? '';
+
+        if ($this->matchesYes($normalized) || str_contains($normalized, 'confermo')
+            || str_contains($normalized, 'è vero') || str_contains($normalized, 'e vero')
+            || str_contains($normalized, 'esatto') || str_contains($normalized, 'sì')) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('opp_invite_confermato', $session->persona(), [
+                    'challenger_name' => $challengerName,
+                    'slot'            => $slot,
+                ]),
+                BotState::MENU,
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            )->withOpponentLinkConfirmed(true);
+        }
+
+        if ($this->matchesNo($normalized) || str_contains($normalized, 'non è vero')
+            || str_contains($normalized, 'non e vero') || str_contains($normalized, 'sbagliato')
+            || str_contains($normalized, 'errore') || str_contains($normalized, 'non sono')) {
+            return BotResponse::make(
+                $this->textGenerator->rephrase('opp_invite_rifiutato', $session->persona()),
+                BotState::MENU,
+                ['Prenota campo', 'Trovami avversario', 'Sparapalline'],
+            )->withOpponentLinkRejected(true);
+        }
+
+        // Fallback AI
+        $aiMatch = $this->classifyWithAi($input, 'CONFERMA_INVITO_OPP');
+        if ($aiMatch !== null) {
+            return $this->handleConfermaInvitoOpponent($session, $aiMatch);
+        }
+
+        // Non capito → ripropone
+        return BotResponse::make(
+            $this->textGenerator->rephrase('opp_invite_non_capito', $session->persona(), [
+                'challenger_name' => $challengerName,
+                'slot'            => $slot,
+            ]),
+            BotState::CONFERMA_INVITO_OPP,
+            ['Sì, confermo', 'No, sbagliato'],
+        );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  GENERIC SIMPLE HANDLER — stati custom creati dal pannello
+     * ═══════════════════════════════════════════════════════════════ */
+
+    /**
+     * Handler "universale" per stati DB-driven (stati custom creati dal flow editor).
+     *
+     * Funziona così:
+     *  1. Carica la riga di bot_flow_states corrispondente
+     *  2. Tenta di matchare l'input con la label di uno dei bottoni
+     *  3. (Opzionale) classify AI come fallback
+     *  4. Se match → transizione al target_state del bottone, applica eventuale side_effect
+     *  5. Se no match → ripropone il messaggio + i bottoni (o messaggio fallback se settato)
+     *
+     * Vincoli sui bottoni: max 3, label max 20 char, target_state deve esistere
+     * (validato a save-time dal BotFlowStateController).
+     */
+    private function handleGenericSimple(BotSession $session, string $input, ?User $user, string $stateValue): BotResponse
+    {
+        $flowState = BotFlowState::getCached($stateValue);
+
+        // Stato non trovato in DB: torna al menu (sicurezza)
+        if (!$flowState) {
+            Log::warning('Generic simple handler: state not in DB, redirecting to MENU', [
+                'state' => $stateValue,
+                'phone' => $session->phone,
+            ]);
+            return BotResponse::make(
+                $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
+                BotState::MENU,
+                $this->getButtons('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']),
+            );
+        }
+
+        $buttons      = $flowState->buttons ?? [];
+        $messageKey   = $flowState->message_key;
+        $fallbackKey  = $flowState->fallback_key ?: $messageKey;
+        $buttonLabels = array_column($buttons, 'label');
+
+        // ── 1) Match diretto: la label del bottone è contenuta nell'input (case-insensitive)
+        $matched = $this->matchButtonByInput($buttons, $input);
+
+        // ── 2) Fallback AI: solo se non matchato e ci sono bottoni
+        if ($matched === null && !empty($buttons)) {
+            $aiLabel = $this->classifyWithAi($input, $stateValue);
+            if ($aiLabel !== null) {
+                $matched = $this->matchButtonByLabel($buttons, $aiLabel);
+            }
+        }
+
+        // ── 3) Match trovato: applica side_effect e transita
+        if ($matched !== null) {
+            $targetState = $matched['target_state'] ?? $stateValue;
+            $sideEffect  = $matched['side_effect'] ?? null;
+            $value       = $matched['value'] ?? null;
+
+            // Salva il valore del bottone in sessione (utile per stati custom multi-step)
+            if ($value !== null) {
+                $session->mergeData(["custom_{$stateValue}_value" => $value]);
+            }
+
+            $response = BotResponse::make(
+                $this->textGenerator->rephrase($messageKey, $session->persona()),
+                $this->resolveTargetState($targetState),
+                $this->getButtonsForCustomTarget($targetState),
+            );
+
+            return $this->applySideEffect($response, $sideEffect);
+        }
+
+        // ── 4) Nessun match: ripeti il messaggio (o fallback) coi bottoni
+        return BotResponse::make(
+            $this->textGenerator->rephrase($fallbackKey, $session->persona()),
+            $stateValue,                       // resta sullo stato corrente
+            $buttonLabels,                     // ripropone gli stessi bottoni
+        );
+    }
+
+    /**
+     * Matcha il primo bottone la cui label appare (case-insensitive) nell'input.
+     */
+    private function matchButtonByInput(array $buttons, string $input): ?array
+    {
+        $normInput = mb_strtolower(trim($input));
+        if ($normInput === '') {
+            return null;
+        }
+
+        foreach ($buttons as $btn) {
+            $label = mb_strtolower($btn['label'] ?? '');
+            if ($label === '') {
+                continue;
+            }
+            if ($normInput === $label || str_contains($normInput, $label) || str_contains($label, $normInput)) {
+                return $btn;
+            }
+        }
+        return null;
+    }
+
+    private function matchButtonByLabel(array $buttons, string $label): ?array
+    {
+        $normLabel = mb_strtolower($label);
+        foreach ($buttons as $btn) {
+            if (mb_strtolower($btn['label'] ?? '') === $normLabel) {
+                return $btn;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Risolve un nome di stato (string) nel tipo corretto da passare a BotResponse.
+     * Se è un built-in enum case → restituisce l'enum. Altrimenti string custom.
+     */
+    private function resolveTargetState(string $targetValue): BotState|string
+    {
+        $enum = BotState::tryFrom($targetValue);
+        return $enum ?? $targetValue;
+    }
+
+    /**
+     * Restituisce le label dei bottoni per un dato target state (custom o built-in).
+     * Permette di mostrare immediatamente i bottoni del NUOVO stato dopo la transizione.
+     */
+    private function getButtonsForCustomTarget(string $targetValue): array
+    {
+        // Built-in: prova a leggere dal DB (potrebbero essere stati editati)
+        $flowState = BotFlowState::getCached($targetValue);
+        if ($flowState && !empty($flowState->buttons)) {
+            return array_column($flowState->buttons, 'label');
+        }
+        return [];
+    }
+
+    /**
+     * Applica un side_effect (string) su una BotResponse, mappandolo
+     * sul metodo with* corrispondente.
+     *
+     * Whitelist dei side_effect supportati. Aggiungere qui se ne servono di nuovi.
+     */
+    private function applySideEffect(BotResponse $response, ?string $sideEffect): BotResponse
+    {
+        if (!$sideEffect) {
+            return $response;
+        }
+
+        return match ($sideEffect) {
+            'calendarCheck'         => $response->withCalendarCheck(true),
+            'paymentRequired'       => $response->withPaymentRequired(true),
+            'bookingToCreate'       => $response->withBookingToCreate(true),
+            'bookingToCancel'       => $response->withBookingToCancel(true),
+            'matchmakingSearch'     => $response->withMatchmakingSearch(true),
+            'matchAccepted'         => $response->withMatchAccepted(true),
+            'matchRefused'          => $response->withMatchRefused(true),
+            'matchResultToSave'     => $response->withMatchResultToSave(true),
+            'feedbackToSave'        => $response->withFeedbackToSave(true),
+            'opponentLinkConfirmed' => $response->withOpponentLinkConfirmed(true),
+            'opponentLinkRejected'  => $response->withOpponentLinkRejected(true),
+            default => $response,
+        };
+    }
+
+    /**
+     * Whitelist statica dei side_effect disponibili.
+     * Esposta al frontend tramite endpoint API per popolare il dropdown del flow editor.
+     */
+    public static function availableSideEffects(): array
+    {
+        return [
+            'calendarCheck'         => 'Verifica disponibilità calendario',
+            'paymentRequired'       => 'Richiede pagamento online',
+            'bookingToCreate'       => 'Crea prenotazione',
+            'bookingToCancel'       => 'Cancella prenotazione',
+            'matchmakingSearch'     => 'Cerca avversario (matchmaking)',
+            'matchAccepted'         => 'Accetta sfida matchmaking',
+            'matchRefused'          => 'Rifiuta sfida matchmaking',
+            'matchResultToSave'     => 'Salva risultato partita',
+            'feedbackToSave'        => 'Salva feedback utente',
+            'opponentLinkConfirmed' => 'Conferma link avversario',
+            'opponentLinkRejected'  => 'Rifiuta link avversario',
+        ];
     }
 
     /* ═══════════════════════════════════════════════════════════════

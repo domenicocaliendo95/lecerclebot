@@ -34,7 +34,10 @@
       "Bash(done)",
       "Bash(xargs ls:*)",
       "Bash(find /Users/domenicocaliendo/Desktop/lecerclebot -type f -name *auth* -o -name *sanctum* -o -name *cors*)",
-      "Bash(find .:*)"
+      "Bash(find .:*)",
+      "Bash(/Users/domenicocaliendo/.nvm/versions/node/v24.11.1/bin/node --version)",
+      "Bash(/Users/domenicocaliendo/.nvm/versions/node/v24.11.1/bin/npm --version)",
+      "Bash(export PATH=\"/Users/domenicocaliendo/.nvm/versions/node/v24.11.1/bin:$PATH\")"
     ]
   }
 }

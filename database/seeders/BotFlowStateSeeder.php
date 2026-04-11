@@ -123,6 +123,31 @@ class BotFlowStateSeeder extends Seeder
                 'sort_order'   => 10,
             ],
 
+            // ── Avversario (flusso ASK_OPPONENT) ────────────────────
+            [
+                'state'        => 'ASK_OPPONENT',
+                'type'         => 'complex',
+                'message_key'  => 'chiedi_avversario',
+                'fallback_key' => 'avversario_nome_corto',
+                'buttons'      => null, // Dynamic: lista risultati ricerca
+                'category'     => 'avversario',
+                'description'  => 'Ricerca avversario (fuzzy match utenti circolo)',
+                'sort_order'   => 15,
+            ],
+            [
+                'state'        => 'CONFERMA_INVITO_OPP',
+                'type'         => 'simple',
+                'message_key'  => 'opp_invite_richiesta',
+                'fallback_key' => 'opp_invite_non_capito',
+                'buttons'      => [
+                    ['label' => 'Sì, confermo',  'target_state' => 'MENU', 'value' => 'confirm', 'side_effect' => 'opponentLinkConfirmed'],
+                    ['label' => 'No, sbagliato', 'target_state' => 'MENU', 'value' => 'reject',  'side_effect' => 'opponentLinkRejected'],
+                ],
+                'category'     => 'avversario',
+                'description'  => 'Avversario taggato conferma o nega il link (bidirezionale)',
+                'sort_order'   => 16,
+            ],
+
             // ── Prenotazione ────────────────────────────────────────
             [
                 'state'        => 'SCEGLI_QUANDO',

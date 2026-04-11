@@ -14,11 +14,14 @@ class BotFlowState extends Model
     protected $fillable = [
         'state', 'type', 'message_key', 'fallback_key',
         'buttons', 'category', 'description', 'sort_order',
+        'position', 'is_custom',
     ];
 
     protected $casts = [
         'buttons'    => 'array',
+        'position'   => 'array',
         'sort_order' => 'integer',
+        'is_custom'  => 'boolean',
     ];
 
     private const CACHE_KEY = 'bot_flow_states_all';

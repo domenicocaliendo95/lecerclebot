@@ -7,16 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 class Booking extends Model
 {
     protected $fillable = [
-        'player1_id', 'player2_id', 'booking_date',
-        'start_time', 'end_time', 'price', 'is_peak',
+        'player1_id', 'player2_id', 'player2_name_text', 'player2_confirmed_at',
+        'booking_date', 'start_time', 'end_time', 'price', 'is_peak',
         'status', 'gcal_event_id',
         'stripe_payment_link_p1', 'stripe_payment_link_p2',
         'payment_status_p1', 'payment_status_p2',
     ];
 
     protected $casts = [
-        'booking_date' => 'date',
-        'is_peak'      => 'boolean',
+        'booking_date'         => 'date',
+        'is_peak'              => 'boolean',
+        'player2_confirmed_at' => 'datetime',
     ];
 
     public function player1() {

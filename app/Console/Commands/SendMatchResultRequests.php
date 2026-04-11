@@ -39,11 +39,14 @@ class SendMatchResultRequests extends Command
 
         // Trova prenotazioni:
         // - status = confirmed
-        // - con player2 (solo partite vere, non sparapalline)
+        // - partita reale (non sparapalline): player2_id O player2_name_text settati
         // - result_requested_at IS NULL (non ancora chiesto)
         // - end_time + 1h <= now() (la partita è finita da almeno 1 ora)
         $bookings = Booking::where('status', 'confirmed')
-            ->whereNotNull('player2_id')
+            ->where(function ($q) {
+                $q->whereNotNull('player2_id')
+                  ->orWhereNotNull('player2_name_text');
+            })
             ->whereNull('result_requested_at')
             ->whereRaw("ADDTIME(CONCAT(booking_date, ' ', end_time), '01:00:00') <= NOW()")
             ->with(['player1', 'player2'])
@@ -66,50 +69,62 @@ class SendMatchResultRequests extends Command
     private function processBooking(Booking $booking, bool $dryRun): void
     {
         $player1 = $booking->player1;
-        $player2 = $booking->player2;
+        $player2 = $booking->player2;                  // potrebbe essere null
+        $player2Name = $player2?->name ?? $booking->player2_name_text;
 
-        if (!$player1 || !$player2) {
-            $this->warn("Booking #{$booking->id}: giocatori mancanti, skip.");
+        if (!$player1) {
+            $this->warn("Booking #{$booking->id}: player1 mancante, skip.");
             return;
         }
 
-        $dateStr  = Carbon::parse($booking->booking_date)->format('d/m');
-        $timeStr  = mb_substr($booking->start_time, 0, 5);
-        $slot     = "{$dateStr} alle {$timeStr}";
+        $dateStr = Carbon::parse($booking->booking_date)->format('d/m');
+        $timeStr = mb_substr($booking->start_time, 0, 5);
+        $slot    = "{$dateStr} alle {$timeStr}";
 
-        $this->line("  → Booking #{$booking->id} — {$player1->name} vs {$player2->name} ({$slot})");
+        // Tracciabilità ELO solo se BOTH player presenti E player2 ha confermato il link
+        $isTracked = $player2 !== null && $booking->player2_confirmed_at !== null;
+
+        $vsLabel = $player2Name ? "{$player1->name} vs {$player2Name}" : "{$player1->name} (avv. esterno)";
+        $this->line("  → Booking #{$booking->id} — {$vsLabel} ({$slot})" . ($isTracked ? '' : ' [no ELO]'));
 
         if ($dryRun) {
             return;
         }
 
         try {
-            // Crea MatchResult se non esiste ancora
-            $matchResult = MatchResult::firstOrCreate(
-                ['booking_id' => $booking->id],
-                [
-                    'winner_id'          => null,
-                    'score'              => null,
-                    'player1_confirmed'  => false,
-                    'player2_confirmed'  => false,
-                ],
-            );
+            // Crea MatchResult solo se la partita è tracciabile per ELO
+            if ($isTracked) {
+                MatchResult::firstOrCreate(
+                    ['booking_id' => $booking->id],
+                    [
+                        'winner_id'          => null,
+                        'score'              => null,
+                        'player1_confirmed'  => false,
+                        'player2_confirmed'  => false,
+                    ],
+                );
+            }
 
-            // Manda messaggio a player1
+            // Manda messaggio a player1 (sempre)
             $this->notifyPlayer($player1->phone, 'player1', $booking->id, $slot);
 
-            // Manda messaggio a player2
-            $this->notifyPlayer($player2->phone, 'player2', $booking->id, $slot);
+            // Manda messaggio a player2 SOLO se è un utente del circolo con phone
+            if ($player2 && $player2->phone) {
+                $this->notifyPlayer($player2->phone, 'player2', $booking->id, $slot);
+            }
 
-            // Segna come "richiesta inviata"
             $booking->update(['result_requested_at' => now()]);
 
-            $this->info("    ✓ Messaggi inviati a {$player1->name} e {$player2->name}");
+            $msg = $player2 && $player2->phone
+                ? "    ✓ Messaggi inviati a {$player1->name} e {$player2->name}"
+                : "    ✓ Messaggio inviato a {$player1->name} (avversario non tracciato)";
+            $this->info($msg);
 
             Log::info('SendMatchResultRequests: richiesta inviata', [
                 'booking_id' => $booking->id,
                 'player1'    => $player1->phone,
-                'player2'    => $player2->phone,
+                'player2'    => $player2?->phone,
+                'tracked'    => $isTracked,
             ]);
 
         } catch (\Throwable $e) {
