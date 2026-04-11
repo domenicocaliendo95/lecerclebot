@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\BotFlowState;
 use App\Models\BotMessage;
 use App\Services\Bot\BotState;
+use App\Services\Bot\RuleEvaluator;
 use App\Services\Bot\StateHandler;
+use App\Services\Bot\TransitionEvaluator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +58,8 @@ class BotFlowStateController extends Controller
                 'fallback_key' => $s->fallback_key,
                 'fallback_text'=> $s->fallback_key ? ($messages[$s->fallback_key] ?? null) : null,
                 'buttons'      => $s->buttons ?? [],
+                'input_rules'  => $s->input_rules ?? [],
+                'transitions'  => $s->transitions ?? [],
                 'position'     => $s->position,
                 'sort_order'   => $s->sort_order,
             ];
@@ -74,6 +78,40 @@ class BotFlowStateController extends Controller
                     'side_effect' => $btn['side_effect'] ?? null,
                     'editable' => $s->type === 'simple' || $s->is_custom,
                 ];
+            }
+
+            // Edge da input_rules (next_state)
+            foreach (($s->input_rules ?? []) as $idx => $rule) {
+                if (!empty($rule['next_state'])) {
+                    $buttonEdges[] = [
+                        'id'     => "rule-{$s->state}-{$idx}",
+                        'source' => $s->state,
+                        'target' => $rule['next_state'],
+                        'label'  => '🔤 ' . ($rule['type'] ?? 'rule'),
+                        'kind'   => 'rule',
+                        'side_effect' => $rule['side_effect'] ?? null,
+                        'editable' => true,
+                    ];
+                }
+            }
+
+            // Edge da transitions condizionali
+            foreach (($s->transitions ?? []) as $idx => $tr) {
+                if (!empty($tr['then'])) {
+                    $hasCondition = !empty($tr['if']);
+                    $label = $hasCondition
+                        ? '⚡ se ' . $this->formatCondition($tr['if'])
+                        : '⚡ altrimenti';
+                    $buttonEdges[] = [
+                        'id'     => "tr-{$s->state}-{$idx}",
+                        'source' => $s->state,
+                        'target' => $tr['then'],
+                        'label'  => $label,
+                        'kind'   => 'transition',
+                        'side_effect' => null,
+                        'editable' => true,
+                    ];
+                }
             }
         }
 
@@ -133,11 +171,28 @@ class BotFlowStateController extends Controller
                        'errore', 'custom'];
 
         return response()->json([
-            'side_effects' => StateHandler::availableSideEffects(),
-            'messages'     => $messages,
-            'built_in'     => $builtIn,
-            'categories'   => $categories,
+            'side_effects'   => StateHandler::availableSideEffects(),
+            'messages'       => $messages,
+            'built_in'       => $builtIn,
+            'categories'     => $categories,
+            'rule_types'     => RuleEvaluator::availableRuleTypes(),
+            'transforms'     => RuleEvaluator::availableTransforms(),
+            'transition_fields'    => TransitionEvaluator::availableFields(),
+            'transition_operators' => TransitionEvaluator::availableOperators(),
         ]);
+    }
+
+    /**
+     * Format leggibile per una condizione `if` (es. {"profile.is_fit":true} → "profilo.is_fit = true")
+     */
+    private function formatCondition(array $if): string
+    {
+        $parts = [];
+        foreach ($if as $field => $val) {
+            $valStr = is_bool($val) ? ($val ? 'sì' : 'no') : (is_array($val) ? json_encode($val) : (string) $val);
+            $parts[] = "{$field}={$valStr}";
+        }
+        return implode(' & ', $parts);
     }
 
     /**
@@ -154,6 +209,8 @@ class BotFlowStateController extends Controller
             'category'     => 'nullable|string|max:50',
             'description'  => 'nullable|string|max:255',
             'buttons'      => 'nullable|array|max:3',
+            'input_rules'  => 'nullable|array',
+            'transitions'  => 'nullable|array',
             'position'     => 'nullable|array',
             'position.x'   => 'nullable|numeric',
             'position.y'   => 'nullable|numeric',
@@ -174,6 +231,16 @@ class BotFlowStateController extends Controller
             }
         }
 
+        // Validazione input_rules / transitions
+        if (!empty($validated['input_rules'])) {
+            $err = $this->validateInputRules($validated['input_rules']);
+            if ($err) return response()->json(['message' => $err], 422);
+        }
+        if (!empty($validated['transitions'])) {
+            $err = $this->validateTransitions($validated['transitions']);
+            if ($err) return response()->json(['message' => $err], 422);
+        }
+
         $state = BotFlowState::create([
             'state'        => $validated['state'],
             'type'         => 'simple',                      // Custom = sempre simple
@@ -183,6 +250,8 @@ class BotFlowStateController extends Controller
             'category'     => $validated['category'] ?? 'custom',
             'description'  => $validated['description'] ?? null,
             'buttons'      => $validated['buttons'] ?? [],
+            'input_rules'  => $validated['input_rules'] ?? null,
+            'transitions'  => $validated['transitions'] ?? null,
             'position'     => $validated['position'] ?? null,
             'sort_order'   => (BotFlowState::max('sort_order') ?? 0) + 1,
         ]);
@@ -208,6 +277,8 @@ class BotFlowStateController extends Controller
             'description'  => 'nullable|string|max:255',
             'category'     => 'nullable|string|max:50',
             'buttons'      => 'nullable|array|max:3',
+            'input_rules'  => 'nullable|array',
+            'transitions'  => 'nullable|array',
             'position'     => 'nullable|array',
             'position.x'   => 'nullable|numeric',
             'position.y'   => 'nullable|numeric',
@@ -219,6 +290,16 @@ class BotFlowStateController extends Controller
             if ($error) {
                 return response()->json(['message' => $error], 422);
             }
+        }
+
+        // Validazione input_rules / transitions
+        if (array_key_exists('input_rules', $validated) && !empty($validated['input_rules'])) {
+            $err = $this->validateInputRules($validated['input_rules']);
+            if ($err) return response()->json(['message' => $err], 422);
+        }
+        if (array_key_exists('transitions', $validated) && !empty($validated['transitions'])) {
+            $err = $this->validateTransitions($validated['transitions']);
+            if ($err) return response()->json(['message' => $err], 422);
         }
 
         // Per stati built-in: non permettere di cambiare la categoria
@@ -352,5 +433,95 @@ class BotFlowStateController extends Controller
         $data['message_text']  = $messages[$state->message_key] ?? null;
         $data['fallback_text'] = $state->fallback_key ? ($messages[$state->fallback_key] ?? null) : null;
         return $data;
+    }
+
+    /**
+     * Valida un array di input_rules. Restituisce stringa errore o null.
+     */
+    private function validateInputRules(array $rules): ?string
+    {
+        $allowedTypes  = array_keys(RuleEvaluator::availableRuleTypes());
+        $allowedTrans  = array_keys(RuleEvaluator::availableTransforms());
+        $allowedSE     = array_keys(StateHandler::availableSideEffects());
+        $allTargets    = BotFlowState::pluck('state')->toArray();
+        $allBuiltIn    = array_map(fn(BotState $c) => $c->value, BotState::cases());
+
+        foreach ($rules as $idx => $rule) {
+            $type = $rule['type'] ?? null;
+            if (!$type || !in_array($type, $allowedTypes, true)) {
+                return "Regola #" . ($idx + 1) . ": tipo '{$type}' non valido.";
+            }
+
+            // Type-specific
+            if ($type === 'integer_range') {
+                if (isset($rule['min'], $rule['max']) && (int) $rule['min'] > (int) $rule['max']) {
+                    return "Regola #" . ($idx + 1) . ": min > max.";
+                }
+            }
+            if ($type === 'mapping' && empty($rule['options'])) {
+                return "Regola #" . ($idx + 1) . ": elenco opzioni vuoto.";
+            }
+            if ($type === 'regex') {
+                $pattern = $rule['pattern'] ?? '';
+                if ($pattern === '') {
+                    return "Regola #" . ($idx + 1) . ": pattern regex mancante.";
+                }
+                $testPattern = preg_match('/^[\/#~%]/', $pattern) ? $pattern : "/{$pattern}/u";
+                if (@preg_match($testPattern, '') === false) {
+                    return "Regola #" . ($idx + 1) . ": pattern regex non valido.";
+                }
+            }
+
+            // Transform
+            if (!empty($rule['transform']) && !in_array($rule['transform'], $allowedTrans, true)) {
+                return "Regola #" . ($idx + 1) . ": trasformazione '{$rule['transform']}' non valida.";
+            }
+
+            // Side effect
+            if (!empty($rule['side_effect']) && !in_array($rule['side_effect'], $allowedSE, true)) {
+                return "Regola #" . ($idx + 1) . ": side_effect '{$rule['side_effect']}' non valido.";
+            }
+
+            // Save_to: deve iniziare con profile. o data.
+            if (!empty($rule['save_to'])
+                && !str_starts_with($rule['save_to'], 'profile.')
+                && !str_starts_with($rule['save_to'], 'data.')) {
+                return "Regola #" . ($idx + 1) . ": save_to deve iniziare con 'profile.' o 'data.'.";
+            }
+
+            // Next state esistente
+            if (!empty($rule['next_state'])) {
+                $ns = $rule['next_state'];
+                if (!in_array($ns, $allTargets, true) && !in_array($ns, $allBuiltIn, true)) {
+                    return "Regola #" . ($idx + 1) . ": next_state '{$ns}' non esiste.";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Valida un array di transitions condizionali.
+     */
+    private function validateTransitions(array $transitions): ?string
+    {
+        $allTargets = BotFlowState::pluck('state')->toArray();
+        $allBuiltIn = array_map(fn(BotState $c) => $c->value, BotState::cases());
+
+        foreach ($transitions as $idx => $tr) {
+            $then = $tr['then'] ?? null;
+            if (!$then) {
+                return "Transizione #" . ($idx + 1) . ": campo 'then' mancante.";
+            }
+            if (!in_array($then, $allTargets, true) && !in_array($then, $allBuiltIn, true)) {
+                return "Transizione #" . ($idx + 1) . ": stato target '{$then}' non esiste.";
+            }
+            if (isset($tr['if']) && !is_array($tr['if'])) {
+                return "Transizione #" . ($idx + 1) . ": campo 'if' deve essere un oggetto.";
+            }
+        }
+
+        return null;
     }
 }

@@ -1,5 +1,5 @@
 # Le Cercle Tennis Club — Bot WhatsApp
-Bibbia progetto — agg. 2026-04-11
+Bibbia progetto — agg. 2026-04-11 (rules+transitions)
 
 ## Identità
 Bot WhatsApp per **Le Cercle Tennis Club** (San Gennaro Vesuviano, NA). Gestisce registrazione, prenotazione campi, matchmaking, profilo. Italiano, tono amichevole/diretto/sportivo. Max 3 righe per messaggio, max 1 emoji.
@@ -46,6 +46,8 @@ app/
       ├ BotResponse.php        (DTO + flag side-effect)
       ├ BotOrchestrator.php    (DB tx, side-effects, invio msg)
       ├ StateHandler.php       (macchina stati, tutta la logica)
+      ├ RuleEvaluator.php      (input_rules: name/integer_range/mapping/regex/free_text)
+      ├ TransitionEvaluator.php (transitions condizionali su session.data)
       ├ TextGenerator.php      (template DB + parseDateTime + classify AI)
       ├ UserProfileService.php (saveFromBot + stima ELO)
       └ EloService.php
@@ -77,10 +79,48 @@ frontend/src/
 `key` PK, `text` (con `{vars}`), `category` (onboarding/menu/prenotazione/conferma/gestione/profilo/matchmaking/risultati/feedback/promemoria/errore), `description`, timestamps. Cache 1h. Fallback hardcoded in `TextGenerator::FALLBACKS`. Editabile in `/panel/messaggi`.
 
 ### `bot_flow_states`
-`state` PK, `type` (`simple`=editabile / `complex`=logica custom), `message_key` FK, `fallback_key` FK NULL, `buttons` JSON `[{label,target_state,value?,side_effect?}]`, `category`, `description`, `sort_order`, `position` JSON `{x,y}` (per flow editor visuale), `is_custom` BOOL. Cache 1h. Editabile in `/panel/flusso` con flow editor visuale (React Flow). `simple`: input non matchato → classificazione AI Gemini. `complex`: logica nel codice ma label/messaggi editabili. `is_custom=true`: creato dal pannello, sempre `simple`, gestito da `StateHandler::handleGenericSimple()`, eliminabile se nessuno lo referenzia.
+`state` PK, `type` (`simple`=editabile / `complex`=logica custom), `message_key` FK, `fallback_key` FK NULL, `buttons` JSON `[{label,target_state,value?,side_effect?}]`, `input_rules` JSON (validazione input testo libero), `transitions` JSON (fork condizionali), `category`, `description`, `sort_order`, `position` JSON `{x,y}` (per flow editor visuale), `is_custom` BOOL. Cache 1h. Editabile in `/panel/flusso` con flow editor visuale (React Flow). `simple`: input non matchato → classificazione AI Gemini. `complex`: logica nel codice ma label/messaggi editabili. `is_custom=true`: creato dal pannello, sempre `simple`, gestito da `StateHandler::handleGenericSimple()`, eliminabile se nessuno lo referenzia.
+
+**`input_rules`** array ordinato. Ogni rule:
+- `type`: `name` | `integer_range` | `mapping` | `regex` | `free_text`
+- `save_to`: `profile.X` | `data.X`
+- `next_state`: stato target dopo match
+- `error_key`: message_key per errore
+- `transform`: `title_case` | `lowercase` | `uppercase` | `int`
+- `side_effect`: dalla whitelist standard
+- Type-specific: `min`/`max` (integer_range), `options[]` (mapping), `pattern`/`capture_group` (regex)
+
+**`transitions`** array ordinato. Ogni transition:
+- `if`: `{"profile.is_fit": true}` (AND tra chiavi). Vuoto/assente = "else"
+- `then`: stato target
+
+Valutate **dopo** che bottoni o input_rules hanno determinato una transizione, per fork condizionali.
 
 ### `bot_settings`
 `key` PK, `value` JSON, timestamps. Es. `reminders`: `{enabled, slots:[{hours_before,enabled}]}`.
+
+## Rules + Transitions DB-driven
+**`StateHandler::tryDbRules()`** è il bridge che permette agli handler PHP built-in di delegare gradualmente a config DB-driven. Ogni handler tipo `handleOnboardNome` chiama `tryDbRules` PRIMA della logica hardcoded:
+
+1. Carica `BotFlowState` per lo stato corrente
+2. Valuta `input_rules` con `RuleEvaluator` (la prima rule che matcha vince)
+3. Salva il valore in `profile.X`/`data.X` se la rule lo specifica
+4. Calcola il prossimo stato:
+   - Se ci sono `transitions` → valuta condizionali con `TransitionEvaluator`
+   - Altrimenti usa `next_state` della rule
+5. Applica `side_effect` dalla whitelist
+6. Se nessuna rule matcha → ritorna null → l'handler hardcoded fa il suo lavoro
+
+Questo modello permette di **sostituire gradualmente** la logica hardcoded con config editabile. Stati pilota già migrati: `ONBOARD_NOME` (rule `name`), `ONBOARD_ETA` (rule `integer_range` 5-99), `ONBOARD_CLASSIFICA` (3 rules: regex `4.1`, mapping `NC`, mapping categorie storiche).
+
+**RuleEvaluator** — tipi friendly esposti via `availableRuleTypes()`:
+- `name`: lettere/spazi/apostrofi 2-60 char (con `transform: title_case` opzionale)
+- `integer_range`: estrae primo numero, opzionale `min`/`max`
+- `mapping`: array di righe `"valore: sinonimo1, sinonimo2"`, restituisce il `valore` canonico
+- `regex`: PCRE custom con `capture_group`
+- `free_text`: any non-empty input
+
+**TransitionEvaluator** — campi friendly disponibili in `availableFields()`: `profile.is_fit`, `profile.self_level`, `profile.fit_rating`, `profile.preferred_slots`, `data.booking_type`, `data.payment_method`, `data.update_field`, `input`. Operatore solo `equals` (case-insensitive su stringhe, normalizzato su booleans).
 
 ## Stati custom dal pannello (`handleGenericSimple`)
 Quando `BotState::tryFrom($state)` restituisce `null` (= stato non in enum), `StateHandler::handle()` delega a `handleGenericSimple($session, $input, $user, $stateValue)`:
@@ -411,8 +451,12 @@ Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide, **@xyflo
 
 **`/panel/flusso`** — Flow editor visuale (React Flow):
 - Custom node component con state name, badge custom/simple/complex, message preview, lista bottoni
-- Edge button-driven (verde solido) e code-driven (grigio tratteggiato, read-only)
-- Side panel di edit: descrizione, message_key, fallback_key, bottoni con dropdown target_state e side_effect, eliminazione (solo custom)
+- Edge tipizzati per colore: verde=bottone, ambra=bottone+side_effect, ciano=validazione (input_rule), viola=fork condizionale (transition), grigio tratteggiato=transizione codice (read-only)
+- **Side panel a 4 tab**:
+  - **Generale**: descrizione, categoria, messaggio principale, messaggio fallback, eliminazione (solo custom)
+  - **Bottoni**: editor pulsanti WhatsApp con dropdown target+side_effect
+  - **Validazione**: editor `input_rules` friendly. Picker tipo (Nome/Numero/Mapping/Regex/Testo libero) con icone, sub-form contestuale, **tester live verde/rosso** che mostra il valore trasformato
+  - **Fork**: editor `transitions` con builder if/else (campo/valore tramite dropdown)
 - Toolbar: nuovo stato, salva tutto (mostra count modifiche pending), search, toggle code edges
 - Drag handle source → handle target = crea nuovo bottone collegato
 - Autolayout dagre se almeno uno stato non ha posizione salvata
@@ -442,7 +486,7 @@ Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide, **@xyflo
 | `/bot-messages/{key}` | PUT | |
 | `/bot-flow-states` | GET / POST | lista grouped / crea custom (force simple+is_custom) |
 | `/bot-flow-states/graph` | GET | nodes + buttonEdges (editable) + codeEdges (read-only da `BotState::allowedTransitions`) |
-| `/bot-flow-states/meta` | GET | side_effect whitelist + bot_messages list + built_in cases + categorie |
+| `/bot-flow-states/meta` | GET | side_effect whitelist + bot_messages list + built_in cases + categorie + rule_types + transforms + transition_fields/operators |
 | `/bot-flow-states/positions` | PUT | bulk save posizioni nodi (drag&drop) |
 | `/bot-flow-states/{state}` | PUT / DELETE | aggiorna / elimina (custom only, blocco se referenziato) |
 

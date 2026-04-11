@@ -27,9 +27,11 @@ class StateHandler
     private bool $aiClassificationAttempted = false;
 
     public function __construct(
-        private readonly CalendarService   $calendar,
-        private readonly TextGenerator     $textGenerator,
-        private readonly UserSearchService $userSearch,
+        private readonly CalendarService     $calendar,
+        private readonly TextGenerator       $textGenerator,
+        private readonly UserSearchService   $userSearch,
+        private readonly RuleEvaluator       $ruleEvaluator,
+        private readonly TransitionEvaluator $transitionEvaluator,
     ) {}
 
     /**
@@ -129,11 +131,21 @@ class StateHandler
 
     private function handleOnboardNome(BotSession $session, string $input): BotResponse
     {
+        // 1) Prova le rules dal DB se configurate
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ONBOARD_NOME->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
+        // 2) Fallback: logica hardcoded (parser locale, behavior originale)
         $name = $this->sanitizeName($input);
 
         if (empty($name)) {
             return BotResponse::make(
-                $this->textGenerator->rephrase('nome_non_valido', $session->persona()),
+                $this->textGenerator->rephrase(
+                    $this->ruleErrorMessage(BotState::ONBOARD_NOME->value, 'nome_non_valido'),
+                    $session->persona(),
+                ),
                 BotState::ONBOARD_NOME,
             );
         }
@@ -196,11 +208,21 @@ class StateHandler
 
     private function handleOnboardClassifica(BotSession $session, string $input): BotResponse
     {
+        // 1) Prova le rules dal DB
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ONBOARD_CLASSIFICA->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
+        // 2) Fallback hardcoded
         $rating = $this->parseClassificaFit($input);
 
         if ($rating === null) {
             return BotResponse::make(
-                $this->textGenerator->rephrase('classifica_non_valida', $session->persona()),
+                $this->textGenerator->rephrase(
+                    $this->ruleErrorMessage(BotState::ONBOARD_CLASSIFICA->value, 'classifica_non_valida'),
+                    $session->persona(),
+                ),
                 BotState::ONBOARD_CLASSIFICA,
             );
         }
@@ -243,11 +265,21 @@ class StateHandler
 
     private function handleOnboardEta(BotSession $session, string $input): BotResponse
     {
+        // 1) Prova le rules dal DB
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ONBOARD_ETA->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
+        // 2) Fallback hardcoded
         $age = $this->parseAge($input);
 
         if ($age === null) {
             return BotResponse::make(
-                $this->textGenerator->rephrase('eta_non_valida', $session->persona()),
+                $this->textGenerator->rephrase(
+                    $this->ruleErrorMessage(BotState::ONBOARD_ETA->value, 'eta_non_valida'),
+                    $session->persona(),
+                ),
                 BotState::ONBOARD_ETA,
             );
         }
@@ -816,6 +848,125 @@ class StateHandler
             'opponentLinkConfirmed' => 'Conferma link avversario',
             'opponentLinkRejected'  => 'Rifiuta link avversario',
         ];
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+     *  RULES + TRANSITIONS — bridge tra StateHandler e DB-driven config
+     * ═══════════════════════════════════════════════════════════════ */
+
+    /**
+     * Tenta di applicare le `input_rules` e le `transitions` definite nel DB
+     * per uno stato. Restituisce una BotResponse se ha matchato qualcosa,
+     * altrimenti null (e l'handler dedicato applica la sua logica hardcoded).
+     *
+     * Questo metodo è il "bridge" che permette agli handler built-in di
+     * delegare gradualmente a config DB-driven, mantenendo backward compat.
+     */
+    private function tryDbRules(BotSession $session, string $input, string $stateValue): ?BotResponse
+    {
+        $flowState = BotFlowState::getCached($stateValue);
+        if (!$flowState) {
+            return null;
+        }
+
+        $rules = $flowState->input_rules ?? [];
+        if (empty($rules)) {
+            return null;
+        }
+
+        $match = $this->ruleEvaluator->evaluate($rules, $input);
+        if ($match === null) {
+            return null;
+        }
+
+        $rule  = $match['rule'];
+        $value = $match['value'];
+
+        // Salva il valore se la rule ha specificato dove
+        $saveTo = $rule['save_to'] ?? null;
+        if ($saveTo) {
+            $this->saveValueToSession($session, $saveTo, $value);
+        }
+
+        // Determina lo stato successivo:
+        //  1. transitions condizionali (più potenti)
+        //  2. next_state della rule
+        //  3. fallback: resta sullo stesso stato
+        $nextState = $stateValue;
+        $transitions = $flowState->transitions ?? [];
+        if (!empty($transitions)) {
+            $resolved = $this->transitionEvaluator->evaluate($transitions, $session, $input);
+            if ($resolved !== null) {
+                $nextState = $resolved;
+            }
+        } elseif (isset($rule['next_state'])) {
+            $nextState = $rule['next_state'];
+        }
+
+        // Messaggio successivo: leggi il message_key dello stato target (se esiste)
+        $vars = is_string($value)
+            ? ['value' => $value, 'name' => $value]
+            : ['value' => $value];
+
+        $vars = array_merge($vars, $session->profile());
+
+        $response = BotResponse::make(
+            $this->resolveMessageForTarget($nextState, $session, $vars),
+            $this->resolveTargetState($nextState),
+            $this->getButtonsForCustomTarget($nextState),
+        );
+
+        return $this->applySideEffect($response, $rule['side_effect'] ?? null);
+    }
+
+    /**
+     * Salva un valore in profile.X o data.X a seconda del prefisso.
+     */
+    private function saveValueToSession(BotSession $session, string $path, mixed $value): void
+    {
+        if (str_starts_with($path, 'profile.')) {
+            $field = substr($path, strlen('profile.'));
+            $session->mergeProfile([$field => $value]);
+        } elseif (str_starts_with($path, 'data.')) {
+            $field = substr($path, strlen('data.'));
+            $session->mergeData([$field => $value]);
+        } else {
+            // Default: data.X
+            $session->mergeData([$path => $value]);
+        }
+    }
+
+    /**
+     * Cerca il message_key dello stato target e lo renderizza.
+     * Fallback al template generico "errore_generico" se non trovato.
+     */
+    private function resolveMessageForTarget(string $targetState, BotSession $session, array $vars): string
+    {
+        $target = BotFlowState::getCached($targetState);
+        if ($target && $target->message_key) {
+            return $this->textGenerator->rephrase($target->message_key, $session->persona(), $vars);
+        }
+
+        // Per stati built-in non ancora seedati nel DB, fallback prudente
+        return $this->textGenerator->rephrase('errore_generico', $session->persona(), $vars);
+    }
+
+    /**
+     * Versione "fallback friendly" usata dagli handler dedicati: se le rule
+     * fanno match restituisce la BotResponse, altrimenti l'handler dedicato
+     * mostra il messaggio di errore associato alla rule (error_key).
+     */
+    private function ruleErrorMessage(string $stateValue, string $defaultKey): string
+    {
+        $flowState = BotFlowState::getCached($stateValue);
+        $rules     = $flowState?->input_rules ?? [];
+        // Prendi il primo error_key trovato (le rules sono pensate come "famiglia coerente")
+        foreach ($rules as $r) {
+            if (!empty($r['error_key'])) {
+                return $r['error_key'];
+            }
+        }
+        return $defaultKey;
     }
 
     /* ═══════════════════════════════════════════════════════════════

@@ -22,7 +22,8 @@ import {
 import dagre from '@dagrejs/dagre'
 import {
   Loader2, Save, Plus, Trash2, X, Cpu, Cog, MessageSquareText,
-  Zap, AlertTriangle, Check, Search,
+  Zap, AlertTriangle, Check, Search, MousePointerClick,
+  Filter, GitBranch, Type, Hash, ListChecks, Code, FileText,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -42,6 +43,31 @@ interface FlowButton {
   side_effect?: string
 }
 
+type RuleType = 'name' | 'integer_range' | 'mapping' | 'regex' | 'free_text'
+
+interface InputRule {
+  type: RuleType
+  // Common
+  save_to?: string
+  next_state?: string
+  error_key?: string
+  side_effect?: string
+  transform?: string
+  // integer_range
+  min?: number
+  max?: number
+  // mapping
+  options?: string[]
+  // regex
+  pattern?: string
+  capture_group?: number
+}
+
+interface Transition {
+  if?: Record<string, string | boolean | number>
+  then: string
+}
+
 interface FlowStateNode {
   id: string
   state: string
@@ -54,6 +80,8 @@ interface FlowStateNode {
   fallback_key: string | null
   fallback_text: string | null
   buttons: FlowButton[]
+  input_rules: InputRule[]
+  transitions: Transition[]
   position: { x: number; y: number } | null
   sort_order: number
 }
@@ -63,7 +91,7 @@ interface ButtonEdge {
   source: string
   target: string
   label: string
-  kind: 'button'
+  kind: 'button' | 'rule' | 'transition'
   side_effect: string | null
   editable: boolean
 }
@@ -84,11 +112,29 @@ interface GraphResponse {
   codeEdges: CodeEdge[]
 }
 
+interface RuleTypeMeta {
+  label: string
+  description: string
+  fields: { key: string; label: string; type: string; placeholder?: string }[]
+}
+
 interface MetaResponse {
   side_effects: Record<string, string>
   messages: { key: string; category: string; description: string | null }[]
   built_in: string[]
   categories: string[]
+  rule_types: Record<string, RuleTypeMeta>
+  transforms: Record<string, string>
+  transition_fields: Record<string, string>
+  transition_operators: Record<string, string>
+}
+
+const ruleTypeIcons: Record<RuleType, typeof Type> = {
+  name:          Type,
+  integer_range: Hash,
+  mapping:       ListChecks,
+  regex:         Code,
+  free_text:     FileText,
 }
 
 type FlowNodeData = FlowStateNode & { selected?: boolean }
@@ -214,8 +260,392 @@ function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
 }
 
 /* ═════════════════════════════════════════════════════════════════
+ *  Live tester for input rules
+ * ═════════════════════════════════════════════════════════════════ */
+
+/**
+ * Tester locale TypeScript-side. Replica la logica del PHP RuleEvaluator
+ * per dare feedback live nell'editor (verde se la rule matcha, rosso se no).
+ */
+function testRule(rule: InputRule, input: string): { ok: boolean; value?: string } {
+  const clean = input.trim()
+  if (!clean) return { ok: false }
+
+  switch (rule.type) {
+    case 'name': {
+      // /^[\p{L}\s']{2,60}$/u
+      const ok = /^[\p{L}\s']{2,60}$/u.test(clean)
+      return { ok, value: ok ? toTitleCase(clean) : undefined }
+    }
+    case 'integer_range': {
+      const m = clean.match(/(\d+)/)
+      if (!m) return { ok: false }
+      const v = parseInt(m[1], 10)
+      if (rule.min !== undefined && v < rule.min) return { ok: false }
+      if (rule.max !== undefined && v > rule.max) return { ok: false }
+      return { ok: true, value: String(v) }
+    }
+    case 'mapping': {
+      const lower = clean.toLowerCase()
+      for (const line of rule.options ?? []) {
+        if (!line.includes(':')) continue
+        const [canonical, syns] = line.split(':').map(s => s.trim())
+        const allKw = [canonical, ...syns.split(',').map(s => s.trim())].map(s => s.toLowerCase())
+        for (const kw of allKw) {
+          if (kw && (lower.includes(kw) || kw === lower)) {
+            return { ok: true, value: applyTransform(canonical, rule.transform) }
+          }
+        }
+      }
+      return { ok: false }
+    }
+    case 'regex': {
+      if (!rule.pattern) return { ok: false }
+      try {
+        const re = new RegExp(rule.pattern, 'u')
+        const m = clean.match(re)
+        if (!m) return { ok: false }
+        const captured = rule.capture_group != null ? m[rule.capture_group] ?? m[0] : m[0]
+        return { ok: true, value: applyTransform(captured, rule.transform) }
+      } catch {
+        return { ok: false }
+      }
+    }
+    case 'free_text':
+      return { ok: true, value: clean }
+    default:
+      return { ok: false }
+  }
+}
+
+function toTitleCase(s: string): string {
+  return s.toLowerCase().replace(/(^|\s)\p{L}/gu, c => c.toUpperCase())
+}
+
+function applyTransform(value: string, t?: string): string {
+  switch (t) {
+    case 'title_case': return toTitleCase(value)
+    case 'lowercase':  return value.toLowerCase()
+    case 'uppercase':  return value.toUpperCase()
+    case 'int':        return String(parseInt(value, 10) || 0)
+    default:           return value
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ *  Sub-editor: una singola input_rule
+ * ═════════════════════════════════════════════════════════════════ */
+
+function RuleCard({
+  rule, index, allTargets, meta, onChange, onRemove,
+}: {
+  rule: InputRule
+  index: number
+  allTargets: string[]
+  meta: MetaResponse | null
+  onChange: (patch: Partial<InputRule>) => void
+  onRemove: () => void
+}) {
+  const [tester, setTester] = useState('')
+  const Icon = ruleTypeIcons[rule.type] ?? Type
+  const typeMeta = meta?.rule_types[rule.type]
+
+  const result = useMemo(() => testRule(rule, tester), [rule, tester])
+
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="rounded bg-emerald-100 p-1">
+            <Icon className="h-3 w-3 text-emerald-700" />
+          </div>
+          <span className="text-xs font-medium">Regola #{index + 1}</span>
+          <span className="text-[10px] text-muted-foreground truncate">{typeMeta?.label}</span>
+        </div>
+        <button onClick={onRemove} className="p-1 text-red-400 hover:text-red-600">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+
+      {typeMeta?.description && (
+        <p className="text-[10px] text-muted-foreground italic">{typeMeta.description}</p>
+      )}
+
+      {/* Type-specific fields */}
+      {rule.type === 'integer_range' && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-muted-foreground">Minimo</label>
+            <input
+              type="number"
+              value={rule.min ?? ''}
+              onChange={e => onChange({ min: e.target.value === '' ? undefined : Number(e.target.value) })}
+              className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Massimo</label>
+            <input
+              type="number"
+              value={rule.max ?? ''}
+              onChange={e => onChange({ max: e.target.value === '' ? undefined : Number(e.target.value) })}
+              className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            />
+          </div>
+        </div>
+      )}
+
+      {rule.type === 'mapping' && (
+        <div>
+          <label className="text-[10px] text-muted-foreground">Opzioni (una per riga, formato <code>valore: sin1, sin2</code>)</label>
+          <textarea
+            value={(rule.options ?? []).join('\n')}
+            onChange={e => onChange({ options: e.target.value.split('\n').filter(l => l.trim()) })}
+            rows={4}
+            placeholder={'mattina: mattino, presto\npomeriggio: dopopranzo\nsera: serale, tardi, dopo cena'}
+            className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+          />
+        </div>
+      )}
+
+      {rule.type === 'regex' && (
+        <div className="space-y-1.5">
+          <div>
+            <label className="text-[10px] text-muted-foreground">Pattern (PCRE, senza delimitatori)</label>
+            <input
+              value={rule.pattern ?? ''}
+              onChange={e => onChange({ pattern: e.target.value })}
+              placeholder="es. ^([1-4])[.,]([1-6])$"
+              className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Gruppo da catturare (0=tutto)</label>
+            <input
+              type="number"
+              value={rule.capture_group ?? 0}
+              onChange={e => onChange({ capture_group: Number(e.target.value) })}
+              className="w-24 rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Transform */}
+      <div>
+        <label className="text-[10px] text-muted-foreground">Trasforma il valore</label>
+        <select
+          value={rule.transform ?? 'none'}
+          onChange={e => onChange({ transform: e.target.value === 'none' ? undefined : e.target.value })}
+          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+        >
+          {Object.entries(meta?.transforms ?? {}).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Save to */}
+      <div>
+        <label className="text-[10px] text-muted-foreground">Salva in</label>
+        <select
+          value={rule.save_to ?? ''}
+          onChange={e => onChange({ save_to: e.target.value || undefined })}
+          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+        >
+          <option value="">— non salvare —</option>
+          <optgroup label="Profilo utente">
+            <option value="profile.name">profile.name</option>
+            <option value="profile.is_fit">profile.is_fit</option>
+            <option value="profile.fit_rating">profile.fit_rating</option>
+            <option value="profile.self_level">profile.self_level</option>
+            <option value="profile.age">profile.age</option>
+            <option value="profile.preferred_slots">profile.preferred_slots</option>
+          </optgroup>
+          <optgroup label="Sessione">
+            <option value="data.booking_type">data.booking_type</option>
+            <option value="data.payment_method">data.payment_method</option>
+            <option value="data.update_field">data.update_field</option>
+          </optgroup>
+        </select>
+      </div>
+
+      {/* Next state */}
+      <div>
+        <label className="text-[10px] text-muted-foreground">Vai allo stato</label>
+        <select
+          value={rule.next_state ?? ''}
+          onChange={e => onChange({ next_state: e.target.value || undefined })}
+          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+        >
+          <option value="">— resta qui —</option>
+          {allTargets.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      {/* Error key */}
+      <div>
+        <label className="text-[10px] text-muted-foreground">Messaggio in caso di errore</label>
+        <select
+          value={rule.error_key ?? ''}
+          onChange={e => onChange({ error_key: e.target.value || undefined })}
+          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+        >
+          <option value="">— default —</option>
+          {(meta?.messages ?? []).map(m => (
+            <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Side effect */}
+      <div>
+        <label className="text-[10px] text-muted-foreground">Side effect (opzionale)</label>
+        <select
+          value={rule.side_effect ?? ''}
+          onChange={e => onChange({ side_effect: e.target.value || undefined })}
+          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+        >
+          <option value="">— nessuno —</option>
+          {Object.entries(meta?.side_effects ?? {}).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Live tester */}
+      <div className="pt-2 border-t border-dashed">
+        <label className="text-[10px] text-muted-foreground flex items-center gap-1 mb-1">
+          <MousePointerClick className="h-2.5 w-2.5" /> Prova qui
+        </label>
+        <input
+          value={tester}
+          onChange={e => setTester(e.target.value)}
+          placeholder="Scrivi un input di prova..."
+          className={`w-full rounded border-2 bg-background px-2 py-1 text-xs outline-none ${
+            tester === '' ? 'border-input' : result.ok ? 'border-emerald-500' : 'border-red-400'
+          }`}
+        />
+        {tester !== '' && (
+          <p className={`text-[10px] mt-1 ${result.ok ? 'text-emerald-700' : 'text-red-600'}`}>
+            {result.ok
+              ? <>✓ Match{result.value !== undefined && <> → <code className="bg-white/60 rounded px-1">{result.value}</code></>}</>
+              : <>✗ Non matcha</>}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ *  Sub-editor: una singola transition
+ * ═════════════════════════════════════════════════════════════════ */
+
+function TransitionCard({
+  transition, index, allTargets, meta, onChange, onRemove,
+}: {
+  transition: Transition
+  index: number
+  allTargets: string[]
+  meta: MetaResponse | null
+  onChange: (patch: Partial<Transition>) => void
+  onRemove: () => void
+}) {
+  const ifEntries = Object.entries(transition.if ?? {})
+  const isElse = ifEntries.length === 0
+
+  const updateCondition = (oldKey: string | null, newKey: string, newVal: string) => {
+    const next = { ...(transition.if ?? {}) }
+    if (oldKey && oldKey !== newKey) delete next[oldKey]
+    if (newKey) next[newKey] = newVal
+    onChange({ if: next })
+  }
+
+  const removeCondition = (key: string) => {
+    const next = { ...(transition.if ?? {}) }
+    delete next[key]
+    onChange({ if: next })
+  }
+
+  const addCondition = () => {
+    const next = { ...(transition.if ?? {}) }
+    next['data.booking_type'] = ''
+    onChange({ if: next })
+  }
+
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="rounded bg-amber-100 p-1">
+            <GitBranch className="h-3 w-3 text-amber-700" />
+          </div>
+          <span className="text-xs font-medium">
+            {isElse ? 'Altrimenti (default)' : `Se #${index + 1}`}
+          </span>
+        </div>
+        <button onClick={onRemove} className="p-1 text-red-400 hover:text-red-600">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+
+      {/* Conditions */}
+      {!isElse && (
+        <div className="space-y-1.5">
+          {ifEntries.map(([k, v], i) => (
+            <div key={i} className="flex items-center gap-1">
+              <select
+                value={k}
+                onChange={e => updateCondition(k, e.target.value, String(v))}
+                className="flex-1 rounded border bg-background px-1.5 py-1 text-[10px] outline-none focus:border-emerald-500"
+              >
+                {Object.entries(meta?.transition_fields ?? {}).map(([fk, fl]) => (
+                  <option key={fk} value={fk}>{fl}</option>
+                ))}
+              </select>
+              <span className="text-[10px] text-muted-foreground">=</span>
+              <input
+                value={String(v)}
+                onChange={e => updateCondition(k, k, e.target.value)}
+                placeholder="valore"
+                className="w-24 rounded border bg-background px-1.5 py-1 text-[10px] outline-none focus:border-emerald-500"
+              />
+              <button onClick={() => removeCondition(k)} className="p-0.5 text-red-400 hover:text-red-600">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isElse && (
+        <Button variant="outline" size="sm" onClick={addCondition} className="h-6 text-[10px] px-2 w-full">
+          <Plus className="h-3 w-3 mr-1" /> Aggiungi condizione (AND)
+        </Button>
+      )}
+
+      {/* Then */}
+      <div>
+        <label className="text-[10px] text-muted-foreground">Allora vai a</label>
+        <select
+          value={transition.then}
+          onChange={e => onChange({ then: e.target.value })}
+          className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+        >
+          {allTargets.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+    </div>
+  )
+}
+
+/* ═════════════════════════════════════════════════════════════════
  *  Side panel: edit selected node
  * ═════════════════════════════════════════════════════════════════ */
+
+type EditTab = 'general' | 'buttons' | 'rules' | 'transitions'
 
 function NodeEditPanel({
   node, allNodes, meta, onClose, onChange, onDelete, saving,
@@ -229,6 +659,7 @@ function NodeEditPanel({
   saving: boolean
 }) {
   const isComplex = node.type === 'complex' && !node.is_custom
+  const [tab, setTab] = useState<EditTab>('general')
   const allTargets = useMemo(
     () => [...new Set([...allNodes.map(n => n.state), ...(meta?.built_in ?? [])])].sort(),
     [allNodes, meta],
@@ -252,6 +683,45 @@ function NodeEditPanel({
   const removeButton = (i: number) => {
     onChange({ ...node, buttons: node.buttons.filter((_, idx) => idx !== i) })
   }
+
+  /* ── Rules helpers ── */
+  const updateRule = (i: number, patch: Partial<InputRule>) => {
+    onChange({
+      ...node,
+      input_rules: node.input_rules.map((r, idx) => idx === i ? { ...r, ...patch } : r),
+    })
+  }
+  const removeRule = (i: number) => {
+    onChange({ ...node, input_rules: node.input_rules.filter((_, idx) => idx !== i) })
+  }
+  const addRule = (type: RuleType) => {
+    const base: InputRule = { type, error_key: undefined, next_state: undefined }
+    if (type === 'integer_range') { base.min = 0; base.max = 100 }
+    if (type === 'mapping') base.options = ['valore: sinonimo1, sinonimo2']
+    if (type === 'regex') { base.pattern = '.*'; base.capture_group = 0 }
+    onChange({ ...node, input_rules: [...node.input_rules, base] })
+  }
+
+  /* ── Transitions helpers ── */
+  const updateTransition = (i: number, patch: Partial<Transition>) => {
+    onChange({
+      ...node,
+      transitions: node.transitions.map((t, idx) => idx === i ? { ...t, ...patch } : t),
+    })
+  }
+  const removeTransition = (i: number) => {
+    onChange({ ...node, transitions: node.transitions.filter((_, idx) => idx !== i) })
+  }
+  const addTransition = (asElse: boolean) => {
+    const next: Transition = asElse
+      ? { then: 'MENU' }
+      : { if: { 'data.booking_type': '' }, then: 'MENU' }
+    onChange({ ...node, transitions: [...node.transitions, next] })
+  }
+
+  const tabBadge = (n: number) => n > 0 ? (
+    <span className="ml-1 inline-flex items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold w-4 h-4">{n}</span>
+  ) : null
 
   return (
     <div className="fixed top-0 right-0 z-40 h-full w-[420px] border-l bg-background shadow-2xl overflow-y-auto">
@@ -280,163 +750,263 @@ function NodeEditPanel({
         </button>
       </div>
 
-      <div className="p-4 space-y-5">
-        {/* Descrizione */}
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">Descrizione</label>
-          <textarea
-            value={node.description ?? ''}
-            onChange={e => onChange({ ...node, description: e.target.value })}
-            placeholder="Cosa fa questo stato..."
-            rows={2}
-            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
-          />
-        </div>
+      {/* Tabs */}
+      <div className="sticky top-[57px] bg-background border-b z-10 px-2 flex gap-0.5">
+        <TabButton active={tab === 'general'} onClick={() => setTab('general')}>
+          <FileText className="h-3 w-3" /> Generale
+        </TabButton>
+        <TabButton active={tab === 'buttons'} onClick={() => setTab('buttons')}>
+          <MousePointerClick className="h-3 w-3" /> Bottoni{tabBadge(node.buttons.length)}
+        </TabButton>
+        <TabButton active={tab === 'rules'} onClick={() => setTab('rules')}>
+          <Filter className="h-3 w-3" /> Validazione{tabBadge(node.input_rules.length)}
+        </TabButton>
+        <TabButton active={tab === 'transitions'} onClick={() => setTab('transitions')}>
+          <GitBranch className="h-3 w-3" /> Fork{tabBadge(node.transitions.length)}
+        </TabButton>
+      </div>
 
-        {/* Categoria (solo custom) */}
-        {node.is_custom && (
-          <div>
-            <label className="text-xs font-medium text-muted-foreground">Categoria</label>
-            <select
-              value={node.category}
-              onChange={e => onChange({ ...node, category: e.target.value })}
-              className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
-            >
-              {(meta?.categories ?? []).map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
+      <div className="p-4 space-y-5">
+        {/* ── TAB: GENERAL ────────────────────────────── */}
+        {tab === 'general' && (
+          <>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Descrizione</label>
+              <textarea
+                value={node.description ?? ''}
+                onChange={e => onChange({ ...node, description: e.target.value })}
+                placeholder="Cosa fa questo stato..."
+                rows={2}
+                className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {node.is_custom && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Categoria</label>
+                <select
+                  value={node.category}
+                  onChange={e => onChange({ ...node, category: e.target.value })}
+                  className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+                >
+                  {(meta?.categories ?? []).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <MessageSquareText className="h-3 w-3" /> Messaggio principale
+              </label>
+              <select
+                value={node.message_key}
+                onChange={e => onChange({ ...node, message_key: e.target.value })}
+                className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
+              >
+                {(meta?.messages ?? []).map(m => (
+                  <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
+                ))}
+              </select>
+              {node.message_text && (
+                <div className="mt-2 text-xs bg-muted/50 rounded p-2 whitespace-pre-line border">
+                  {node.message_text}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Messaggio fallback (input non capito)</label>
+              <select
+                value={node.fallback_key ?? ''}
+                onChange={e => onChange({ ...node, fallback_key: e.target.value || null })}
+                className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
+              >
+                <option value="">— nessuno —</option>
+                {(meta?.messages ?? []).map(m => (
+                  <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
+                ))}
+              </select>
+            </div>
+
+            {node.is_custom && (
+              <div className="pt-3 border-t">
+                <Button
+                  variant="outline"
+                  onClick={onDelete}
+                  disabled={saving}
+                  className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                >
+                  <Trash2 className="h-3 w-3 mr-1.5" /> Elimina stato
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Message key */}
-        <div>
-          <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-            <MessageSquareText className="h-3 w-3" /> Messaggio
-          </label>
-          <select
-            value={node.message_key}
-            onChange={e => onChange({ ...node, message_key: e.target.value })}
-            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
-          >
-            {(meta?.messages ?? []).map(m => (
-              <option key={m.key} value={m.key}>
-                [{m.category}] {m.key}
-              </option>
-            ))}
-          </select>
-          {node.message_text && (
-            <div className="mt-2 text-xs bg-muted/50 rounded p-2 whitespace-pre-line border">
-              {node.message_text}
-            </div>
-          )}
-        </div>
-
-        {/* Fallback key */}
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">Messaggio fallback (input non capito)</label>
-          <select
-            value={node.fallback_key ?? ''}
-            onChange={e => onChange({ ...node, fallback_key: e.target.value || null })}
-            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
-          >
-            <option value="">— nessuno —</option>
-            {(meta?.messages ?? []).map(m => (
-              <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Buttons */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-medium text-muted-foreground">
-              Pulsanti WhatsApp ({node.buttons.length}/3)
-            </label>
-            {node.buttons.length < 3 && (
-              <Button size="sm" variant="outline" onClick={addButton} className="h-6 text-[10px] px-2">
-                <Plus className="h-3 w-3 mr-1" /> Aggiungi
-              </Button>
-            )}
-          </div>
-
-          {isComplex && (
-            <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2 flex gap-1.5">
-              <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
-              Stato con logica nel codice. Le label sono editabili ma le transizioni sono nel PHP.
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {node.buttons.map((btn, i) => (
-              <div key={i} className="rounded border bg-muted/30 p-2 space-y-1.5">
-                <div className="flex items-start gap-2">
-                  <input
-                    value={btn.label}
-                    onChange={e => updateButton(i, { label: e.target.value })}
-                    maxLength={20}
-                    placeholder="Label (max 20)"
-                    className="flex-1 rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    onClick={() => removeButton(i)}
-                    className="p-1 text-red-400 hover:text-red-600"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-muted-foreground">Target state</span>
-                  <select
-                    value={btn.target_state}
-                    onChange={e => updateButton(i, { target_state: e.target.value })}
-                    className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
-                  >
-                    {allTargets.map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-muted-foreground">Side effect (opzionale)</span>
-                  <select
-                    value={btn.side_effect ?? ''}
-                    onChange={e => updateButton(i, { side_effect: e.target.value || undefined })}
-                    className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
-                  >
-                    <option value="">— nessuno —</option>
-                    {Object.entries(meta?.side_effects ?? {}).map(([k, v]) => (
-                      <option key={k} value={k}>{v} ({k})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            ))}
-            {node.buttons.length === 0 && (
-              <p className="text-[10px] text-muted-foreground italic">
-                Nessun pulsante. L'utente deve rispondere con testo libero.
+        {/* ── TAB: BUTTONS ───────────────────────────── */}
+        {tab === 'buttons' && (
+          <>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-muted-foreground">
+                Pulsanti WhatsApp ({node.buttons.length}/3)
               </p>
-            )}
-          </div>
-        </div>
+              {node.buttons.length < 3 && (
+                <Button size="sm" variant="outline" onClick={addButton} className="h-6 text-[10px] px-2">
+                  <Plus className="h-3 w-3 mr-1" /> Aggiungi
+                </Button>
+              )}
+            </div>
 
-        {/* Delete (solo custom) */}
-        {node.is_custom && (
-          <div className="pt-3 border-t">
-            <Button
-              variant="outline"
-              onClick={onDelete}
-              disabled={saving}
-              className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-            >
-              <Trash2 className="h-3 w-3 mr-1.5" /> Elimina stato
-            </Button>
-          </div>
+            {isComplex && (
+              <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-2 flex gap-1.5">
+                <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+                Stato con logica nel codice. Le label sono editabili ma le transizioni base sono nel PHP.
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {node.buttons.map((btn, i) => (
+                <div key={i} className="rounded border bg-muted/30 p-2 space-y-1.5">
+                  <div className="flex items-start gap-2">
+                    <input
+                      value={btn.label}
+                      onChange={e => updateButton(i, { label: e.target.value })}
+                      maxLength={20}
+                      placeholder="Label (max 20)"
+                      className="flex-1 rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+                    />
+                    <button onClick={() => removeButton(i)} className="p-1 text-red-400 hover:text-red-600">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Vai allo stato</span>
+                    <select
+                      value={btn.target_state}
+                      onChange={e => updateButton(i, { target_state: e.target.value })}
+                      className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
+                    >
+                      {allTargets.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-muted-foreground">Side effect (opzionale)</span>
+                    <select
+                      value={btn.side_effect ?? ''}
+                      onChange={e => updateButton(i, { side_effect: e.target.value || undefined })}
+                      className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
+                    >
+                      <option value="">— nessuno —</option>
+                      {Object.entries(meta?.side_effects ?? {}).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+              {node.buttons.length === 0 && (
+                <p className="text-[10px] text-muted-foreground italic">
+                  Nessun pulsante. L'utente deve rispondere con testo libero — vai al tab Validazione.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── TAB: RULES ─────────────────────────────── */}
+        {tab === 'rules' && (
+          <>
+            <p className="text-[10px] text-muted-foreground mb-2">
+              Le regole validano l'input quando l'utente scrive testo libero. Vengono valutate in ordine: la prima che matcha vince.
+            </p>
+
+            <div className="space-y-3">
+              {node.input_rules.map((rule, i) => (
+                <RuleCard
+                  key={i}
+                  rule={rule}
+                  index={i}
+                  allTargets={allTargets}
+                  meta={meta}
+                  onChange={(patch) => updateRule(i, patch)}
+                  onRemove={() => removeRule(i)}
+                />
+              ))}
+            </div>
+
+            <div className="pt-2">
+              <p className="text-[10px] text-muted-foreground mb-1">Aggiungi una regola di tipo:</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(['name', 'integer_range', 'mapping', 'regex', 'free_text'] as RuleType[]).map(t => {
+                  const Icon = ruleTypeIcons[t]
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => addRule(t)}
+                      className="flex items-center gap-1.5 rounded border bg-background px-2 py-1.5 text-[10px] hover:bg-muted transition"
+                    >
+                      <Icon className="h-3 w-3 text-emerald-700" />
+                      <span className="truncate">{meta?.rule_types[t]?.label ?? t}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── TAB: TRANSITIONS ───────────────────────── */}
+        {tab === 'transitions' && (
+          <>
+            <p className="text-[10px] text-muted-foreground mb-2">
+              Fork condizionali sui dati della sessione, valutati DOPO bottoni e regole. Es. "se l'utente è tesserato FIT vai a X, altrimenti Y".
+            </p>
+
+            <div className="space-y-3">
+              {node.transitions.map((tr, i) => (
+                <TransitionCard
+                  key={i}
+                  transition={tr}
+                  index={i}
+                  allTargets={allTargets}
+                  meta={meta}
+                  onChange={(patch) => updateTransition(i, patch)}
+                  onRemove={() => removeTransition(i)}
+                />
+              ))}
+            </div>
+
+            <div className="pt-2 flex gap-1.5">
+              <Button variant="outline" size="sm" onClick={() => addTransition(false)} className="flex-1 h-7 text-[10px]">
+                <Plus className="h-3 w-3 mr-1" /> Se condizione...
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => addTransition(true)} className="flex-1 h-7 text-[10px]">
+                <Plus className="h-3 w-3 mr-1" /> Altrimenti...
+              </Button>
+            </div>
+          </>
         )}
       </div>
     </div>
+  )
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1 px-3 py-2 text-[11px] font-medium border-b-2 transition ${
+        active
+          ? 'border-emerald-500 text-emerald-700'
+          : 'border-transparent text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -644,21 +1214,25 @@ function FlowEditor() {
 
     const rfEdges: Edge[] = []
     for (const e of graph.buttonEdges) {
+      // Color by kind: button=verde, rule=ciano, transition=violetto
+      const color = e.kind === 'rule'
+        ? '#0891b2'
+        : e.kind === 'transition'
+          ? '#a855f7'
+          : (e.side_effect ? '#f59e0b' : '#10b981')
+
       rfEdges.push({
         id: e.id,
         source: e.source,
         target: e.target,
         label: e.label,
         type: 'smoothstep',
-        animated: !!e.side_effect,
-        style: {
-          stroke: e.side_effect ? '#f59e0b' : '#10b981',
-          strokeWidth: 2,
-        },
+        animated: !!e.side_effect || e.kind === 'transition',
+        style: { stroke: color, strokeWidth: 2 },
         labelStyle: { fontSize: 10, fontWeight: 600 },
         labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: e.side_effect ? '#f59e0b' : '#10b981' },
-        data: { kind: 'button', side_effect: e.side_effect },
+        markerEnd: { type: MarkerType.ArrowClosed, color },
+        data: { kind: e.kind, side_effect: e.side_effect },
       })
     }
     if (showCodeEdges) {
@@ -744,6 +1318,8 @@ function FlowEditor() {
               description: data.description,
               category: data.is_custom ? data.category : undefined,
               buttons: data.buttons,
+              input_rules: data.input_rules.length > 0 ? data.input_rules : null,
+              transitions: data.transitions.length > 0 ? data.transitions : null,
             }),
           }),
         )
@@ -959,18 +1535,26 @@ function FlowEditor() {
 
         {/* ── Legenda ─────────────────────────────────── */}
         <Panel position="bottom-center" className="!m-3">
-          <div className="bg-background border rounded-lg shadow-sm px-3 py-1.5 flex items-center gap-3 text-[10px]">
+          <div className="bg-background border rounded-lg shadow-sm px-3 py-1.5 flex items-center gap-3 text-[10px] flex-wrap">
             <div className="flex items-center gap-1">
               <div className="w-4 h-px bg-emerald-500" />
               <span>Bottone</span>
             </div>
             <div className="flex items-center gap-1">
               <div className="w-4 h-px bg-amber-500" />
-              <span>Bottone con side-effect</span>
+              <span>Side-effect</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-px bg-cyan-600" />
+              <span>Validazione</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-px bg-purple-500" />
+              <span>Fork condizionale</span>
             </div>
             <div className="flex items-center gap-1">
               <div className="w-4 h-px border-t border-dashed border-gray-400" />
-              <span>Logica nel codice</span>
+              <span>Codice</span>
             </div>
             <div className="h-3 w-px bg-border" />
             <span className="flex items-center gap-1"><Cog className="h-2.5 w-2.5" /> Simple</span>
