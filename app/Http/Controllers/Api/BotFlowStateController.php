@@ -62,6 +62,7 @@ class BotFlowStateController extends Controller
                 'input_rules'      => $s->input_rules ?? [],
                 'transitions'      => $s->transitions ?? [],
                 'on_enter_actions' => $s->on_enter_actions ?? [],
+                'ai_prompt'        => $s->ai_prompt,
                 'position'         => $s->position,
                 'sort_order'   => $s->sort_order,
             ];
@@ -217,6 +218,7 @@ class BotFlowStateController extends Controller
             'input_rules'      => 'nullable|array',
             'transitions'      => 'nullable|array',
             'on_enter_actions' => 'nullable|array',
+            'ai_prompt'        => 'nullable|string|max:2000',
             'position'         => 'nullable|array',
             'position.x'   => 'nullable|numeric',
             'position.y'   => 'nullable|numeric',
@@ -258,6 +260,7 @@ class BotFlowStateController extends Controller
             'buttons'      => $validated['buttons'] ?? [],
             'input_rules'  => $validated['input_rules'] ?? null,
             'transitions'  => $validated['transitions'] ?? null,
+            'ai_prompt'    => $validated['ai_prompt'] ?? null,
             'position'     => $validated['position'] ?? null,
             'sort_order'   => (BotFlowState::max('sort_order') ?? 0) + 1,
         ]);
@@ -286,6 +289,7 @@ class BotFlowStateController extends Controller
             'input_rules'      => 'nullable|array',
             'transitions'      => 'nullable|array',
             'on_enter_actions' => 'nullable|array',
+            'ai_prompt'        => 'nullable|string|max:2000',
             'position'         => 'nullable|array',
             'position.x'   => 'nullable|numeric',
             'position.y'   => 'nullable|numeric',

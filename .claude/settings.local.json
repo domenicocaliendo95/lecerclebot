@@ -42,7 +42,12 @@
       "Bash(./node_modules/.bin/tsc --noEmit)",
       "Bash(ls ~/.nvm/versions/node/*/bin/node)",
       "Bash(export PATH=\"/Users/domenicocaliendo/.nvm/versions/node/v22.22.2/bin:$PATH\")",
-      "Bash(./node_modules/.bin/vite build:*)"
+      "Bash(./node_modules/.bin/vite build:*)",
+      "Bash(php -l app/Services/Bot/ActionExecutor.php)",
+      "Bash(php -l app/Http/Controllers/Api/SettingsController.php)",
+      "Bash(php -l app/Http/Controllers/Api/BotFlowStateController.php)",
+      "Bash(php -l app/Models/BotFlowState.php)",
+      "Bash(php -l database/migrations/2026_04_12_000005_add_ai_prompt_to_bot_flow_states.php)"
     ]
   }
 }

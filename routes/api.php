@@ -52,6 +52,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 
     // Settings
     Route::get('/settings', [SettingsController::class, 'index']);
+    Route::get('/settings/env', [SettingsController::class, 'env']);
     Route::get('/settings/{key}', [SettingsController::class, 'show']);
     Route::put('/settings/{key}', [SettingsController::class, 'update']);
 

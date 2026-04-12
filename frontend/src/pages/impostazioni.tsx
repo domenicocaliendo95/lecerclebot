@@ -1,5 +1,8 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Loader2, Zap, Info, Plus, Pencil, Trash2, Bell, Check } from 'lucide-react'
+import {
+  Loader2, Zap, Info, Plus, Pencil, Trash2, Bell, Check,
+  MessageCircle, Sparkles, Calendar, Settings, Lock, Copy, Clock,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +20,16 @@ const emptyForm: RuleForm = { label: '', day_of_week: '', specific_date: '', sta
 
 interface ReminderSlot { hours_before: number; enabled: boolean }
 interface ReminderSettings { enabled: boolean; slots: ReminderSlot[] }
+
+interface EnvConfig {
+  whatsapp_phone_number_id: string
+  whatsapp_verify_token: string
+  whatsapp_token: string
+  gemini_model: string
+  gemini_key: string
+  google_calendar_id: string
+  app_timezone: string
+}
 
 export function Impostazioni() {
   const { data, loading, refetch } = useApi<{ data: PricingRule[] }>('/admin/pricing-rules')
@@ -79,8 +92,11 @@ export function Impostazioni() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Impostazioni</h1>
-        <p className="text-muted-foreground">Configurazione del circolo, prezzi e notifiche.</p>
+        <p className="text-muted-foreground">Configurazione del circolo, integrazioni e notifiche.</p>
       </div>
+
+      {/* ENV / Integration config cards */}
+      <EnvConfigSection />
 
       {/* Reminder settings */}
       <ReminderConfig />
@@ -149,13 +165,6 @@ export function Impostazioni() {
         </CardContent>
       </Card>
 
-      {/* Info cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <InfoCard title="Orari operativi" value="08:00 – 22:00" sub="Slot da 1h, 1.5h o 2h" />
-        <InfoCard title="Timezone" value="Europe/Rome" sub="Tutte le prenotazioni in ora italiana" />
-        <InfoCard title="Prezzo fallback" value="€20" sub="Se nessuna regola corrisponde" />
-      </div>
-
       {/* Create / Edit Dialog */}
       <FormDialog open={showCreate || !!editing} onClose={() => { setShowCreate(false); setEditing(null) }}
         title={editing ? 'Modifica regola' : 'Nuova regola'} onSubmit={handleSave} submitting={submitting}>
@@ -190,6 +199,164 @@ export function Impostazioni() {
         onSubmit={handleDelete} submitting={submitting} submitLabel="Elimina" destructive>
         <p className="text-sm">Eliminare la regola <strong>{deleting?.label ?? `#${deleting?.id}`}</strong>?</p>
       </FormDialog>
+    </div>
+  )
+}
+
+// ── ENV Config Section ──────────────────────────────────────────────
+
+function EnvConfigSection() {
+  const [env, setEnv] = useState<EnvConfig | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  useEffect(() => {
+    apiFetch<EnvConfig>('/admin/settings/env')
+      .then(setEnv)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const copyToClipboard = (value: string, key: string) => {
+    navigator.clipboard.writeText(value)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  if (loading) {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        {[1, 2, 3, 4].map(i => (
+          <Card key={i}><CardContent className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></CardContent></Card>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {/* WhatsApp */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100">
+              <MessageCircle className="h-4 w-4 text-green-700" />
+            </div>
+            <div>
+              <span>WhatsApp Business API</span>
+              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Configurati nel file .env del server</p>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ReadOnlyField
+            label="Phone Number ID"
+            value={env?.whatsapp_phone_number_id}
+            copyable
+            onCopy={() => copyToClipboard(env?.whatsapp_phone_number_id ?? '', 'wa_phone')}
+            copied={copied === 'wa_phone'}
+          />
+          <ReadOnlyField label="Token" value={env?.whatsapp_token} masked />
+          <ReadOnlyField label="Verify Token" value={env?.whatsapp_verify_token} />
+        </CardContent>
+      </Card>
+
+      {/* Gemini AI */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100">
+              <Sparkles className="h-4 w-4 text-purple-700" />
+            </div>
+            <div>
+              <span>Google Gemini AI</span>
+              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Usato per parsing date e classificazione input</p>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ReadOnlyField label="Modello" value={env?.gemini_model} />
+          <ReadOnlyField label="API Key" value={env?.gemini_key} masked />
+        </CardContent>
+      </Card>
+
+      {/* Google Calendar */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
+              <Calendar className="h-4 w-4 text-blue-700" />
+            </div>
+            <div>
+              <span>Google Calendar</span>
+              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Service account configurato sul server</p>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ReadOnlyField
+            label="Calendar ID"
+            value={env?.google_calendar_id}
+            copyable
+            onCopy={() => copyToClipboard(env?.google_calendar_id ?? '', 'gcal_id')}
+            copied={copied === 'gcal_id'}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Generali */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
+              <Settings className="h-4 w-4 text-slate-700" />
+            </div>
+            <div>
+              <span>Generali</span>
+              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Impostazioni generali del sistema</p>
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ReadOnlyField label="Timezone" value={env?.app_timezone} />
+          <ReadOnlyField label="Orari operativi" value="08:00 - 22:00" />
+          <ReadOnlyField label="Prezzo fallback" value="€20" />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function ReadOnlyField({ label, value, masked, copyable, onCopy, copied }: {
+  label: string
+  value?: string | null
+  masked?: boolean
+  copyable?: boolean
+  onCopy?: () => void
+  copied?: boolean
+}) {
+  const display = value || '(non configurato)'
+
+  return (
+    <div>
+      <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{label}</label>
+      <div className="mt-1 flex items-center gap-2">
+        <div className="flex-1 flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm font-mono">
+          <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className={`truncate ${masked ? 'tracking-wider' : ''}`}>
+            {display}
+          </span>
+        </div>
+        {copyable && !masked && value && (
+          <button
+            onClick={onCopy}
+            className="shrink-0 rounded-md border p-2 hover:bg-muted transition-colors"
+            title="Copia"
+          >
+            {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -253,8 +420,14 @@ function ReminderConfig() {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Bell className="h-4 w-4" /> Promemoria prenotazioni
+          <CardTitle className="text-sm flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100">
+              <Bell className="h-4 w-4 text-amber-700" />
+            </div>
+            <div>
+              <span>Promemoria prenotazioni</span>
+              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Invia un messaggio WhatsApp ai giocatori prima della prenotazione</p>
+            </div>
           </CardTitle>
           <div className="flex items-center gap-2">
             {saved && <span className="text-xs text-emerald-600 flex items-center gap-1"><Check className="h-3 w-3" /> Salvato</span>}
@@ -267,9 +440,6 @@ function ReminderConfig() {
             </button>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Invia un messaggio WhatsApp ai giocatori prima della prenotazione. Il comando gira ogni 15 minuti.
-        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {!settings?.enabled ? (
@@ -287,7 +457,8 @@ function ReminderConfig() {
                       <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${slot.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
                     </button>
                     <div>
-                      <p className="text-sm font-medium">
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                         {slot.hours_before >= 24 ? `${Math.floor(slot.hours_before / 24)} giorno${slot.hours_before >= 48 ? 'i' : ''} prima` : `${slot.hours_before} ore prima`}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -314,15 +485,6 @@ function ReminderConfig() {
           </>
         )}
       </CardContent>
-    </Card>
-  )
-}
-
-function InfoCard({ title, value, sub }: { title: string; value: string; sub: string }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{title}</CardTitle></CardHeader>
-      <CardContent><p className="text-2xl font-bold">{value}</p><p className="text-xs text-muted-foreground mt-1">{sub}</p></CardContent>
     </Card>
   )
 }

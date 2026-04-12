@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BotSession;
 use App\Models\User;
 use App\Services\CalendarService;
+use App\Services\GeminiService;
 use App\Services\WhatsAppService;
 use Illuminate\Support\Facades\Log;
 
@@ -32,6 +33,7 @@ class ActionExecutor
         private readonly CalendarService $calendar,
         private readonly TextGenerator   $textGenerator,
         private readonly WhatsAppService $whatsApp,
+        private readonly GeminiService   $gemini,
     ) {}
 
     /**
@@ -44,6 +46,7 @@ class ActionExecutor
             'parse_date'       => $this->parseDate($session),
             'check_calendar'   => $this->checkCalendar($session),
             'load_bookings'    => $this->loadBookings($session, $user),
+            'ai_interpret'     => $this->aiInterpret($session),
 
             // ── Generatori di bottoni dinamici ────────────────
             'gen_calendar_alternatives' => $this->genCalendarAlternatives($session),
@@ -113,6 +116,11 @@ class ActionExecutor
             'load_bookings' => [
                 'label'       => 'Carica prenotazioni',
                 'description' => "Carica le prossime prenotazioni dell'utente in data.bookings_list",
+                'timing'      => 'pre',
+            ],
+            'ai_interpret' => [
+                'label'       => 'Interpreta con AI (Gemini)',
+                'description' => "Invia l'ultimo input a Gemini con un prompt opzionale. Salva la risposta in data.ai_response",
                 'timing'      => 'pre',
             ],
             'gen_calendar_alternatives' => [
@@ -209,6 +217,43 @@ class ActionExecutor
     /* ═══════════════════════════════════════════════════════════════
      *  PRE-AZIONI
      * ═══════════════════════════════════════════════════════════════ */
+
+    private function aiInterpret(BotSession $session): bool
+    {
+        $input = $session->getData('last_input');
+        if (!$input) {
+            $session->mergeData(['ai_response' => null]);
+            return false;
+        }
+
+        // Read optional ai_prompt from the flow state config
+        $flowState = \App\Models\BotFlowState::getCached($session->state);
+        $aiPrompt  = $flowState?->ai_prompt;
+
+        $prompt = $aiPrompt
+            ? str_replace('{input}', $input, $aiPrompt)
+            : "Interpreta il seguente input dell'utente e rispondi in modo conciso in italiano:\n\n\"{$input}\"";
+
+        try {
+            $response = $this->gemini->generate($prompt);
+            $session->mergeData(['ai_response' => trim($response)]);
+
+            Log::info('ActionExecutor: ai_interpret success', [
+                'input'    => $input,
+                'response' => mb_substr($response, 0, 200),
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::warning('ActionExecutor: ai_interpret failed, fallback gracefully', [
+                'input' => $input,
+                'error' => $e->getMessage(),
+            ]);
+
+            $session->mergeData(['ai_response' => null]);
+            return false;
+        }
+    }
 
     private function parseDate(BotSession $session): bool
     {

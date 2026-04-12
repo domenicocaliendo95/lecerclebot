@@ -16,7 +16,7 @@ import {
 import dagre from '@dagrejs/dagre'
 import {
   Loader2, Save, Plus, Trash2, X, Cpu, Cog, MessageSquareText,
-  Zap, AlertTriangle, Check, Search, MousePointerClick,
+  Zap, AlertTriangle, Check, Search, MousePointerClick, Info,
   Filter, GitBranch, Type, Hash, ListChecks, Code, FileText, Pencil,
   ArrowDown, CornerDownRight, Circle,
 } from 'lucide-react'
@@ -74,6 +74,7 @@ interface FlowStateNode {
   input_rules: InputRule[]
   transitions: Transition[]
   on_enter_actions: string[]
+  ai_prompt: string | null
   position: { x: number; y: number } | null
   sort_order: number
 }
@@ -1308,6 +1309,28 @@ function NodeEditPanel({
               </div>
             </div>
 
+            {/* AI Prompt textarea — visible when ai_interpret is in the actions list */}
+            {node.on_enter_actions.includes('ai_interpret') && (
+              <div className="pt-3 border-t mt-3 space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[11px] font-medium">Prompt AI (opzionale)</label>
+                  <span
+                    className="text-muted-foreground cursor-help"
+                    title="Istruzioni per Gemini su come interpretare l'input dell'utente. Usa {input} come placeholder per l'input. Se vuoto, usa un prompt generico."
+                  >
+                    <Info className="h-3 w-3" />
+                  </span>
+                </div>
+                <textarea
+                  value={node.ai_prompt ?? ''}
+                  onChange={(e) => onChange({ ...node, ai_prompt: e.target.value || null })}
+                  placeholder={'Es: Analizza il seguente messaggio e rispondi in JSON:\n"{input}"'}
+                  rows={4}
+                  className="w-full rounded-md border bg-background px-2.5 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+            )}
+
             {/* Info about post-actions */}
             <div className="pt-3 border-t mt-3">
               <p className="text-[10px] text-muted-foreground">
@@ -2048,6 +2071,7 @@ function FlowEditor() {
           input_rules: [],
           transitions: [],
           on_enter_actions: [],
+          ai_prompt: null,
           position: null,
           sort_order: 0,
         } as unknown as Record<string, unknown>,
@@ -2173,6 +2197,7 @@ function FlowEditor() {
               input_rules: data.input_rules.length > 0 ? data.input_rules : null,
               transitions: data.transitions.length > 0 ? data.transitions : null,
               on_enter_actions: data.on_enter_actions.length > 0 ? data.on_enter_actions : null,
+              ai_prompt: data.ai_prompt || null,
             }),
           }),
         )

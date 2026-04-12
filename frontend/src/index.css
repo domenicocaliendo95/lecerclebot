@@ -126,5 +126,41 @@
     }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
     }
+}
+
+/* ── Scrollbar polish ─────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.7 0 0 / 30%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0 0 / 40%);
+}
+
+/* ── Focus ring override ──────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid oklch(0.65 0.17 155);
+  outline-offset: 2px;
+}
+
+/* ── Card hover subtle lift ───────────────────────────────────── */
+.card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card-hover:hover {
+  box-shadow: 0 4px 12px oklch(0 0 0 / 6%);
+  transform: translateY(-1px);
 }
