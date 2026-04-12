@@ -353,7 +353,7 @@ function FlowCard({ data }: NodeProps) {
         )}
       </div>
 
-      <Handle type="source" position={Position.Bottom} className={`!w-2.5 !h-2.5 !border-2 !border-white`} style={{ background: colors.headerBg.replace('bg-', '') }} />
+      <Handle type="source" position={Position.Bottom} className={`!w-2.5 !h-2.5 !border-2 !border-white !bg-emerald-500`} />
     </div>
   )
 }
@@ -1914,12 +1914,14 @@ function FlowEditor() {
   useEffect(() => { fetchAll() }, [fetchAll])
 
   /* -- Handle insert edge click -- */
+  const edgesRef = useRef<Edge[]>([])
+  edgesRef.current = edges
+
   const handleInsertEdge = useCallback((edgeId: string) => {
-    // Parse source and target from the edge
-    const edge = edges.find(e => e.id === edgeId)
+    const edge = edgesRef.current.find(e => e.id === edgeId)
     if (!edge) return
     setShowInsertDialog({ source: edge.source, target: edge.target })
-  }, [edges])
+  }, [])
 
   /* -- Build nodes/edges from graph -- */
 
@@ -2075,7 +2077,8 @@ function FlowEditor() {
     })
 
     setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 100)
-  }, [graph, showCodeEdges, fitView, handleInsertEdge])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, showCodeEdges])
 
   /* -- Selection -- */
 
