@@ -25,19 +25,19 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold text-xl">
+    <div className="flex min-h-screen items-center justify-center main-content-bg px-4">
+      <Card className="w-full max-w-sm rounded-xl shadow-lg shadow-slate-200/50 border-slate-200/60">
+        <CardHeader className="text-center pb-2">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-bold text-xl shadow-lg shadow-emerald-200/50">
             LC
           </div>
-          <CardTitle className="text-xl">Le Cercle Tennis Club</CardTitle>
-          <p className="text-sm text-muted-foreground">Accedi al pannello di gestione</p>
+          <CardTitle className="text-xl tracking-tight">Le Cercle Tennis Club</CardTitle>
+          <p className="text-[13px] text-muted-foreground">Accedi al pannello di gestione</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium">
+              <label htmlFor="email" className="text-[13px] font-medium text-slate-700">
                 Email
               </label>
               <input
@@ -47,12 +47,12 @@ export function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:border-emerald-400 transition-colors"
                 placeholder="admin@lecercleclub.it"
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium">
+              <label htmlFor="password" className="text-[13px] font-medium text-slate-700">
                 Password
               </label>
               <input
@@ -62,7 +62,7 @@ export function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:border-emerald-400 transition-colors"
                 placeholder="••••••••"
               />
             </div>
@@ -71,7 +71,7 @@ export function Login() {
               <p className="text-sm text-red-500 text-center">{error}</p>
             )}
 
-            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={submitting}>
+            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 rounded-lg h-10 text-[13px] font-medium shadow-sm" disabled={submitting}>
               {submitting ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}

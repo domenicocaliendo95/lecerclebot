@@ -1,4 +1,4 @@
-import { Menu, LogOut, Bell } from 'lucide-react'
+import { Menu, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { NavLink, useLocation } from 'react-router-dom'
@@ -38,11 +38,24 @@ const pageTitles: Record<string, string> = {
   '/impostazioni': 'Impostazioni',
 }
 
+const pageDescriptions: Record<string, string> = {
+  '/': 'Panoramica del circolo',
+  '/calendario': 'Vista giornaliera e settimanale',
+  '/prenotazioni': 'Gestione prenotazioni campi',
+  '/giocatori': 'Anagrafica giocatori',
+  '/sessioni': 'Sessioni conversazionali del bot',
+  '/match': 'Risultati e classifica ELO',
+  '/messaggi': 'Template messaggi del bot',
+  '/flusso': 'Configurazione flusso conversazionale',
+  '/impostazioni': 'Prezzi, promemoria e configurazione',
+}
+
 export function Header() {
   const { user, logout } = useAuth()
   const location = useLocation()
 
   const pageTitle = pageTitles[location.pathname] ?? 'Le Cercle'
+  const pageDesc = pageDescriptions[location.pathname]
 
   const initials = (user?.name ?? 'A')
     .split(' ')
@@ -54,7 +67,7 @@ export function Header() {
   return (
     <>
       {/* Mobile header */}
-      <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 lg:hidden">
+      <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 backdrop-blur-md px-4 lg:hidden">
         <div className="flex items-center gap-3">
           <Sheet>
             <SheetTrigger>
@@ -64,30 +77,30 @@ export function Header() {
             </SheetTrigger>
             <SheetContent side="left" className="w-64 p-0 bg-slate-900 border-slate-700">
               <SheetTitle className="sr-only">Menu navigazione</SheetTitle>
-              <div className="flex h-16 items-center gap-3 border-b border-slate-700/50 px-6">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white font-bold text-sm">
+              <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-6">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-900/30">
                   LC
                 </div>
                 <div>
-                  <p className="text-sm font-semibold leading-none text-white">Le Cercle</p>
-                  <p className="text-[11px] text-slate-400">Tennis Club</p>
+                  <p className="text-[13px] font-semibold leading-none tracking-tight text-white">Le Cercle</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Tennis Club</p>
                 </div>
               </div>
-              <nav className="space-y-1 px-2 py-4">
+              <nav className="space-y-0.5 px-2 py-4">
                 {navigation.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
                     end={item.to === '/'}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
+                      `flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all duration-200 ${
                         isActive
-                          ? 'bg-emerald-600/15 text-emerald-400 border-l-[3px] border-emerald-400 pl-[9px]'
-                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-l-[3px] border-transparent pl-[9px]'
+                          ? 'bg-gradient-to-r from-emerald-600/20 to-emerald-600/5 text-emerald-400 font-medium'
+                          : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200 font-normal'
                       }`
                     }
                   >
-                    <item.icon className="h-[18px] w-[18px]" />
+                    <item.icon className="h-[17px] w-[17px]" />
                     {item.label}
                   </NavLink>
                 ))}
@@ -97,10 +110,7 @@ export function Header() {
           <span className="text-sm font-semibold text-slate-800">{pageTitle}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button className="relative rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors" title="Notifiche">
-            <Bell className="h-4 w-4" />
-          </button>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/50">
             {initials}
           </div>
           <button
@@ -114,18 +124,19 @@ export function Header() {
       </header>
 
       {/* Desktop header bar */}
-      <header className="sticky top-0 z-20 hidden h-14 items-center justify-between border-b border-slate-200 bg-white/80 backdrop-blur-sm px-6 lg:flex">
-        <h1 className="text-base font-semibold text-slate-800">{pageTitle}</h1>
+      <header className="sticky top-0 z-20 hidden h-14 items-center justify-between border-b border-slate-200/60 bg-white/80 backdrop-blur-md px-6 lg:flex">
+        <div>
+          <h1 className="text-sm font-semibold text-slate-800">{pageTitle}</h1>
+          {pageDesc && (
+            <p className="text-[11px] text-slate-400 -mt-0.5">{pageDesc}</p>
+          )}
+        </div>
         <div className="flex items-center gap-3">
-          <button className="relative rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors" title="Notifiche">
-            <Bell className="h-[18px] w-[18px]" />
-          </button>
-          <div className="h-6 w-px bg-slate-200" />
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/50">
               {initials}
             </div>
-            <span className="text-sm font-medium text-slate-700">{user?.name ?? 'Admin'}</span>
+            <span className="text-[13px] font-medium text-slate-600">{user?.name ?? 'Admin'}</span>
           </div>
         </div>
       </header>

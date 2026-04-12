@@ -5,6 +5,7 @@ namespace App\Services\Bot;
 use App\Models\Booking;
 use App\Models\BotFlowState;
 use App\Models\BotSession;
+use App\Models\BotSetting;
 use App\Models\MatchInvitation;
 use App\Models\MatchResult;
 use App\Models\User;
@@ -52,6 +53,17 @@ class BotOrchestrator
                 DB::commit();
                 $this->sendGreeting($session, $phone, $user);
                 return;
+            }
+
+            // ── Session timeout: se lo stato è fermo da troppo tempo, reset a MENU
+            if ($this->isSessionStale($session)) {
+                Log::info('Session timeout: resetting to MENU', [
+                    'phone'      => $phone,
+                    'state'      => $session->state,
+                    'updated_at' => $session->updated_at?->toIso8601String(),
+                ]);
+                $session->update(['state' => BotState::MENU->value]);
+                $session->refresh();
             }
 
             // Processa tramite la macchina a stati
@@ -142,6 +154,40 @@ class BotOrchestrator
             'target'  => $targetValue,
         ]);
         return $currentValue;
+    }
+
+    /**
+     * Controlla se la sessione è "stale" (ferma da troppo tempo).
+     *
+     * Il timeout è determinato (in ordine di priorità):
+     *  1. timeout_minutes sul bot_flow_state specifico (se configurato)
+     *  2. Default globale da bot_settings 'session_timeout_minutes'
+     *
+     * Se il timeout è 0 → lo stato non scade mai (es. onboarding).
+     */
+    private function isSessionStale(BotSession $session): bool
+    {
+        if (!$session->updated_at) {
+            return false;
+        }
+
+        // Leggi il timeout per questo stato specifico
+        $flowState = BotFlowState::getCached($session->state);
+        $timeoutMinutes = $flowState?->timeout_minutes;
+
+        // Fallback al default globale
+        if ($timeoutMinutes === null) {
+            $timeoutMinutes = BotSetting::get('session_timeout_minutes', 120);
+        }
+
+        // 0 = nessun timeout
+        if ((int) $timeoutMinutes <= 0) {
+            return false;
+        }
+
+        $minutesSinceUpdate = $session->updated_at->diffInMinutes(now());
+
+        return $minutesSinceUpdate >= (int) $timeoutMinutes;
     }
 
     /* ───────── Sessione ───────── */

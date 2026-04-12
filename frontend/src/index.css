@@ -141,7 +141,7 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.7 0 0 / 30%);
+  background: oklch(0.7 0 0 / 25%);
   border-radius: 3px;
 }
 
@@ -149,10 +149,32 @@
   background: oklch(0.5 0 0 / 40%);
 }
 
-/* ── Focus ring override ──────────────────────────────────────── */
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.7 0 0 / 25%) transparent;
+}
+
+/* ── Focus ring override (emerald) ───────────────────────────── */
 *:focus-visible {
   outline: 2px solid oklch(0.65 0.17 155);
   outline-offset: 2px;
+}
+
+/* ── Page transition ─────────────────────────────────────────── */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter 0.25s ease-out both;
 }
 
 /* ── Card hover subtle lift ───────────────────────────────────── */
@@ -161,6 +183,45 @@
 }
 
 .card-hover:hover {
-  box-shadow: 0 4px 12px oklch(0 0 0 / 6%);
+  box-shadow: 0 4px 16px oklch(0 0 0 / 6%);
   transform: translateY(-1px);
+}
+
+/* ── Subtle background pattern for main content ──────────────── */
+.main-content-bg {
+  background-color: oklch(0.975 0.002 240);
+  background-image:
+    radial-gradient(circle at 20% 50%, oklch(0.65 0.17 155 / 3%) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, oklch(0.65 0.17 155 / 2%) 0%, transparent 50%);
+}
+
+/* ── Stat card colored border accent ─────────────────────────── */
+.stat-card-emerald {
+  border-left: 3px solid oklch(0.65 0.17 155);
+}
+.stat-card-blue {
+  border-left: 3px solid oklch(0.59 0.17 255);
+}
+.stat-card-amber {
+  border-left: 3px solid oklch(0.75 0.16 75);
+}
+.stat-card-violet {
+  border-left: 3px solid oklch(0.55 0.22 290);
+}
+
+/* ── Loading spinner helper ──────────────────────────────────── */
+.loading-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+}
+
+/* ── Sidebar nav group divider ───────────────────────────────── */
+.nav-divider {
+  height: 1px;
+  margin: 0.5rem 0.75rem;
+  background: oklch(1 0 0 / 6%);
 }

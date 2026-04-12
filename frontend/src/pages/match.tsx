@@ -46,11 +46,12 @@ function MatchResults() {
 
   return (
     <>
-      <Card>
+      <Card className="rounded-xl shadow-sm">
         <CardContent className="p-0">
           {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="loading-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Caricamento risultati...</span>
             </div>
           ) : results.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
@@ -131,17 +132,18 @@ function EloRanking() {
   const users = data?.data ?? []
 
   return (
-    <Card>
+    <Card className="rounded-xl shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
+        <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
           <Trophy className="h-4 w-4 text-amber-500" />
           Classifica ELO
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="loading-center">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Caricamento classifica...</span>
           </div>
         ) : users.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground">Nessun giocatore.</div>

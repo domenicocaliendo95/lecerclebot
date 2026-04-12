@@ -114,8 +114,9 @@ export function Messaggi() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="loading-center" style={{ paddingTop: '6rem', paddingBottom: '6rem' }}>
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Caricamento messaggi...</span>
       </div>
     )
   }
@@ -148,9 +149,9 @@ export function Messaggi() {
 
       {/* Categories */}
       {filteredCategories.map(({ cat, messages }) => (
-        <Card key={cat}>
+        <Card key={cat} className="rounded-xl shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
               <MessageSquareText className="h-4 w-4" />
               {categoryLabels[cat] ?? cat}
               <Badge variant="secondary" className="text-xs ml-1">{messages.length}</Badge>

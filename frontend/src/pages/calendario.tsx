@@ -153,7 +153,7 @@ export function Calendario() {
       </div>
 
       {/* Calendar grid */}
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden rounded-xl shadow-sm">
         {viewMode === 'week' && (
           <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b">
             <div className="border-r" />
@@ -192,8 +192,9 @@ export function Calendario() {
 
         <div className="relative overflow-y-auto" style={{ height: `${HOUR_HEIGHT * 15}px` }}>
           {loading && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background/60 backdrop-blur-[1px]">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Caricamento calendario...</span>
             </div>
           )}
 

@@ -15,7 +15,7 @@ import {
 } from '@xyflow/react'
 import dagre from '@dagrejs/dagre'
 import {
-  Loader2, Save, Plus, Trash2, X, Cpu, Cog, MessageSquareText,
+  Loader2, Save, Plus, Trash2, X, MessageSquareText,
   Zap, AlertTriangle, Check, Search, MousePointerClick, Info,
   Filter, GitBranch, Type, Hash, ListChecks, Code, FileText, Pencil,
   ArrowDown, CornerDownRight, Circle,
@@ -168,194 +168,114 @@ function getCategoryColor(category: string) {
  *  Highlight {variables} in message text
  * ================================================================= */
 
-function HighlightedText({ text, maxLen }: { text: string; maxLen: number }) {
-  const truncated = text.length > maxLen ? text.slice(0, maxLen - 1) + '\u2026' : text
-  const parts = truncated.split(/(\{[a-z_]+\})/g)
-  return (
-    <span>
-      {parts.map((part, i) =>
-        /^\{[a-z_]+\}$/.test(part)
-          ? <code key={i} className="rounded bg-amber-100 text-amber-800 px-0.5 text-[10px] font-mono">{part}</code>
-          : <span key={i}>{part}</span>
-      )}
-    </span>
-  )
-}
-
 /* =================================================================
- *  Custom node: Shopify Flow style card
+ *  Custom node: Shopify Flow style card — clean, white, minimal
  * ================================================================= */
 
 function FlowCard({ data }: NodeProps) {
   const node = data as unknown as FlowNodeData
   const colors = getCategoryColor(node.category)
 
-  // Trigger node
+  // ── Trigger node: minimal green card ──────────────────
   if (node.isTrigger) {
     return (
-      <div
-        className="rounded-xl border-2 border-green-400 bg-green-50 shadow-md cursor-pointer hover:shadow-lg transition-shadow"
-        style={{ width: 380 }}
-      >
+      <div className="rounded-2xl bg-white border border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-all" style={{ width: 340 }}>
         <Handle type="target" position={Position.Top} className="!bg-transparent !border-0 !w-0 !h-0" />
-        <div className="bg-green-500 rounded-t-[10px] px-4 py-2 flex items-center gap-2">
-          <Circle className="h-3 w-3 text-white fill-white" />
-          <span className="text-xs font-bold text-white tracking-wide uppercase">Punto di ingresso</span>
-        </div>
-        <div className="px-4 py-3">
-          <code className="text-sm font-mono font-bold text-green-800">{node.state}</code>
+        <div className="px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center shadow-sm">
+              <Circle className="h-3 w-3 text-white fill-white" />
+            </div>
+            <div>
+              <p className="text-[10px] text-green-600 font-semibold uppercase tracking-wider">Trigger</p>
+              <p className="text-sm font-semibold text-gray-900">{node.state}</p>
+            </div>
+          </div>
           {node.message_text && (
-            <p className="text-xs text-green-700 mt-1.5 leading-snug line-clamp-2">
-              <HighlightedText text={node.message_text} maxLen={120} />
-            </p>
+            <p className="text-xs text-gray-500 mt-3 leading-relaxed line-clamp-2">{node.message_text.slice(0, 80)}{node.message_text.length > 80 ? '...' : ''}</p>
           )}
         </div>
-        <Handle type="source" position={Position.Bottom} className="!bg-green-500 !w-3 !h-3 !border-2 !border-white" />
+        <Handle type="source" position={Position.Bottom} className="!bg-green-500 !w-2.5 !h-2.5 !border-2 !border-white !shadow-sm" />
       </div>
     )
   }
 
-  // Goto reference node (back-edge placeholder)
+  // ── Goto reference: compact reference pill ─────────────
   if (node.isGotoRef) {
     return (
-      <div
-        className="rounded-lg border-2 border-dashed border-gray-400 bg-gray-50 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-        style={{ width: 380 }}
-      >
-        <Handle type="target" position={Position.Top} className="!bg-gray-400 !w-2.5 !h-2.5 !border-2 !border-white" />
-        <div className="px-4 py-3 flex items-center gap-2">
-          <CornerDownRight className="h-4 w-4 text-gray-500 shrink-0" />
-          <div>
-            <span className="text-[10px] text-gray-500 uppercase tracking-wide font-medium">Vai a</span>
-            <code className="ml-1.5 text-xs font-mono font-bold text-gray-700">{node.gotoTarget}</code>
-          </div>
+      <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50/80 cursor-pointer hover:bg-gray-100 transition-colors" style={{ width: 220 }}>
+        <Handle type="target" position={Position.Top} className="!bg-gray-400 !w-2 !h-2 !border-2 !border-white" />
+        <div className="px-4 py-2.5 flex items-center gap-2">
+          <CornerDownRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+          <span className="text-xs text-gray-500">Torna a <code className="font-mono font-bold text-gray-700">{node.gotoTarget}</code></span>
         </div>
       </div>
     )
   }
 
-  // Standard message card
+  // ── Standard card: clean, white, minimal ───────────────
+  const hasActions = node.on_enter_actions.length > 0
+  const hasRules = node.input_rules.length > 0
+  const hasTransitions = node.transitions.length > 0
+  const hasMeta = hasActions || hasRules || hasTransitions
+
   return (
-    <div
-      className={`rounded-xl border shadow-md cursor-pointer hover:shadow-lg transition-shadow ${colors.bg} ${colors.border}`}
-      style={{ width: 380 }}
-    >
-      <Handle type="target" position={Position.Top} className="!bg-gray-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+    <div className="rounded-2xl bg-white border border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-all" style={{ width: 340 }}>
+      <Handle type="target" position={Position.Top} className="!bg-gray-300 !w-2 !h-2 !border-2 !border-white" />
 
-      {/* Header with category color bar */}
-      <div className={`${colors.headerBg} rounded-t-[10px] px-4 py-2 flex items-center justify-between gap-2`}>
-        <code className="text-xs font-bold font-mono text-white truncate">{node.state}</code>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {node.is_custom && (
-            <span className="inline-flex items-center gap-0.5 rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-bold text-white">
-              <Zap className="h-2.5 w-2.5" /> custom
-            </span>
-          )}
-          {node.type === 'complex' ? (
-            <span className="inline-flex items-center gap-0.5 rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-bold text-white">
-              <Cpu className="h-2.5 w-2.5" /> complex
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-0.5 rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-bold text-white">
-              <Cog className="h-2.5 w-2.5" /> simple
-            </span>
-          )}
-          <span className="rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-medium text-white">
-            {node.category}
-          </span>
+      <div className="px-5 py-4 space-y-3">
+        {/* Header: dot + name + badge */}
+        <div className="flex items-center gap-3">
+          <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${colors.headerBg}`} />
+          <p className="text-sm font-semibold text-gray-900 truncate flex-1">{node.state}</p>
+          <span className="text-[9px] text-gray-400 font-medium uppercase tracking-wider shrink-0">{node.category}</span>
         </div>
-      </div>
 
-      {/* Body */}
-      <div className="px-4 py-3 space-y-2">
-        {/* On-enter actions */}
-        {node.on_enter_actions.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {node.on_enter_actions.map((a, i) => (
-              <span key={i} className="inline-flex items-center gap-0.5 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-medium">
-                <Zap className="h-2.5 w-2.5" /> {a}
+        {/* Message: just the text, clean */}
+        {node.message_text && (
+          <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 pl-5">
+            {node.message_text.slice(0, 100)}{node.message_text.length > 100 ? '...' : ''}
+          </p>
+        )}
+
+        {/* Compact meta indicators */}
+        {hasMeta && (
+          <div className="flex items-center gap-2 pl-5">
+            {hasActions && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-600 px-2 py-0.5 text-[9px] font-medium">
+                <Zap className="h-2.5 w-2.5" /> {node.on_enter_actions.length}
               </span>
-            ))}
-          </div>
-        )}
-
-        {/* Message preview */}
-        {node.message_text ? (
-          <div>
-            <div className="flex items-center gap-1.5 mb-1">
-              <MessageSquareText className="h-3 w-3 text-gray-500 shrink-0" />
-              <code className="text-[10px] font-mono text-gray-500 bg-white/60 rounded px-1">{node.message_key}</code>
-            </div>
-            <p className="text-xs text-gray-700 leading-snug line-clamp-3">
-              <HighlightedText text={node.message_text} maxLen={180} />
-            </p>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            <MessageSquareText className="h-3 w-3 text-gray-400 shrink-0" />
-            <code className="text-[10px] font-mono text-gray-400">{node.message_key}</code>
-          </div>
-        )}
-
-        {/* Input rules summary */}
-        {node.input_rules.length > 0 && (
-          <div className="flex items-center gap-1.5 text-[10px] text-cyan-700 bg-cyan-50 border border-cyan-200 rounded px-2 py-1">
-            <Filter className="h-3 w-3 shrink-0" />
-            <span className="font-medium">Validazione: {node.input_rules.length} {node.input_rules.length === 1 ? 'regola' : 'regole'}</span>
-            <span className="text-cyan-500 ml-auto truncate">
-              {node.input_rules.map(r => r.type).join(', ')}
-            </span>
-          </div>
-        )}
-
-        {/* Transitions summary */}
-        {node.transitions.length > 0 && (
-          <div className="space-y-0.5">
-            {node.transitions.slice(0, 2).map((tr, i) => {
-              const conditions = Object.entries(tr.if ?? {})
-              return (
-                <div key={i} className="flex items-center gap-1.5 text-[10px] text-purple-700 bg-purple-50 border border-purple-200 rounded px-2 py-1">
-                  <GitBranch className="h-3 w-3 shrink-0" />
-                  {conditions.length > 0 ? (
-                    <span>
-                      Se {conditions.map(([k, v]) => `${k} = ${v}`).join(' AND ')} <span className="font-mono font-bold">{'\u2192'} {tr.then}</span>
-                    </span>
-                  ) : (
-                    <span>Altrimenti <span className="font-mono font-bold">{'\u2192'} {tr.then}</span></span>
-                  )}
-                </div>
-              )
-            })}
-            {node.transitions.length > 2 && (
-              <div className="text-[9px] text-purple-500 pl-5">+{node.transitions.length - 2} {node.transitions.length - 2 === 1 ? 'altra' : 'altre'} condizioni</div>
+            )}
+            {hasRules && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 text-cyan-600 px-2 py-0.5 text-[9px] font-medium">
+                <Filter className="h-2.5 w-2.5" /> {node.input_rules.length}
+              </span>
+            )}
+            {hasTransitions && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 text-purple-600 px-2 py-0.5 text-[9px] font-medium">
+                <GitBranch className="h-2.5 w-2.5" /> {node.transitions.length}
+              </span>
             )}
           </div>
         )}
 
-        {/* Buttons as pills */}
+        {/* Buttons: clean horizontal pills */}
         {node.buttons.length > 0 && (
-          <div className="space-y-1 pt-1">
+          <div className="flex flex-wrap gap-1.5 pl-5">
             {node.buttons.map((btn, i) => (
-              <div
+              <span
                 key={i}
-                className="flex items-center justify-between gap-2 rounded-lg bg-white border border-gray-200 px-3 py-1.5 text-[11px] shadow-sm"
+                className="inline-flex items-center gap-1 rounded-full bg-gray-100 text-gray-700 px-2.5 py-1 text-[10px] font-medium"
               >
-                <span className="font-medium text-gray-800 truncate">{btn.label || '(vuoto)'}</span>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {btn.side_effect && (
-                    <span className="rounded bg-amber-100 text-amber-700 px-1 py-0 text-[9px] font-mono">
-                      {btn.side_effect}
-                    </span>
-                  )}
-                  <span className="font-mono text-gray-500 text-[10px]">{'\u2192'} {btn.target_state}</span>
-                </div>
-              </div>
+                {btn.label || '...'}
+                <ArrowDown className="h-2.5 w-2.5 text-gray-400" />
+              </span>
             ))}
           </div>
         )}
       </div>
 
-      <Handle type="source" position={Position.Bottom} className={`!w-2.5 !h-2.5 !border-2 !border-white !bg-emerald-500`} />
+      <Handle type="source" position={Position.Bottom} className="!bg-gray-300 !w-2 !h-2 !border-2 !border-white" />
     </div>
   )
 }
@@ -369,9 +289,9 @@ const nodeTypes = { flowCard: FlowCard }
 function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 80, marginx: 40, marginy: 40 })
+  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 100, marginx: 60, marginy: 60 })
 
-  nodes.forEach(n => g.setNode(n.id, { width: 400, height: 200 }))
+  nodes.forEach(n => g.setNode(n.id, { width: 360, height: 140 }))
   edges.forEach(e => g.setEdge(e.source, e.target))
 
   dagre.layout(g)
@@ -1833,30 +1753,26 @@ function InsertableEdge({
   const midX = (sourceX + targetX) / 2
   const midY = (sourceY + targetY) / 2
 
-  // Simple straight or slightly curved path
-  const dx = targetX - sourceX
+  // Shopify-style: gentle step path (mostly vertical with slight horizontal adjustment)
   const dy = targetY - sourceY
-  const controlOffset = Math.abs(dx) > 20 ? Math.min(Math.abs(dx) * 0.3, 60) : 0
-
-  const path = controlOffset > 0
-    ? `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + dy * 0.3}, ${targetX} ${targetY - dy * 0.3}, ${targetX} ${targetY}`
-    : `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`
+  const stepY = Math.max(dy * 0.4, 20)
+  const path = `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + stepY}, ${targetX} ${targetY - stepY}, ${targetX} ${targetY}`
 
   return (
     <>
       <path
         id={id}
         d={path}
-        style={style}
+        style={{ ...style, strokeWidth: style?.strokeWidth ?? 1.5 }}
         fill="none"
         markerEnd={markerEnd}
       />
-      {data?.kind !== 'code' && data?.onInsert && (
+      {data?.kind !== 'code' && data?.kind !== 'goto' && data?.onInsert && (
         <foreignObject
-          x={midX - 10}
-          y={midY - 10}
-          width={20}
-          height={20}
+          x={midX - 12}
+          y={midY - 12}
+          width={24}
+          height={24}
           className="overflow-visible"
         >
           <button
@@ -1864,10 +1780,10 @@ function InsertableEdge({
               e.stopPropagation()
               data.onInsert?.(id)
             }}
-            className="w-5 h-5 rounded-full bg-white border-2 border-teal-400 text-teal-600 flex items-center justify-center hover:bg-teal-50 hover:border-teal-500 transition-colors shadow-sm"
+            className="w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-400 flex items-center justify-center hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-600 transition-all shadow-sm"
             title="Inserisci stato qui"
           >
-            <Plus className="h-3 w-3" />
+            <Plus className="h-3.5 w-3.5" />
           </button>
         </foreignObject>
       )}
@@ -2082,19 +1998,17 @@ function FlowEditor() {
     const rfEdges: Edge[] = []
 
     for (const e of forwardButtonEdges) {
-      const color = e.kind === 'rule'
-        ? '#0891b2'
-        : e.kind === 'transition'
-          ? '#a855f7'
-          : (e.side_effect ? '#f59e0b' : '#10b981')
+      // Shopify-style: muted gray lines, subtle color only on special edges
+      const isSpecial = e.side_effect || e.kind === 'rule' || e.kind === 'transition'
+      const color = isSpecial ? '#d1d5db' : '#e5e7eb' // gray-300 / gray-200
 
       rfEdges.push({
         id: e.id,
         source: e.source,
         target: e.target,
         type: 'insertable',
-        style: { stroke: color, strokeWidth: 2 },
-        markerEnd: { type: MarkerType.ArrowClosed, color },
+        style: { stroke: color, strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#9ca3af' },
         data: { kind: e.kind, side_effect: e.side_effect, onInsert: handleInsertEdge },
       })
     }
@@ -2367,8 +2281,9 @@ function FlowEditor() {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="loading-center" style={{ paddingTop: '6rem', paddingBottom: '6rem' }}>
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">Caricamento flusso...</span>
       </div>
     )
   }
@@ -2410,7 +2325,7 @@ function FlowEditor() {
         maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={24} size={1} color="#e5e7eb" />
+        <Background gap={30} size={0.8} color="#f1f5f9" />
         <Controls position="bottom-left" showInteractive={false} />
 
         {/* -- Toolbar top -- */}

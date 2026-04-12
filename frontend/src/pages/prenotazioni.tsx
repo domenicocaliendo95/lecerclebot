@@ -127,10 +127,10 @@ export function Prenotazioni() {
       </div>
 
       {/* Table */}
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden rounded-xl shadow-sm">
         <CardContent className="p-0">
           {loading ? (
-            <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <div className="loading-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /><span className="text-xs text-muted-foreground">Caricamento prenotazioni...</span></div>
           ) : bookings.length === 0 ? (
             <div className="py-16 text-center text-muted-foreground">Nessuna prenotazione trovata.</div>
           ) : (

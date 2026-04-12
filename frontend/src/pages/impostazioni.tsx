@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import {
   Loader2, Zap, Info, Plus, Pencil, Trash2, Bell, Check,
-  MessageCircle, Sparkles, Calendar, Settings, Lock, Copy, Clock,
+  MessageCircle, Sparkles, Calendar, Clock, Eye, EyeOff, AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,11 +25,78 @@ interface EnvConfig {
   whatsapp_phone_number_id: string
   whatsapp_verify_token: string
   whatsapp_token: string
+  whatsapp_api_version: string
   gemini_model: string
   gemini_key: string
+  gemini_timeout: string
   google_calendar_id: string
   app_timezone: string
+  session_timeout_minutes: string
 }
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+function fmtDuration(m: number): string {
+  if (m === 60) return '1 ora'; if (m === 90) return '1,5 ore'; if (m === 120) return '2 ore'; if (m === 180) return '3 ore'; return `${m} min`
+}
+
+function PasswordInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <div className="relative">
+      <input
+        type={visible ? 'text' : 'password'}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={inputClass + ' pr-10'}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible(v => !v)}
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  )
+}
+
+function SectionHeader({ icon, iconBg, title, tooltip }: {
+  icon: React.ReactNode; iconBg: string; title: string; tooltip: string
+}) {
+  return (
+    <CardTitle className="text-sm flex items-center gap-2">
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${iconBg}`}>
+        {icon}
+      </div>
+      <div className="flex-1">
+        <span>{title}</span>
+        <p className="text-[10px] font-normal text-muted-foreground mt-0.5">{tooltip}</p>
+      </div>
+    </CardTitle>
+  )
+}
+
+function SaveButton({ saving, saved, onClick, disabled }: {
+  saving: boolean; saved: boolean; onClick: () => void; disabled?: boolean
+}) {
+  return (
+    <div className="flex items-center gap-2 pt-2">
+      <Button onClick={onClick} disabled={saving || disabled} size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+        {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+        Salva
+      </Button>
+      {saved && (
+        <span className="text-xs text-emerald-600 flex items-center gap-1 animate-in fade-in duration-200">
+          <Check className="h-3 w-3" /> Salvato!
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ── Main Component ───────────────────────────────────────────────────
 
 export function Impostazioni() {
   const { data, loading, refetch } = useApi<{ data: PricingRule[] }>('/admin/pricing-rules')
@@ -109,15 +176,15 @@ export function Impostazioni() {
         </Button>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden rounded-xl shadow-sm">
         <CardContent className="p-0">
           {loading ? (
-            <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <div className="loading-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /><span className="text-xs text-muted-foreground">Caricamento regole...</span></div>
           ) : rules.length === 0 ? (
             <div className="py-16 text-center">
               <Info className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
               <p className="text-muted-foreground">Nessuna regola prezzi.</p>
-              <p className="text-sm text-muted-foreground mt-1">Prezzo fallback: €20.</p>
+              <p className="text-sm text-muted-foreground mt-1">Prezzo fallback: 20 euro.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -144,9 +211,9 @@ export function Impostazioni() {
                       <td className="px-4 py-3 font-mono text-xs">{rule.start_time} – {rule.end_time}</td>
                       <td className="px-4 py-3">{rule.duration_minutes ? fmtDuration(rule.duration_minutes) : <span className="text-muted-foreground text-xs">Qualsiasi</span>}</td>
                       <td className="px-4 py-3 text-right">
-                        {rule.price !== null ? <span className="font-bold">€{rule.price}</span>
-                          : rule.price_per_hour !== null ? <span className="font-bold">€{rule.price_per_hour}<span className="text-xs text-muted-foreground font-normal">/h</span></span>
-                          : <span className="text-muted-foreground">—</span>}
+                        {rule.price !== null ? <span className="font-bold">&euro;{rule.price}</span>
+                          : rule.price_per_hour !== null ? <span className="font-bold">&euro;{rule.price_per_hour}<span className="text-xs text-muted-foreground font-normal">/h</span></span>
+                          : <span className="text-muted-foreground">&mdash;</span>}
                       </td>
                       <td className="px-4 py-3 text-center">{rule.is_peak && <Zap className="mx-auto h-4 w-4 text-amber-500" />}</td>
                       <td className="px-4 py-3 text-right text-muted-foreground">{rule.priority}</td>
@@ -184,14 +251,14 @@ export function Impostazioni() {
           </FormField>
           <FormField label="Ora inizio"><input type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} className={inputClass} /></FormField>
           <FormField label="Ora fine"><input type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)} className={inputClass} /></FormField>
-          <FormField label="Prezzo fisso (€)"><input type="number" step="0.01" value={form.price} onChange={e => set('price', e.target.value)} className={inputClass} /></FormField>
-          <FormField label="Prezzo/ora (€)"><input type="number" step="0.01" value={form.price_per_hour} onChange={e => set('price_per_hour', e.target.value)} className={inputClass} /></FormField>
+          <FormField label="Prezzo fisso (euro)"><input type="number" step="0.01" value={form.price} onChange={e => set('price', e.target.value)} className={inputClass} /></FormField>
+          <FormField label="Prezzo/ora (euro)"><input type="number" step="0.01" value={form.price_per_hour} onChange={e => set('price_per_hour', e.target.value)} className={inputClass} /></FormField>
           <FormField label="Peak">
             <select value={form.is_peak ? 'true' : 'false'} onChange={e => set('is_peak', e.target.value === 'true')} className={selectClass}>
-              <option value="false">No</option><option value="true">Sì</option>
+              <option value="false">No</option><option value="true">Si</option>
             </select>
           </FormField>
-          <FormField label="Priorità" hint="Più alto = precedenza"><input type="number" value={form.priority} onChange={e => set('priority', e.target.value)} className={inputClass} /></FormField>
+          <FormField label="Priorità" hint="Piu alto = precedenza"><input type="number" value={form.priority} onChange={e => set('priority', e.target.value)} className={inputClass} /></FormField>
         </div>
       </FormDialog>
 
@@ -206,158 +273,283 @@ export function Impostazioni() {
 // ── ENV Config Section ──────────────────────────────────────────────
 
 function EnvConfigSection() {
-  const [env, setEnv] = useState<EnvConfig | null>(null)
+  const [, setEnv] = useState<EnvConfig | null>(null)
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState<string | null>(null)
+
+  // Per-section local state
+  const [waForm, setWaForm] = useState({ phone_number_id: '', token: '', verify_token: '', api_version: 'v21.0' })
+  const [waSaving, setWaSaving] = useState(false)
+  const [waSaved, setWaSaved] = useState(false)
+
+  const [aiForm, setAiForm] = useState({ model: '', key: '', timeout: '30' })
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiSaved, setAiSaved] = useState(false)
+
+  const [calForm, setCalForm] = useState({ calendar_id: '' })
+  const [calSaving, setCalSaving] = useState(false)
+  const [calSaved, setCalSaved] = useState(false)
+
+  const [botForm, setBotForm] = useState({ session_timeout: '30', timezone: 'Europe/Rome' })
+  const [botSaving, setBotSaving] = useState(false)
+  const [botSaved, setBotSaved] = useState(false)
 
   useEffect(() => {
     apiFetch<EnvConfig>('/admin/settings/env')
-      .then(setEnv)
+      .then(data => {
+        setEnv(data)
+        setWaForm({
+          phone_number_id: data.whatsapp_phone_number_id ?? '',
+          token: data.whatsapp_token ?? '',
+          verify_token: data.whatsapp_verify_token ?? '',
+          api_version: data.whatsapp_api_version ?? 'v21.0',
+        })
+        setAiForm({
+          model: data.gemini_model ?? '',
+          key: data.gemini_key ?? '',
+          timeout: data.gemini_timeout ?? '30',
+        })
+        setCalForm({ calendar_id: data.google_calendar_id ?? '' })
+        setBotForm({
+          session_timeout: data.session_timeout_minutes ?? '30',
+          timezone: data.app_timezone ?? 'Europe/Rome',
+        })
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  const copyToClipboard = (value: string, key: string) => {
-    navigator.clipboard.writeText(value)
-    setCopied(key)
-    setTimeout(() => setCopied(null), 2000)
+  const saveSection = async (
+    section: 'whatsapp' | 'gemini' | 'calendar' | 'bot',
+    payload: Record<string, string>,
+    setSaving: (v: boolean) => void,
+    setSaved: (v: boolean) => void,
+  ) => {
+    setSaving(true)
+    setSaved(false)
+    try {
+      await apiFetch('/admin/settings/env', {
+        method: 'PUT',
+        body: JSON.stringify({ section, ...payload }),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch { /* */ }
+    setSaving(false)
   }
 
   if (loading) {
     return (
       <div className="grid gap-4 lg:grid-cols-2">
         {[1, 2, 3, 4].map(i => (
-          <Card key={i}><CardContent className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></CardContent></Card>
+          <Card key={i} className="rounded-xl shadow-sm"><CardContent className="loading-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></CardContent></Card>
         ))}
       </div>
     )
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {/* WhatsApp */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-100">
-              <MessageCircle className="h-4 w-4 text-green-700" />
-            </div>
-            <div>
-              <span>WhatsApp Business API</span>
-              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Configurati nel file .env del server</p>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ReadOnlyField
-            label="Phone Number ID"
-            value={env?.whatsapp_phone_number_id}
-            copyable
-            onCopy={() => copyToClipboard(env?.whatsapp_phone_number_id ?? '', 'wa_phone')}
-            copied={copied === 'wa_phone'}
-          />
-          <ReadOnlyField label="Token" value={env?.whatsapp_token} masked />
-          <ReadOnlyField label="Verify Token" value={env?.whatsapp_verify_token} />
-        </CardContent>
-      </Card>
-
-      {/* Gemini AI */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100">
-              <Sparkles className="h-4 w-4 text-purple-700" />
-            </div>
-            <div>
-              <span>Google Gemini AI</span>
-              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Usato per parsing date e classificazione input</p>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ReadOnlyField label="Modello" value={env?.gemini_model} />
-          <ReadOnlyField label="API Key" value={env?.gemini_key} masked />
-        </CardContent>
-      </Card>
-
-      {/* Google Calendar */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
-              <Calendar className="h-4 w-4 text-blue-700" />
-            </div>
-            <div>
-              <span>Google Calendar</span>
-              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Service account configurato sul server</p>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ReadOnlyField
-            label="Calendar ID"
-            value={env?.google_calendar_id}
-            copyable
-            onCopy={() => copyToClipboard(env?.google_calendar_id ?? '', 'gcal_id')}
-            copied={copied === 'gcal_id'}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Generali */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">
-              <Settings className="h-4 w-4 text-slate-700" />
-            </div>
-            <div>
-              <span>Generali</span>
-              <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Impostazioni generali del sistema</p>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <ReadOnlyField label="Timezone" value={env?.app_timezone} />
-          <ReadOnlyField label="Orari operativi" value="08:00 - 22:00" />
-          <ReadOnlyField label="Prezzo fallback" value="€20" />
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function ReadOnlyField({ label, value, masked, copyable, onCopy, copied }: {
-  label: string
-  value?: string | null
-  masked?: boolean
-  copyable?: boolean
-  onCopy?: () => void
-  copied?: boolean
-}) {
-  const display = value || '(non configurato)'
-
-  return (
-    <div>
-      <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{label}</label>
-      <div className="mt-1 flex items-center gap-2">
-        <div className="flex-1 flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm font-mono">
-          <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
-          <span className={`truncate ${masked ? 'tracking-wider' : ''}`}>
-            {display}
-          </span>
-        </div>
-        {copyable && !masked && value && (
-          <button
-            onClick={onCopy}
-            className="shrink-0 rounded-md border p-2 hover:bg-muted transition-colors"
-            title="Copia"
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-muted-foreground" />}
-          </button>
-        )}
+    <>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+        <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+        <p className="text-sm text-amber-800">Le modifiche alle credenziali hanno effetto immediato. Verifica i valori prima di salvare.</p>
       </div>
-    </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* WhatsApp */}
+        <Card>
+          <CardHeader className="pb-3">
+            <SectionHeader
+              icon={<MessageCircle className="h-4 w-4 text-green-700" />}
+              iconBg="bg-green-100"
+              title="WhatsApp Business API"
+              tooltip="Credenziali per l'invio messaggi WhatsApp Business API"
+            />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Phone Number ID</label>
+              <input
+                value={waForm.phone_number_id}
+                onChange={e => setWaForm(f => ({ ...f, phone_number_id: e.target.value }))}
+                className={inputClass}
+                placeholder="es. 123456789012345"
+              />
+              <p className="text-xs text-muted-foreground">ID numerico del numero WhatsApp Business</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Token API</label>
+              <PasswordInput
+                value={waForm.token}
+                onChange={v => setWaForm(f => ({ ...f, token: v }))}
+                placeholder="Token di accesso permanente"
+              />
+              <p className="text-xs text-muted-foreground">Token di accesso per le API Meta Cloud</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Verify Token</label>
+              <input
+                value={waForm.verify_token}
+                onChange={e => setWaForm(f => ({ ...f, verify_token: e.target.value }))}
+                className={inputClass}
+                placeholder="es. courtly_webhook_2026"
+              />
+              <p className="text-xs text-muted-foreground">Token di verifica per il webhook</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Versione API</label>
+              <input
+                value={waForm.api_version}
+                onChange={e => setWaForm(f => ({ ...f, api_version: e.target.value }))}
+                className={inputClass}
+                placeholder="v21.0"
+              />
+              <p className="text-xs text-muted-foreground">Versione delle API Meta Graph (es. v21.0)</p>
+            </div>
+            <SaveButton
+              saving={waSaving}
+              saved={waSaved}
+              onClick={() => saveSection('whatsapp', {
+                whatsapp_phone_number_id: waForm.phone_number_id,
+                whatsapp_token: waForm.token,
+                whatsapp_verify_token: waForm.verify_token,
+                whatsapp_api_version: waForm.api_version,
+              }, setWaSaving, setWaSaved)}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Gemini AI */}
+        <Card>
+          <CardHeader className="pb-3">
+            <SectionHeader
+              icon={<Sparkles className="h-4 w-4 text-purple-700" />}
+              iconBg="bg-purple-100"
+              title="Google Gemini AI"
+              tooltip="Usato per interpretazione date e classificazione input utente"
+            />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Modello</label>
+              <input
+                value={aiForm.model}
+                onChange={e => setAiForm(f => ({ ...f, model: e.target.value }))}
+                className={inputClass}
+                placeholder="es. gemini-2.5-flash"
+              />
+              <p className="text-xs text-muted-foreground">Nome del modello Gemini da utilizzare</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">API Key</label>
+              <PasswordInput
+                value={aiForm.key}
+                onChange={v => setAiForm(f => ({ ...f, key: v }))}
+                placeholder="Chiave API Google AI Studio"
+              />
+              <p className="text-xs text-muted-foreground">Chiave di autenticazione per le API Gemini</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Timeout (secondi)</label>
+              <input
+                type="number"
+                min="5"
+                max="120"
+                value={aiForm.timeout}
+                onChange={e => setAiForm(f => ({ ...f, timeout: e.target.value }))}
+                className={inputClass}
+                placeholder="30"
+              />
+              <p className="text-xs text-muted-foreground">Tempo massimo di attesa per una risposta da Gemini</p>
+            </div>
+            <SaveButton
+              saving={aiSaving}
+              saved={aiSaved}
+              onClick={() => saveSection('gemini', {
+                gemini_model: aiForm.model,
+                gemini_key: aiForm.key,
+                gemini_timeout: aiForm.timeout,
+              }, setAiSaving, setAiSaved)}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Google Calendar */}
+        <Card>
+          <CardHeader className="pb-3">
+            <SectionHeader
+              icon={<Calendar className="h-4 w-4 text-blue-700" />}
+              iconBg="bg-blue-100"
+              title="Google Calendar"
+              tooltip="ID del calendario Google per le prenotazioni"
+            />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Calendar ID</label>
+              <input
+                value={calForm.calendar_id}
+                onChange={e => setCalForm(f => ({ ...f, calendar_id: e.target.value }))}
+                className={inputClass}
+                placeholder="xxxxx@group.calendar.google.com"
+              />
+              <p className="text-xs text-muted-foreground">ID del calendario Google condiviso con il service account</p>
+            </div>
+            <SaveButton
+              saving={calSaving}
+              saved={calSaved}
+              onClick={() => saveSection('calendar', {
+                google_calendar_id: calForm.calendar_id,
+              }, setCalSaving, setCalSaved)}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Bot */}
+        <Card>
+          <CardHeader className="pb-3">
+            <SectionHeader
+              icon={<Zap className="h-4 w-4 text-orange-700" />}
+              iconBg="bg-orange-100"
+              title="Bot"
+              tooltip="Dopo il timeout senza attivita, la sessione torna al menu principale"
+            />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Timeout sessione (minuti)</label>
+              <input
+                type="number"
+                min="1"
+                max="1440"
+                value={botForm.session_timeout}
+                onChange={e => setBotForm(f => ({ ...f, session_timeout: e.target.value }))}
+                className={inputClass}
+                placeholder="30"
+              />
+              <p className="text-xs text-muted-foreground">Minuti di inattivita prima che la sessione torni al menu</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Timezone</label>
+              <input
+                value={botForm.timezone}
+                onChange={e => setBotForm(f => ({ ...f, timezone: e.target.value }))}
+                className={inputClass}
+                placeholder="Europe/Rome"
+              />
+              <p className="text-xs text-muted-foreground">Fuso orario per tutte le operazioni del bot</p>
+            </div>
+            <SaveButton
+              saving={botSaving}
+              saved={botSaved}
+              onClick={() => saveSection('bot', {
+                session_timeout_minutes: botForm.session_timeout,
+                app_timezone: botForm.timezone,
+              }, setBotSaving, setBotSaved)}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </>
   )
 }
 
@@ -414,7 +606,7 @@ function ReminderConfig() {
     setNewHours('')
   }
 
-  if (loading) return <Card><CardContent className="py-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></CardContent></Card>
+  if (loading) return <Card className="rounded-xl shadow-sm"><CardContent className="loading-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /><span className="text-xs text-muted-foreground">Caricamento...</span></CardContent></Card>
 
   return (
     <Card>
@@ -430,7 +622,7 @@ function ReminderConfig() {
             </div>
           </CardTitle>
           <div className="flex items-center gap-2">
-            {saved && <span className="text-xs text-emerald-600 flex items-center gap-1"><Check className="h-3 w-3" /> Salvato</span>}
+            {saved && <span className="text-xs text-emerald-600 flex items-center gap-1"><Check className="h-3 w-3" /> Salvato!</span>}
             {saving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
             <button
               onClick={toggleEnabled}
@@ -487,8 +679,4 @@ function ReminderConfig() {
       </CardContent>
     </Card>
   )
-}
-
-function fmtDuration(m: number): string {
-  if (m === 60) return '1 ora'; if (m === 90) return '1,5 ore'; if (m === 120) return '2 ore'; if (m === 180) return '3 ore'; return `${m} min`
 }

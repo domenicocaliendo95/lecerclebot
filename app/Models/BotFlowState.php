@@ -14,7 +14,7 @@ class BotFlowState extends Model
     protected $fillable = [
         'state', 'type', 'message_key', 'fallback_key',
         'buttons', 'input_rules', 'transitions', 'on_enter_actions',
-        'ai_prompt',
+        'ai_prompt', 'timeout_minutes',
         'category', 'description', 'sort_order',
         'position', 'is_custom',
     ];
