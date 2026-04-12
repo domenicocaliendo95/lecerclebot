@@ -189,11 +189,28 @@ class RuleEvaluator
             }
         }
 
-        // Cerca match: la prima opzione che contiene una delle keyword vince
+        // Cerca match: la prima opzione che ha una keyword trovata come PAROLA intera vince.
+        // Usa word boundary (\b) per evitare match parziali (es. "no" dentro "sono").
+        // Per keyword multi-parola (es. "non sono") usa str_contains (non è ambiguo).
         foreach ($normalized as $canonical => $synonyms) {
             foreach ($synonyms as $kw) {
-                if ($kw !== '' && (str_contains($clean, $kw) || $kw === $clean)) {
+                if ($kw === '') {
+                    continue;
+                }
+                if ($kw === $clean) {
                     return $canonical;
+                }
+                // Multi-parola → str_contains (es. "non sono", "senza tessera")
+                if (str_contains($kw, ' ')) {
+                    if (str_contains($clean, $kw)) {
+                        return $canonical;
+                    }
+                } else {
+                    // Parola singola → word boundary per evitare "no" in "sono"
+                    $escaped = preg_quote($kw, '/');
+                    if (preg_match('/(?:^|\s|[,;.!?])' . $escaped . '(?:\s|[,;.!?]|$)/u', $clean)) {
+                        return $canonical;
+                    }
                 }
             }
         }

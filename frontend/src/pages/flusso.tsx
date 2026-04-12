@@ -7,6 +7,7 @@ import {
   Handle,
   Position,
   MarkerType,
+  applyNodeChanges,
   type Node,
   type Edge,
   type NodeProps,
@@ -411,8 +412,15 @@ function testRule(rule: InputRule, input: string): { ok: boolean; value?: string
         const [canonical, syns] = line.split(':').map(s => s.trim())
         const allKw = [canonical, ...syns.split(',').map(s => s.trim())].map(s => s.toLowerCase())
         for (const kw of allKw) {
-          if (kw && (lower.includes(kw) || kw === lower)) {
-            return { ok: true, value: applyTransform(canonical, rule.transform) }
+          if (!kw) continue
+          if (kw === lower) return { ok: true, value: applyTransform(canonical, rule.transform) }
+          if (kw.includes(' ')) {
+            // Multi-parola: str_contains
+            if (lower.includes(kw)) return { ok: true, value: applyTransform(canonical, rule.transform) }
+          } else {
+            // Parola singola: word boundary (evita "no" in "sono")
+            const re = new RegExp(`(?:^|\\s|[,;.!?])${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s|[,;.!?]|$)`, 'u')
+            if (re.test(lower)) return { ok: true, value: applyTransform(canonical, rule.transform) }
           }
         }
       }
@@ -1866,6 +1874,7 @@ function FlowEditor() {
   const [editedData, setEditedData] = useState<Map<string, FlowStateNode>>(new Map())
   const [editedMessages, setEditedMessages] = useState<Map<string, string>>(new Map())
   const dirtyPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const [dirtyPosCount, setDirtyPosCount] = useState(0)
   const { fitView } = useReactFlow()
 
   /* -- Shared keys: per ogni message_key, lista degli stati che la usano -- */
@@ -1947,12 +1956,39 @@ function FlowEditor() {
     const stateOrder = new Map<string, number>()
     graph.nodes.forEach((n, i) => stateOrder.set(n.state, i))
 
+    // Build live button edges: usa editedData se disponibile, altrimenti API
+    const liveButtonEdges: ButtonEdge[] = []
+    const editedStates = new Set(editedData.keys())
+
+    // Per gli stati editati, genera edge dai bottoni locali
+    for (const [stateId, nodeData] of editedData.entries()) {
+      for (let i = 0; i < nodeData.buttons.length; i++) {
+        const btn = nodeData.buttons[i]
+        if (!btn.target_state || btn.target_state === stateId) continue
+        liveButtonEdges.push({
+          id: `btn-${stateId}-${i}`,
+          source: stateId,
+          target: btn.target_state,
+          label: btn.label || '',
+          kind: 'button',
+          side_effect: btn.side_effect ?? null,
+          editable: true,
+        })
+      }
+    }
+
+    // Per gli stati NON editati, usa i dati API
+    for (const e of graph.buttonEdges) {
+      if (editedStates.has(e.source)) continue // già gestito sopra
+      liveButtonEdges.push(e)
+    }
+
     // Collect all edges, detect back-edges (goto refs)
     const forwardButtonEdges: ButtonEdge[] = []
     const gotoRefs: { source: string; targetState: string; edgeId: string; label: string }[] = []
     const gotoRefNodeIds = new Set<string>()
 
-    for (const e of graph.buttonEdges) {
+    for (const e of liveButtonEdges) {
       // Skip self-loops (re-prompt loops)
       if (e.source === e.target) continue
 
@@ -1973,13 +2009,15 @@ function FlowEditor() {
 
     for (const n of graph.nodes) {
       const isTrigger = !incomingEdges.has(n.state) || n.state === 'NEW'
+      // Usa dati editati localmente se disponibili (live update sul canvas)
+      const liveData = editedData.get(n.id) ?? n
       rfNodes.push({
         id: n.id,
         type: 'flowCard',
         position: { x: 0, y: 0 },
-        draggable: false,
+        draggable: true,
         selectable: true,
-        data: { ...n, isTrigger, isGotoRef: false } as unknown as Record<string, unknown>,
+        data: { ...liveData, isTrigger, isGotoRef: false } as unknown as Record<string, unknown>,
       })
     }
 
@@ -1989,7 +2027,7 @@ function FlowEditor() {
         id: ref.edgeId,
         type: 'flowCard',
         position: { x: 0, y: 0 },
-        draggable: false,
+        draggable: true,
         selectable: false,
         data: {
           state: ref.edgeId,
@@ -2065,20 +2103,29 @@ function FlowEditor() {
       }
     }
 
-    // Auto-layout with dagre
-    const layoutedNodes = autoLayout(rfNodes, rfEdges)
+    // Auto-layout solo al primo caricamento, poi preserva posizioni manuali
+    const isFirstLayout = nodes.length === 0
+    if (isFirstLayout) {
+      const layoutedNodes = autoLayout(rfNodes, rfEdges)
+      setNodes(layoutedNodes)
+      layoutedNodes.forEach(n => {
+        dirtyPositions.current.set(n.id, n.position)
+      })
+      setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 100)
+    } else {
+      // Aggiorna solo data dei nodi e ricalcola edge, senza toccare le posizioni
+      setNodes(prev => {
+        const posMap = new Map(prev.map(n => [n.id, n.position]))
+        return rfNodes.map(n => ({
+          ...n,
+          position: posMap.get(n.id) ?? n.position,
+        }))
+      })
+    }
 
-    setNodes(layoutedNodes)
     setEdges(rfEdges)
-
-    // Save positions for all nodes
-    layoutedNodes.forEach(n => {
-      dirtyPositions.current.set(n.id, n.position)
-    })
-
-    setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 100)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, showCodeEdges])
+  }, [graph, showCodeEdges, editedData])
 
   /* -- Selection -- */
 
@@ -2159,6 +2206,7 @@ function FlowEditor() {
       await Promise.all(updates)
 
       dirtyPositions.current.clear()
+      setDirtyPosCount(0)
       setDirtyNodes(new Set())
       setEditedData(new Map())
       setEditedMessages(new Map())
@@ -2300,7 +2348,7 @@ function FlowEditor() {
     )
   }
 
-  const dirtyCount = dirtyNodes.size + editedMessages.size
+  const dirtyCount = dirtyNodes.size + editedMessages.size + dirtyPosCount
   const hasChanges = dirtyCount > 0
 
   return (
@@ -2321,8 +2369,17 @@ function FlowEditor() {
         onPaneClick={() => setSelectedId(null)}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        nodesDraggable={false}
+        nodesDraggable
         nodesConnectable={false}
+        onNodesChange={(changes) => {
+          setNodes(nds => applyNodeChanges(changes, nds))
+          for (const c of changes) {
+            if (c.type === 'position' && c.position && !c.dragging) {
+              dirtyPositions.current.set(c.id, c.position)
+              setDirtyPosCount(dirtyPositions.current.size)
+            }
+          }
+        }}
         fitView
         minZoom={0.15}
         maxZoom={1.5}
