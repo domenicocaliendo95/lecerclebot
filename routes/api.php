@@ -56,6 +56,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
 
     // Bot Messages
     Route::get('/bot-messages', [BotMessageController::class, 'index']);
+    Route::post('/bot-messages', [BotMessageController::class, 'store']);
     Route::put('/bot-messages/{key}', [BotMessageController::class, 'update']);
 
     // Bot Flow States

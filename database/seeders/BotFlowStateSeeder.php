@@ -10,17 +10,19 @@ class BotFlowStateSeeder extends Seeder
     public function run(): void
     {
         $states = [
-            // ── Onboarding ──────────────────────────────────────────
+            // ── Saluti ──────────────────────────────────────────────
             [
                 'state'        => 'NEW',
                 'type'         => 'complex',
-                'message_key'  => 'chiedi_nome_nuovo',
+                'message_key'  => 'saluto_nuovo',
                 'fallback_key' => null,
                 'buttons'      => null,
-                'category'     => 'onboarding',
-                'description'  => 'Primo contatto — saluto e richiesta nome',
+                'category'     => 'saluti',
+                'description'  => 'Primo contatto — saluto iniziale (nuovo utente: saluto_nuovo, utente registrato: saluto_ritorno)',
                 'sort_order'   => 1,
             ],
+
+            // ── Onboarding ──────────────────────────────────────────
             [
                 'state'        => 'ONBOARD_NOME',
                 'type'         => 'complex',

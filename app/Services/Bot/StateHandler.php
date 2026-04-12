@@ -1984,6 +1984,15 @@ class StateHandler
     /**
      * Legge le label dei bottoni dal DB (BotFlowState), con fallback ai valori hardcoded.
      */
+    /**
+     * Restituisce le label dei bottoni per uno stato, leggendo dal DB
+     * con fallback a $default se non configurati. Esposto per uso dall'orchestrator.
+     */
+    public function getButtonsPublic(string $state, array $default): array
+    {
+        return $this->getButtons($state, $default);
+    }
+
     private function getButtons(string $state, array $default): array
     {
         $flowState = BotFlowState::getCached($state);

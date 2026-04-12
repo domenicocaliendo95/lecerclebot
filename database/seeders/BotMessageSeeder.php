@@ -10,6 +10,10 @@ class BotMessageSeeder extends Seeder
     public function run(): void
     {
         $messages = [
+            // ── Saluti (primo messaggio) ─────────────────────────────
+            ['key' => 'saluto_nuovo',   'category' => 'saluti', 'description' => 'Primo messaggio per utente non registrato ({persona})',   'text' => "Ciao! Sono {persona}, il tuo assistente virtuale del circolo Le Cercle Tennis Club di San Gennaro Vesuviano. 🎾\n\nPosso aiutarti a:\n• Prenotare un campo (con avversario o sparapalline)\n• Trovare un avversario del tuo livello\n• Gestire le tue prenotazioni\n\nPer iniziare ho bisogno di registrarti. Dimmi il tuo nome!"],
+            ['key' => 'saluto_ritorno', 'category' => 'saluti', 'description' => 'Primo messaggio per utente già registrato ({name}, {persona})', 'text' => "Bentornato {name}! Sono {persona}, il tuo assistente di oggi. 🎾\n\nCosa vuoi fare? Puoi anche scrivere:\n• \"prenotazioni\" per gestire le tue prenotazioni\n• \"profilo\" per modificare i tuoi dati\n• \"menu\" per tornare qui in qualsiasi momento"],
+
             // ── Onboarding ──────────────────────────────────────────
             ['key' => 'nome_non_valido',        'category' => 'onboarding', 'description' => 'Nome non riconosciuto, richiedi di nuovo',        'text' => 'Scusa, non ho capito il tuo nome. Puoi ripetermelo?'],
             ['key' => 'chiedi_fit',             'category' => 'onboarding', 'description' => 'Chiedi se tesserato FIT ({name})',                 'text' => 'Piacere {name}! Sei tesserato FIT? La tessera ci serve per calcolare il tuo livello di gioco.'],

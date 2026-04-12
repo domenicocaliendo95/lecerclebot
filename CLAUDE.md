@@ -281,6 +281,7 @@ In onboarding: `indietro`/`back`/`torna`/`annulla`/`precedente`/`torna indietro`
 Salvati in `bot_messages`, editabili in `/panel/messaggi`. `TextGenerator::rephrase()` legge da DB (cache 1h, no AI rephrase). Fallback hardcoded in `TextGenerator::FALLBACKS`.
 
 ```
+Saluti: saluto_nuovo ({persona}), saluto_ritorno ({name}, {persona})
 Onboarding: nome_non_valido, chiedi_fit, fit_non_capito, chiedi_classifica,
   classifica_non_valida, chiedi_livello, livello_non_valido, chiedi_eta,
   eta_non_valida, chiedi_fascia_oraria, fascia_non_valida,
@@ -453,14 +454,15 @@ Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide, **@xyflo
 - Custom node component con state name, badge custom/simple/complex, message preview, lista bottoni
 - Edge tipizzati per colore: verde=bottone, ambra=bottone+side_effect, ciano=validazione (input_rule), viola=fork condizionale (transition), grigio tratteggiato=transizione codice (read-only)
 - **Side panel a 4 tab**:
-  - **Generale**: descrizione, categoria, messaggio principale, messaggio fallback, eliminazione (solo custom)
+  - **Generale**: descrizione, categoria, messaggio principale e fallback con **textarea inline editabili** + bottone "Crea nuovo messaggio". Variabili `{var}` evidenziate sotto come badge. Warning se la chiave è condivisa con altri stati. Eliminazione (solo custom)
   - **Bottoni**: editor pulsanti WhatsApp con dropdown target+side_effect
   - **Validazione**: editor `input_rules` friendly. Picker tipo (Nome/Numero/Mapping/Regex/Testo libero) con icone, sub-form contestuale, **tester live verde/rosso** che mostra il valore trasformato
   - **Fork**: editor `transitions` con builder if/else (campo/valore tramite dropdown)
-- Toolbar: nuovo stato, salva tutto (mostra count modifiche pending), search, toggle code edges
+- Toolbar: nuovo stato, salva tutto (mostra count modifiche pending include nodi, posizioni e messaggi), search, toggle code edges
 - Drag handle source → handle target = crea nuovo bottone collegato
 - Autolayout dagre se almeno uno stato non ha posizione salvata
 - Posizioni salvate in bulk via `/bot-flow-states/positions`
+- Messaggi salvati uno per uno via `PUT /bot-messages/{key}`, creati via `POST /bot-messages`
 
 **Auth**: session-based (stessa di Filament, no Sanctum). `POST /api/auth/login` (verifica `is_admin`), `GET /api/auth/me`. Middleware `auth+admin` su `/api/admin/*`. Frontend: `AuthProvider` + `RequireAuth`.
 
@@ -482,8 +484,8 @@ Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide, **@xyflo
 | `/pricing-rules/{id}` | PUT/DELETE | |
 | `/settings` | GET | tutte |
 | `/settings/{key}` | GET/PUT | |
-| `/bot-messages` | GET | grouped per categoria |
-| `/bot-messages/{key}` | PUT | |
+| `/bot-messages` | GET / POST | grouped per categoria / crea nuovo messaggio (validazione regex chiave + unique) |
+| `/bot-messages/{key}` | PUT | aggiorna text e/o description |
 | `/bot-flow-states` | GET / POST | lista grouped / crea custom (force simple+is_custom) |
 | `/bot-flow-states/graph` | GET | nodes + buttonEdges (editable) + codeEdges (read-only da `BotState::allowedTransitions`) |
 | `/bot-flow-states/meta` | GET | side_effect whitelist + bot_messages list + built_in cases + categorie + rule_types + transforms + transition_fields/operators |

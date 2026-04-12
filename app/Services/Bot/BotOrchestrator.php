@@ -174,15 +174,21 @@ class BotOrchestrator
         $persona = $session->persona();
 
         if ($user) {
-            $greeting = BotPersona::greetingReturning($persona, $user->name);
-            $buttons  = ['Ho già un avversario', 'Trovami un avversario', 'Noleggio sparapalline'];
+            // Utente registrato → template da DB, fallback a BotPersona hardcoded
+            $greeting = $this->textGenerator->rephrase('saluto_ritorno', $persona, [
+                'name'    => $user->name,
+                'persona' => $persona,
+            ]);
+            $buttons = $this->stateHandler->getButtonsPublic('MENU', ['Prenota campo', 'Trovami avversario', 'Sparapalline']);
 
-            // Aggiorna lo stato a MENU perché l'utente è registrato
             $session->update(['state' => BotState::MENU->value]);
             $this->whatsApp->sendButtons($phone, $greeting, $buttons);
         } else {
-            $greeting = BotPersona::greetingNew($persona);
-            // Lo stato rimane NEW — il prossimo input sarà il nome
+            // Nuovo utente → template da DB, fallback a BotPersona hardcoded
+            $greeting = $this->textGenerator->rephrase('saluto_nuovo', $persona, [
+                'persona' => $persona,
+            ]);
+
             $session->update(['state' => BotState::ONBOARD_NOME->value]);
             $this->whatsApp->sendText($phone, $greeting);
         }

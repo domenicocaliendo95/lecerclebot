@@ -23,7 +23,7 @@ import dagre from '@dagrejs/dagre'
 import {
   Loader2, Save, Plus, Trash2, X, Cpu, Cog, MessageSquareText,
   Zap, AlertTriangle, Check, Search, MousePointerClick,
-  Filter, GitBranch, Type, Hash, ListChecks, Code, FileText,
+  Filter, GitBranch, Type, Hash, ListChecks, Code, FileText, Pencil,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -642,19 +642,137 @@ function TransitionCard({
 }
 
 /* ═════════════════════════════════════════════════════════════════
+ *  MessageEditor: dropdown chiave + textarea editabile inline
+ * ═════════════════════════════════════════════════════════════════ */
+
+function MessageEditor({
+  label, icon, currentKey, messages, messageOverrides, originalText,
+  sharedKeys, currentState, onKeyChange, onTextChange, onCreateNew, allowNone,
+}: {
+  label: string
+  icon: React.ReactNode
+  currentKey: string
+  messages: { key: string; category: string; description: string | null }[]
+  messageOverrides: Map<string, string>
+  originalText: string | null
+  sharedKeys: Map<string, string[]>
+  currentState: string
+  onKeyChange: (key: string) => void
+  onTextChange: (text: string) => void
+  onCreateNew: () => void
+  allowNone: boolean
+}) {
+  // Testo corrente: prima da overrides (modifiche pending), altrimenti originale
+  const text = currentKey
+    ? (messageOverrides.get(currentKey) ?? originalText ?? '')
+    : ''
+  const isDirty = currentKey && messageOverrides.has(currentKey)
+
+  // Stati che condividono questa chiave (esclusi io stesso)
+  const otherUsers = currentKey
+    ? (sharedKeys.get(currentKey) ?? []).filter(s => s !== currentState)
+    : []
+
+  // Estrai variabili {var} dal testo per anteprima
+  const variables = useMemo(() => {
+    if (!text) return []
+    const matches = text.match(/\{[a-z_]+\}/g)
+    return matches ? Array.from(new Set(matches)) : []
+  }, [text])
+
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+        {icon} {label}
+        {isDirty && (
+          <span className="ml-auto inline-flex items-center gap-0.5 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[9px] font-bold">
+            <Pencil className="h-2 w-2" /> modificato
+          </span>
+        )}
+      </label>
+
+      <div className="mt-1 flex gap-1">
+        <select
+          value={currentKey}
+          onChange={e => onKeyChange(e.target.value)}
+          className="flex-1 rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono min-w-0"
+        >
+          {allowNone && <option value="">— nessuno —</option>}
+          {messages.map(m => (
+            <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
+          ))}
+        </select>
+        <button
+          onClick={onCreateNew}
+          title="Crea nuovo messaggio"
+          className="rounded border bg-background hover:bg-muted px-2 py-1.5 text-xs text-emerald-700"
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </div>
+
+      {currentKey && (
+        <>
+          <textarea
+            value={text}
+            onChange={e => onTextChange(e.target.value)}
+            rows={3}
+            placeholder="Testo del messaggio..."
+            className="mt-2 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 leading-snug"
+            maxLength={1000}
+          />
+
+          {/* Variable badges */}
+          {variables.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              <span className="text-[9px] text-muted-foreground">Variabili:</span>
+              {variables.map(v => (
+                <span key={v} className="rounded bg-amber-100 text-amber-800 px-1 py-0 text-[9px] font-mono">
+                  {v}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Shared key warning */}
+          {otherUsers.length > 0 && (
+            <div className="mt-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 flex items-start gap-1">
+              <AlertTriangle className="h-2.5 w-2.5 shrink-0 mt-0.5" />
+              <span>
+                Questo messaggio è usato anche da: <strong className="font-mono">{otherUsers.join(', ')}</strong>. Modificarlo cambierà il testo per tutti.
+              </span>
+            </div>
+          )}
+
+          {/* Char counter */}
+          <div className="mt-1 text-right text-[9px] text-muted-foreground">
+            {text.length}/1000
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ═════════════════════════════════════════════════════════════════
  *  Side panel: edit selected node
  * ═════════════════════════════════════════════════════════════════ */
 
 type EditTab = 'general' | 'buttons' | 'rules' | 'transitions'
 
 function NodeEditPanel({
-  node, allNodes, meta, onClose, onChange, onDelete, saving,
+  node, allNodes, meta, messageOverrides, sharedKeys, onClose, onChange,
+  onMessageEdit, onCreateMessage, onDelete, saving,
 }: {
   node: FlowStateNode
   allNodes: FlowStateNode[]
   meta: MetaResponse | null
+  messageOverrides: Map<string, string>
+  sharedKeys: Map<string, string[]>            // key → lista stati che lo usano
   onClose: () => void
   onChange: (updated: FlowStateNode) => void
+  onMessageEdit: (key: string, text: string) => void
+  onCreateMessage: () => void
   onDelete: () => void
   saving: boolean
 }) {
@@ -796,39 +914,35 @@ function NodeEditPanel({
               </div>
             )}
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                <MessageSquareText className="h-3 w-3" /> Messaggio principale
-              </label>
-              <select
-                value={node.message_key}
-                onChange={e => onChange({ ...node, message_key: e.target.value })}
-                className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
-              >
-                {(meta?.messages ?? []).map(m => (
-                  <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
-                ))}
-              </select>
-              {node.message_text && (
-                <div className="mt-2 text-xs bg-muted/50 rounded p-2 whitespace-pre-line border">
-                  {node.message_text}
-                </div>
-              )}
-            </div>
+            <MessageEditor
+              label="Messaggio principale"
+              icon={<MessageSquareText className="h-3 w-3" />}
+              currentKey={node.message_key}
+              messages={meta?.messages ?? []}
+              messageOverrides={messageOverrides}
+              originalText={node.message_text}
+              sharedKeys={sharedKeys}
+              currentState={node.state}
+              onKeyChange={(k) => onChange({ ...node, message_key: k })}
+              onTextChange={(text) => onMessageEdit(node.message_key, text)}
+              onCreateNew={onCreateMessage}
+              allowNone={false}
+            />
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Messaggio fallback (input non capito)</label>
-              <select
-                value={node.fallback_key ?? ''}
-                onChange={e => onChange({ ...node, fallback_key: e.target.value || null })}
-                className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
-              >
-                <option value="">— nessuno —</option>
-                {(meta?.messages ?? []).map(m => (
-                  <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
-                ))}
-              </select>
-            </div>
+            <MessageEditor
+              label="Messaggio fallback (input non capito)"
+              icon={<AlertTriangle className="h-3 w-3" />}
+              currentKey={node.fallback_key ?? ''}
+              messages={meta?.messages ?? []}
+              messageOverrides={messageOverrides}
+              originalText={node.fallback_text}
+              sharedKeys={sharedKeys}
+              currentState={node.state}
+              onKeyChange={(k) => onChange({ ...node, fallback_key: k || null })}
+              onTextChange={(text) => node.fallback_key && onMessageEdit(node.fallback_key, text)}
+              onCreateNew={onCreateMessage}
+              allowNone
+            />
 
             {node.is_custom && (
               <div className="pt-3 border-t">
@@ -1154,6 +1268,167 @@ function AddStateDialog({
 }
 
 /* ═════════════════════════════════════════════════════════════════
+ *  Add new message dialog
+ * ═════════════════════════════════════════════════════════════════ */
+
+function AddMessageDialog({
+  open, onClose, onCreate, existingKeys, categories, suggestedKey,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreate: (data: { key: string; text: string; category: string; description?: string }) => Promise<void>
+  existingKeys: string[]
+  categories: string[]
+  suggestedKey: string
+}) {
+  const [key, setKey] = useState('')
+  const [text, setText] = useState('')
+  const [category, setCategory] = useState('custom')
+  const [description, setDescription] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  // Reimposta il suggested quando si apre
+  useEffect(() => {
+    if (open) {
+      setKey(suggestedKey)
+      setError(null)
+    }
+  }, [open, suggestedKey])
+
+  if (!open) return null
+
+  const validate = (): string | null => {
+    const k = key.trim().toLowerCase()
+    if (!k) return 'Inserisci una chiave.'
+    if (!/^[a-z][a-z0-9_]*$/.test(k)) return 'Solo minuscole, cifre e underscore. Inizia con una lettera.'
+    if (k.length > 100) return 'Massimo 100 caratteri.'
+    if (existingKeys.includes(k)) return 'Questa chiave esiste già.'
+    if (!text.trim()) return 'Il testo del messaggio non può essere vuoto.'
+    return null
+  }
+
+  const submit = async () => {
+    const err = validate()
+    if (err) { setError(err); return }
+    setError(null)
+    setCreating(true)
+    try {
+      await onCreate({
+        key: key.trim().toLowerCase(),
+        text: text.trim(),
+        category,
+        description: description.trim() || undefined,
+      })
+      setKey('')
+      setText('')
+      setDescription('')
+      setCategory('custom')
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Errore sconosciuto')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const variables = useMemo(() => {
+    const matches = text.match(/\{[a-z_]+\}/g)
+    return matches ? Array.from(new Set(matches)) : []
+  }, [text])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-background rounded-lg shadow-2xl w-[500px] max-w-[90vw] p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <MessageSquareText className="h-4 w-4 text-emerald-600" /> Nuovo messaggio
+          </h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Chiave</label>
+          <input
+            value={key}
+            onChange={e => setKey(e.target.value.toLowerCase())}
+            placeholder="es. msg_promo_intro"
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:border-emerald-500 font-mono"
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Solo minuscole, cifre e _. La chiave non si può cambiare dopo la creazione.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Categoria</label>
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+          >
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Testo del messaggio</label>
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            rows={4}
+            placeholder="Ciao {name}! Cosa vuoi fare?"
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+            maxLength={1000}
+          />
+          {variables.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              <span className="text-[9px] text-muted-foreground">Variabili rilevate:</span>
+              {variables.map(v => (
+                <span key={v} className="rounded bg-amber-100 text-amber-800 px-1 py-0 text-[9px] font-mono">{v}</span>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Usa <code className="bg-muted px-1 rounded">{'{nome_variabile}'}</code> per inserire valori dinamici (es. <code className="bg-muted px-1 rounded">{'{name}'}</code>, <code className="bg-muted px-1 rounded">{'{slot}'}</code>).
+          </p>
+          <div className="text-right text-[9px] text-muted-foreground">{text.length}/1000</div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Descrizione (interna)</label>
+          <input
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="A cosa serve questo messaggio..."
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {error && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex gap-1.5">
+            <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose} disabled={creating}>
+            Annulla
+          </Button>
+          <Button onClick={submit} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700">
+            {creating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+            Crea messaggio
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ═════════════════════════════════════════════════════════════════
  *  Main editor (inside ReactFlowProvider)
  * ═════════════════════════════════════════════════════════════════ */
 
@@ -1166,13 +1441,41 @@ function FlowEditor() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showCodeEdges, setShowCodeEdges] = useState(true)
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [showNewMessageDialog, setShowNewMessageDialog] = useState(false)
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const [dirtyNodes, setDirtyNodes] = useState<Set<string>>(new Set())
   const [editedData, setEditedData] = useState<Map<string, FlowStateNode>>(new Map())
+  const [editedMessages, setEditedMessages] = useState<Map<string, string>>(new Map())
   const dirtyPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
   const { fitView } = useReactFlow()
+
+  /* ── Shared keys: per ogni message_key, lista degli stati che la usano ── */
+  const sharedKeys = useMemo<Map<string, string[]>>(() => {
+    const map = new Map<string, string[]>()
+    for (const n of graph?.nodes ?? []) {
+      const keys = [n.message_key, n.fallback_key].filter((k): k is string => !!k)
+      for (const k of keys) {
+        const list = map.get(k) ?? []
+        if (!list.includes(n.state)) list.push(n.state)
+        map.set(k, list)
+      }
+    }
+    return map
+  }, [graph])
+
+  const handleMessageEdit = useCallback((key: string, text: string) => {
+    setEditedMessages(prev => {
+      const next = new Map(prev)
+      next.set(key, text)
+      return next
+    })
+  }, [])
+
+  const handleCreateMessage = useCallback(() => {
+    setShowNewMessageDialog(true)
+  }, [])
 
   /* ── Fetch graph + meta ───────────────────────────────────────── */
 
@@ -1338,11 +1641,22 @@ function FlowEditor() {
         )
       }
 
+      // 3) Save dirty messages
+      for (const [key, text] of editedMessages.entries()) {
+        updates.push(
+          apiFetch(`/admin/bot-messages/${encodeURIComponent(key)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ text }),
+          }),
+        )
+      }
+
       await Promise.all(updates)
 
       dirtyPositions.current.clear()
       setDirtyNodes(new Set())
       setEditedData(new Map())
+      setEditedMessages(new Map())
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 2500)
 
@@ -1354,7 +1668,7 @@ function FlowEditor() {
     } finally {
       setSaving(false)
     }
-  }, [dirtyNodes, editedData, fetchAll])
+  }, [dirtyNodes, editedData, editedMessages, fetchAll])
 
   /* ── Create new state ─────────────────────────────────────────── */
 
@@ -1448,7 +1762,7 @@ function FlowEditor() {
     )
   }
 
-  const dirtyCount = dirtyNodes.size + dirtyPositions.current.size
+  const dirtyCount = dirtyNodes.size + dirtyPositions.current.size + editedMessages.size
   const hasChanges = dirtyCount > 0
 
   return (
@@ -1570,20 +1884,40 @@ function FlowEditor() {
           node={selectedNode}
           allNodes={graph?.nodes ?? []}
           meta={meta}
+          messageOverrides={editedMessages}
+          sharedKeys={sharedKeys}
           onClose={() => setSelectedId(null)}
           onChange={handleNodeChange}
+          onMessageEdit={handleMessageEdit}
+          onCreateMessage={handleCreateMessage}
           onDelete={handleDelete}
           saving={saving}
         />
       )}
 
-      {/* ── Add dialog ─────────────────────────────────── */}
+      {/* ── Add state dialog ───────────────────────────── */}
       <AddStateDialog
         open={showAddDialog}
         onClose={() => setShowAddDialog(false)}
         onCreate={handleCreate}
         existingStates={graph?.nodes.map(n => n.state) ?? []}
         meta={meta}
+      />
+
+      {/* ── Add message dialog ─────────────────────────── */}
+      <AddMessageDialog
+        open={showNewMessageDialog}
+        onClose={() => setShowNewMessageDialog(false)}
+        existingKeys={(meta?.messages ?? []).map(m => m.key)}
+        categories={meta?.categories ?? []}
+        suggestedKey={selectedNode ? `msg_${selectedNode.state.toLowerCase()}` : ''}
+        onCreate={async (data) => {
+          await apiFetch('/admin/bot-messages', {
+            method: 'POST',
+            body: JSON.stringify(data),
+          })
+          await fetchAll()
+        }}
       />
     </div>
   )

@@ -92,6 +92,10 @@ class TextGenerator
         'reminder_ore_prima'     => 'Ci siamo! Prenotazione tra {hours} ore — {slot}. A tra poco! 🎾',
         'errore_generico'        => "Scusa, c'è stato un problema. Riprova!",
 
+        // ── Saluti (primo messaggio) ─────────────────────────────────
+        'saluto_nuovo'   => "Ciao! Sono {persona}, il tuo assistente virtuale del circolo Le Cercle Tennis Club di San Gennaro Vesuviano. 🎾\n\nPosso aiutarti a:\n• Prenotare un campo (con avversario o sparapalline)\n• Trovare un avversario del tuo livello\n• Gestire le tue prenotazioni\n\nPer iniziare ho bisogno di registrarti. Dimmi il tuo nome!",
+        'saluto_ritorno' => "Bentornato {name}! Sono {persona}, il tuo assistente di oggi. 🎾\n\nCosa vuoi fare? Puoi anche scrivere:\n• \"prenotazioni\" per gestire le tue prenotazioni\n• \"profilo\" per modificare i tuoi dati\n• \"menu\" per tornare qui in qualsiasi momento",
+
         // ── Avversario (flusso ASK_OPPONENT) ────────────────────────
         'chiedi_avversario'           => "Con chi giochi? Dimmi nome e cognome dell'avversario.\nSe non lo conosci o non è del circolo, scrivi \"salta\".",
         'avversario_nome_corto'       => 'Mi serve almeno il nome. Puoi scriverlo per intero?',

@@ -166,7 +166,7 @@ class BotFlowStateController extends Controller
 
         $builtIn = array_map(fn(BotState $c) => $c->value, BotState::cases());
 
-        $categories = ['onboarding', 'menu', 'prenotazione', 'conferma', 'matchmaking',
+        $categories = ['saluti', 'onboarding', 'menu', 'prenotazione', 'conferma', 'matchmaking',
                        'gestione', 'profilo', 'risultati', 'feedback', 'avversario',
                        'errore', 'custom'];
 
