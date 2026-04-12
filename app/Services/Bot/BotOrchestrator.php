@@ -33,6 +33,7 @@ class BotOrchestrator
         private readonly UserProfileService $profileService,
         private readonly TextGenerator      $textGenerator,
         private readonly EloService         $eloService,
+        private readonly ActionExecutor     $actionExecutor,
     ) {}
 
     /**

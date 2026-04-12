@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\BotFlowState;
 use App\Models\BotMessage;
+use App\Services\Bot\ActionExecutor;
 use App\Services\Bot\BotState;
 use App\Services\Bot\RuleEvaluator;
 use App\Services\Bot\StateHandler;
@@ -57,10 +58,11 @@ class BotFlowStateController extends Controller
                 'message_text' => $messages[$s->message_key] ?? null,
                 'fallback_key' => $s->fallback_key,
                 'fallback_text'=> $s->fallback_key ? ($messages[$s->fallback_key] ?? null) : null,
-                'buttons'      => $s->buttons ?? [],
-                'input_rules'  => $s->input_rules ?? [],
-                'transitions'  => $s->transitions ?? [],
-                'position'     => $s->position,
+                'buttons'          => $s->buttons ?? [],
+                'input_rules'      => $s->input_rules ?? [],
+                'transitions'      => $s->transitions ?? [],
+                'on_enter_actions' => $s->on_enter_actions ?? [],
+                'position'         => $s->position,
                 'sort_order'   => $s->sort_order,
             ];
         })->values();
@@ -171,7 +173,10 @@ class BotFlowStateController extends Controller
                        'errore', 'custom'];
 
         return response()->json([
-            'side_effects'   => StateHandler::availableSideEffects(),
+            'side_effects'   => StateHandler::availableSideEffects(),  // backward compat
+            'actions'        => ActionExecutor::availableActions(),
+            'pre_actions'    => ActionExecutor::preActions(),
+            'post_actions'   => ActionExecutor::postActions(),
             'messages'       => $messages,
             'built_in'       => $builtIn,
             'categories'     => $categories,
@@ -209,9 +214,10 @@ class BotFlowStateController extends Controller
             'category'     => 'nullable|string|max:50',
             'description'  => 'nullable|string|max:255',
             'buttons'      => 'nullable|array|max:3',
-            'input_rules'  => 'nullable|array',
-            'transitions'  => 'nullable|array',
-            'position'     => 'nullable|array',
+            'input_rules'      => 'nullable|array',
+            'transitions'      => 'nullable|array',
+            'on_enter_actions' => 'nullable|array',
+            'position'         => 'nullable|array',
             'position.x'   => 'nullable|numeric',
             'position.y'   => 'nullable|numeric',
         ]);
@@ -277,9 +283,10 @@ class BotFlowStateController extends Controller
             'description'  => 'nullable|string|max:255',
             'category'     => 'nullable|string|max:50',
             'buttons'      => 'nullable|array|max:3',
-            'input_rules'  => 'nullable|array',
-            'transitions'  => 'nullable|array',
-            'position'     => 'nullable|array',
+            'input_rules'      => 'nullable|array',
+            'transitions'      => 'nullable|array',
+            'on_enter_actions' => 'nullable|array',
+            'position'         => 'nullable|array',
             'position.x'   => 'nullable|numeric',
             'position.y'   => 'nullable|numeric',
         ]);

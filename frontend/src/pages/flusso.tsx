@@ -4,19 +4,12 @@ import {
   ReactFlowProvider,
   Background,
   Controls,
-  MiniMap,
-  Panel,
   Handle,
   Position,
   MarkerType,
-  applyNodeChanges,
-  applyEdgeChanges,
   type Node,
   type Edge,
-  type NodeChange,
-  type EdgeChange,
   type NodeProps,
-  type Connection,
   useReactFlow,
 } from '@xyflow/react'
 import dagre from '@dagrejs/dagre'
@@ -24,6 +17,7 @@ import {
   Loader2, Save, Plus, Trash2, X, Cpu, Cog, MessageSquareText,
   Zap, AlertTriangle, Check, Search, MousePointerClick,
   Filter, GitBranch, Type, Hash, ListChecks, Code, FileText, Pencil,
+  ArrowDown, CornerDownRight, Circle,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -32,9 +26,9 @@ import { apiFetch } from '@/hooks/use-api'
 
 import '@xyflow/react/dist/style.css'
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Types
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
 interface FlowButton {
   label: string
@@ -47,18 +41,14 @@ type RuleType = 'name' | 'integer_range' | 'mapping' | 'regex' | 'free_text'
 
 interface InputRule {
   type: RuleType
-  // Common
   save_to?: string
   next_state?: string
   error_key?: string
   side_effect?: string
   transform?: string
-  // integer_range
   min?: number
   max?: number
-  // mapping
   options?: string[]
-  // regex
   pattern?: string
   capture_group?: number
 }
@@ -82,6 +72,7 @@ interface FlowStateNode {
   buttons: FlowButton[]
   input_rules: InputRule[]
   transitions: Transition[]
+  on_enter_actions: string[]
   position: { x: number; y: number } | null
   sort_order: number
 }
@@ -118,8 +109,17 @@ interface RuleTypeMeta {
   fields: { key: string; label: string; type: string; placeholder?: string }[]
 }
 
+interface ActionMeta {
+  label: string
+  description: string
+  timing: 'pre' | 'post'
+}
+
 interface MetaResponse {
   side_effects: Record<string, string>
+  actions: Record<string, ActionMeta>
+  pre_actions: Record<string, ActionMeta>
+  post_actions: Record<string, ActionMeta>
   messages: { key: string; category: string; description: string | null }[]
   built_in: string[]
   categories: string[]
@@ -137,115 +137,239 @@ const ruleTypeIcons: Record<RuleType, typeof Type> = {
   free_text:     FileText,
 }
 
-type FlowNodeData = FlowStateNode & { selected?: boolean }
+type FlowNodeData = FlowStateNode & { isTrigger?: boolean; isGotoRef?: boolean; gotoTarget?: string }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Color helpers
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
-const categoryColors: Record<string, { bg: string; border: string; text: string }> = {
-  onboarding:  { bg: 'bg-blue-50',    border: 'border-blue-400',    text: 'text-blue-700' },
-  menu:        { bg: 'bg-emerald-50', border: 'border-emerald-400', text: 'text-emerald-700' },
-  prenotazione:{ bg: 'bg-amber-50',   border: 'border-amber-400',   text: 'text-amber-700' },
-  conferma:    { bg: 'bg-purple-50',  border: 'border-purple-400',  text: 'text-purple-700' },
-  matchmaking: { bg: 'bg-orange-50',  border: 'border-orange-400',  text: 'text-orange-700' },
-  gestione:    { bg: 'bg-cyan-50',    border: 'border-cyan-400',    text: 'text-cyan-700' },
-  profilo:     { bg: 'bg-pink-50',    border: 'border-pink-400',    text: 'text-pink-700' },
-  risultati:   { bg: 'bg-red-50',     border: 'border-red-400',     text: 'text-red-700' },
-  feedback:    { bg: 'bg-yellow-50',  border: 'border-yellow-400',  text: 'text-yellow-700' },
-  avversario:  { bg: 'bg-violet-50',  border: 'border-violet-400',  text: 'text-violet-700' },
-  errore:      { bg: 'bg-gray-100',   border: 'border-gray-400',    text: 'text-gray-700' },
-  custom:      { bg: 'bg-teal-50',    border: 'border-teal-400',    text: 'text-teal-700' },
+const categoryColors: Record<string, { bg: string; border: string; text: string; headerBg: string }> = {
+  onboarding:   { bg: 'bg-blue-50',    border: 'border-blue-300',    text: 'text-blue-700',    headerBg: 'bg-blue-500' },
+  menu:         { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700', headerBg: 'bg-emerald-500' },
+  prenotazione: { bg: 'bg-amber-50',   border: 'border-amber-300',   text: 'text-amber-700',   headerBg: 'bg-amber-500' },
+  conferma:     { bg: 'bg-purple-50',  border: 'border-purple-300',  text: 'text-purple-700',  headerBg: 'bg-purple-500' },
+  matchmaking:  { bg: 'bg-orange-50',  border: 'border-orange-300',  text: 'text-orange-700',  headerBg: 'bg-orange-500' },
+  gestione:     { bg: 'bg-cyan-50',    border: 'border-cyan-300',    text: 'text-cyan-700',    headerBg: 'bg-cyan-500' },
+  profilo:      { bg: 'bg-pink-50',    border: 'border-pink-300',    text: 'text-pink-700',    headerBg: 'bg-pink-500' },
+  risultati:    { bg: 'bg-red-50',     border: 'border-red-300',     text: 'text-red-700',     headerBg: 'bg-red-500' },
+  feedback:     { bg: 'bg-yellow-50',  border: 'border-yellow-300',  text: 'text-yellow-700',  headerBg: 'bg-yellow-500' },
+  avversario:   { bg: 'bg-violet-50',  border: 'border-violet-300',  text: 'text-violet-700',  headerBg: 'bg-violet-500' },
+  errore:       { bg: 'bg-gray-100',   border: 'border-gray-300',    text: 'text-gray-700',    headerBg: 'bg-gray-500' },
+  custom:       { bg: 'bg-teal-50',    border: 'border-teal-300',    text: 'text-teal-700',    headerBg: 'bg-teal-500' },
 }
 
 function getCategoryColor(category: string) {
   return categoryColors[category] ?? categoryColors.errore
 }
 
-/* ═════════════════════════════════════════════════════════════════
- *  Custom node component
- * ═════════════════════════════════════════════════════════════════ */
+/* =================================================================
+ *  Highlight {variables} in message text
+ * ================================================================= */
 
-function StateNode({ data, selected }: NodeProps) {
+function HighlightedText({ text, maxLen }: { text: string; maxLen: number }) {
+  const truncated = text.length > maxLen ? text.slice(0, maxLen - 1) + '\u2026' : text
+  const parts = truncated.split(/(\{[a-z_]+\})/g)
+  return (
+    <span>
+      {parts.map((part, i) =>
+        /^\{[a-z_]+\}$/.test(part)
+          ? <code key={i} className="rounded bg-amber-100 text-amber-800 px-0.5 text-[10px] font-mono">{part}</code>
+          : <span key={i}>{part}</span>
+      )}
+    </span>
+  )
+}
+
+/* =================================================================
+ *  Custom node: Shopify Flow style card
+ * ================================================================= */
+
+function FlowCard({ data }: NodeProps) {
   const node = data as unknown as FlowNodeData
   const colors = getCategoryColor(node.category)
-  const messagePreview = node.message_text
-    ? node.message_text.length > 80
-      ? node.message_text.slice(0, 77) + '…'
-      : node.message_text
-    : '—'
 
+  // Trigger node
+  if (node.isTrigger) {
+    return (
+      <div
+        className="rounded-xl border-2 border-green-400 bg-green-50 shadow-md cursor-pointer hover:shadow-lg transition-shadow"
+        style={{ width: 380 }}
+      >
+        <Handle type="target" position={Position.Top} className="!bg-transparent !border-0 !w-0 !h-0" />
+        <div className="bg-green-500 rounded-t-[10px] px-4 py-2 flex items-center gap-2">
+          <Circle className="h-3 w-3 text-white fill-white" />
+          <span className="text-xs font-bold text-white tracking-wide uppercase">Punto di ingresso</span>
+        </div>
+        <div className="px-4 py-3">
+          <code className="text-sm font-mono font-bold text-green-800">{node.state}</code>
+          {node.message_text && (
+            <p className="text-xs text-green-700 mt-1.5 leading-snug line-clamp-2">
+              <HighlightedText text={node.message_text} maxLen={120} />
+            </p>
+          )}
+        </div>
+        <Handle type="source" position={Position.Bottom} className="!bg-green-500 !w-3 !h-3 !border-2 !border-white" />
+      </div>
+    )
+  }
+
+  // Goto reference node (back-edge placeholder)
+  if (node.isGotoRef) {
+    return (
+      <div
+        className="rounded-lg border-2 border-dashed border-gray-400 bg-gray-50 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+        style={{ width: 380 }}
+      >
+        <Handle type="target" position={Position.Top} className="!bg-gray-400 !w-2.5 !h-2.5 !border-2 !border-white" />
+        <div className="px-4 py-3 flex items-center gap-2">
+          <CornerDownRight className="h-4 w-4 text-gray-500 shrink-0" />
+          <div>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wide font-medium">Vai a</span>
+            <code className="ml-1.5 text-xs font-mono font-bold text-gray-700">{node.gotoTarget}</code>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Standard message card
   return (
     <div
-      className={`rounded-lg border-2 shadow-sm transition-all ${colors.bg} ${
-        selected ? 'border-emerald-500 ring-2 ring-emerald-300' : colors.border
-      }`}
-      style={{ minWidth: 240, maxWidth: 280 }}
+      className={`rounded-xl border shadow-md cursor-pointer hover:shadow-lg transition-shadow ${colors.bg} ${colors.border}`}
+      style={{ width: 380 }}
     >
-      <Handle type="target" position={Position.Top} className="!bg-emerald-500 !w-2 !h-2" />
+      <Handle type="target" position={Position.Top} className="!bg-gray-400 !w-2.5 !h-2.5 !border-2 !border-white" />
 
-      {/* Header */}
-      <div className="px-3 py-2 border-b border-black/10 flex items-center justify-between gap-2">
-        <code className={`text-xs font-bold font-mono ${colors.text}`}>{node.state}</code>
-        <div className="flex items-center gap-1">
+      {/* Header with category color bar */}
+      <div className={`${colors.headerBg} rounded-t-[10px] px-4 py-2 flex items-center justify-between gap-2`}>
+        <code className="text-xs font-bold font-mono text-white truncate">{node.state}</code>
+        <div className="flex items-center gap-1.5 shrink-0">
           {node.is_custom && (
-            <span className="inline-flex items-center gap-0.5 rounded bg-teal-200 px-1 py-0.5 text-[9px] font-bold text-teal-800">
+            <span className="inline-flex items-center gap-0.5 rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-bold text-white">
               <Zap className="h-2.5 w-2.5" /> custom
             </span>
           )}
-          {node.type === 'simple' ? (
-            <Cog className="h-3 w-3 text-gray-500" />
+          {node.type === 'complex' ? (
+            <span className="inline-flex items-center gap-0.5 rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              <Cpu className="h-2.5 w-2.5" /> complex
+            </span>
           ) : (
-            <Cpu className="h-3 w-3 text-amber-600" />
+            <span className="inline-flex items-center gap-0.5 rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              <Cog className="h-2.5 w-2.5" /> simple
+            </span>
           )}
+          <span className="rounded bg-white/30 px-1.5 py-0.5 text-[9px] font-medium text-white">
+            {node.category}
+          </span>
         </div>
       </div>
 
-      {/* Message preview */}
-      <div className="px-3 py-2">
-        <div className="flex items-start gap-1.5 text-[10px] text-gray-600 mb-1">
-          <MessageSquareText className="h-2.5 w-2.5 mt-0.5 shrink-0" />
-          <code className="font-mono bg-white/60 rounded px-1">{node.message_key}</code>
-        </div>
-        <p className="text-[11px] text-gray-700 leading-snug whitespace-pre-line">
-          {messagePreview}
-        </p>
-      </div>
-
-      {/* Buttons */}
-      {node.buttons.length > 0 && (
-        <div className="px-3 pb-2 space-y-1">
-          {node.buttons.map((btn, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between gap-1 rounded bg-white/70 border border-black/10 px-2 py-1 text-[10px]"
-            >
-              <span className="truncate font-medium">{btn.label}</span>
-              <span className="font-mono text-gray-500 truncate text-[9px]">
-                → {btn.target_state}
+      {/* Body */}
+      <div className="px-4 py-3 space-y-2">
+        {/* On-enter actions */}
+        {node.on_enter_actions.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {node.on_enter_actions.map((a, i) => (
+              <span key={i} className="inline-flex items-center gap-0.5 rounded bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[10px] font-medium">
+                <Zap className="h-2.5 w-2.5" /> {a}
               </span>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      <Handle type="source" position={Position.Bottom} className="!bg-emerald-500 !w-2 !h-2" />
+        {/* Message preview */}
+        {node.message_text ? (
+          <div>
+            <div className="flex items-center gap-1.5 mb-1">
+              <MessageSquareText className="h-3 w-3 text-gray-500 shrink-0" />
+              <code className="text-[10px] font-mono text-gray-500 bg-white/60 rounded px-1">{node.message_key}</code>
+            </div>
+            <p className="text-xs text-gray-700 leading-snug line-clamp-3">
+              <HighlightedText text={node.message_text} maxLen={180} />
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <MessageSquareText className="h-3 w-3 text-gray-400 shrink-0" />
+            <code className="text-[10px] font-mono text-gray-400">{node.message_key}</code>
+          </div>
+        )}
+
+        {/* Input rules summary */}
+        {node.input_rules.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-cyan-700 bg-cyan-50 border border-cyan-200 rounded px-2 py-1">
+            <Filter className="h-3 w-3 shrink-0" />
+            <span className="font-medium">Validazione: {node.input_rules.length} {node.input_rules.length === 1 ? 'regola' : 'regole'}</span>
+            <span className="text-cyan-500 ml-auto truncate">
+              {node.input_rules.map(r => r.type).join(', ')}
+            </span>
+          </div>
+        )}
+
+        {/* Transitions summary */}
+        {node.transitions.length > 0 && (
+          <div className="space-y-0.5">
+            {node.transitions.slice(0, 2).map((tr, i) => {
+              const conditions = Object.entries(tr.if ?? {})
+              return (
+                <div key={i} className="flex items-center gap-1.5 text-[10px] text-purple-700 bg-purple-50 border border-purple-200 rounded px-2 py-1">
+                  <GitBranch className="h-3 w-3 shrink-0" />
+                  {conditions.length > 0 ? (
+                    <span>
+                      Se {conditions.map(([k, v]) => `${k} = ${v}`).join(' AND ')} <span className="font-mono font-bold">{'\u2192'} {tr.then}</span>
+                    </span>
+                  ) : (
+                    <span>Altrimenti <span className="font-mono font-bold">{'\u2192'} {tr.then}</span></span>
+                  )}
+                </div>
+              )
+            })}
+            {node.transitions.length > 2 && (
+              <div className="text-[9px] text-purple-500 pl-5">+{node.transitions.length - 2} {node.transitions.length - 2 === 1 ? 'altra' : 'altre'} condizioni</div>
+            )}
+          </div>
+        )}
+
+        {/* Buttons as pills */}
+        {node.buttons.length > 0 && (
+          <div className="space-y-1 pt-1">
+            {node.buttons.map((btn, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-2 rounded-lg bg-white border border-gray-200 px-3 py-1.5 text-[11px] shadow-sm"
+              >
+                <span className="font-medium text-gray-800 truncate">{btn.label || '(vuoto)'}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {btn.side_effect && (
+                    <span className="rounded bg-amber-100 text-amber-700 px-1 py-0 text-[9px] font-mono">
+                      {btn.side_effect}
+                    </span>
+                  )}
+                  <span className="font-mono text-gray-500 text-[10px]">{'\u2192'} {btn.target_state}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Handle type="source" position={Position.Bottom} className={`!w-2.5 !h-2.5 !border-2 !border-white`} style={{ background: colors.headerBg.replace('bg-', '') }} />
     </div>
   )
 }
 
-const nodeTypes = { stateNode: StateNode }
+const nodeTypes = { flowCard: FlowCard }
 
-/* ═════════════════════════════════════════════════════════════════
- *  Auto-layout (dagre)
- * ═════════════════════════════════════════════════════════════════ */
+/* =================================================================
+ *  Dagre layout - vertical, centered
+ * ================================================================= */
 
 function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 90, marginx: 40, marginy: 40 })
+  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 80, marginx: 40, marginy: 40 })
 
-  nodes.forEach(n => g.setNode(n.id, { width: 260, height: 160 }))
+  nodes.forEach(n => g.setNode(n.id, { width: 400, height: 200 }))
   edges.forEach(e => g.setEdge(e.source, e.target))
 
   dagre.layout(g)
@@ -254,26 +378,21 @@ function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
     const pos = g.node(n.id)
     return {
       ...n,
-      position: { x: pos.x - 130, y: pos.y - 80 },
+      position: { x: pos.x - 200, y: pos.y - 100 },
     }
   })
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Live tester for input rules
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
-/**
- * Tester locale TypeScript-side. Replica la logica del PHP RuleEvaluator
- * per dare feedback live nell'editor (verde se la rule matcha, rosso se no).
- */
 function testRule(rule: InputRule, input: string): { ok: boolean; value?: string } {
   const clean = input.trim()
   if (!clean) return { ok: false }
 
   switch (rule.type) {
     case 'name': {
-      // /^[\p{L}\s']{2,60}$/u
       const ok = /^[\p{L}\s']{2,60}$/u.test(clean)
       return { ok, value: ok ? toTitleCase(clean) : undefined }
     }
@@ -332,9 +451,9 @@ function applyTransform(value: string, t?: string): string {
   }
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Sub-editor: una singola input_rule
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
 function RuleCard({
   rule, index, allTargets, meta, onChange, onRemove,
@@ -454,7 +573,7 @@ function RuleCard({
           onChange={e => onChange({ save_to: e.target.value || undefined })}
           className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
         >
-          <option value="">— non salvare —</option>
+          <option value="">-- non salvare --</option>
           <optgroup label="Profilo utente">
             <option value="profile.name">profile.name</option>
             <option value="profile.is_fit">profile.is_fit</option>
@@ -479,7 +598,7 @@ function RuleCard({
           onChange={e => onChange({ next_state: e.target.value || undefined })}
           className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
         >
-          <option value="">— resta qui —</option>
+          <option value="">-- resta qui --</option>
           {allTargets.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
@@ -492,7 +611,7 @@ function RuleCard({
           onChange={e => onChange({ error_key: e.target.value || undefined })}
           className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500 font-mono"
         >
-          <option value="">— default —</option>
+          <option value="">-- default --</option>
           {(meta?.messages ?? []).map(m => (
             <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
           ))}
@@ -507,7 +626,7 @@ function RuleCard({
           onChange={e => onChange({ side_effect: e.target.value || undefined })}
           className="w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
         >
-          <option value="">— nessuno —</option>
+          <option value="">-- nessuno --</option>
           {Object.entries(meta?.side_effects ?? {}).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
@@ -530,8 +649,8 @@ function RuleCard({
         {tester !== '' && (
           <p className={`text-[10px] mt-1 ${result.ok ? 'text-emerald-700' : 'text-red-600'}`}>
             {result.ok
-              ? <>✓ Match{result.value !== undefined && <> → <code className="bg-white/60 rounded px-1">{result.value}</code></>}</>
-              : <>✗ Non matcha</>}
+              ? <>Match{result.value !== undefined && <> {'\u2192'} <code className="bg-white/60 rounded px-1">{result.value}</code></>}</>
+              : <>Non matcha</>}
           </p>
         )}
       </div>
@@ -539,9 +658,9 @@ function RuleCard({
   )
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Sub-editor: una singola transition
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
 function TransitionCard({
   transition, index, allTargets, meta, onChange, onRemove,
@@ -641,9 +760,9 @@ function TransitionCard({
   )
 }
 
-/* ═════════════════════════════════════════════════════════════════
- *  MessageEditor: dropdown chiave + textarea editabile inline
- * ═════════════════════════════════════════════════════════════════ */
+/* =================================================================
+ *  MessageEditor: dropdown key + editable textarea
+ * ================================================================= */
 
 function MessageEditor({
   label, icon, currentKey, messages, messageOverrides, originalText,
@@ -662,18 +781,15 @@ function MessageEditor({
   onCreateNew: () => void
   allowNone: boolean
 }) {
-  // Testo corrente: prima da overrides (modifiche pending), altrimenti originale
   const text = currentKey
     ? (messageOverrides.get(currentKey) ?? originalText ?? '')
     : ''
   const isDirty = currentKey && messageOverrides.has(currentKey)
 
-  // Stati che condividono questa chiave (esclusi io stesso)
   const otherUsers = currentKey
     ? (sharedKeys.get(currentKey) ?? []).filter(s => s !== currentState)
     : []
 
-  // Estrai variabili {var} dal testo per anteprima
   const variables = useMemo(() => {
     if (!text) return []
     const matches = text.match(/\{[a-z_]+\}/g)
@@ -697,7 +813,7 @@ function MessageEditor({
           onChange={e => onKeyChange(e.target.value)}
           className="flex-1 rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono min-w-0"
         >
-          {allowNone && <option value="">— nessuno —</option>}
+          {allowNone && <option value="">-- nessuno --</option>}
           {messages.map(m => (
             <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
           ))}
@@ -739,7 +855,7 @@ function MessageEditor({
             <div className="mt-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 flex items-start gap-1">
               <AlertTriangle className="h-2.5 w-2.5 shrink-0 mt-0.5" />
               <span>
-                Questo messaggio è usato anche da: <strong className="font-mono">{otherUsers.join(', ')}</strong>. Modificarlo cambierà il testo per tutti.
+                Questo messaggio e' usato anche da: <strong className="font-mono">{otherUsers.join(', ')}</strong>. Modificarlo cambiera' il testo per tutti.
               </span>
             </div>
           )}
@@ -754,11 +870,11 @@ function MessageEditor({
   )
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Side panel: edit selected node
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
-type EditTab = 'general' | 'buttons' | 'rules' | 'transitions'
+type EditTab = 'general' | 'buttons' | 'rules' | 'transitions' | 'actions'
 
 function NodeEditPanel({
   node, allNodes, meta, messageOverrides, sharedKeys, onClose, onChange,
@@ -768,7 +884,7 @@ function NodeEditPanel({
   allNodes: FlowStateNode[]
   meta: MetaResponse | null
   messageOverrides: Map<string, string>
-  sharedKeys: Map<string, string[]>            // key → lista stati che lo usano
+  sharedKeys: Map<string, string[]>
   onClose: () => void
   onChange: (updated: FlowStateNode) => void
   onMessageEdit: (key: string, text: string) => void
@@ -802,7 +918,7 @@ function NodeEditPanel({
     onChange({ ...node, buttons: node.buttons.filter((_, idx) => idx !== i) })
   }
 
-  /* ── Rules helpers ── */
+  /* -- Rules helpers -- */
   const updateRule = (i: number, patch: Partial<InputRule>) => {
     onChange({
       ...node,
@@ -820,7 +936,7 @@ function NodeEditPanel({
     onChange({ ...node, input_rules: [...node.input_rules, base] })
   }
 
-  /* ── Transitions helpers ── */
+  /* -- Transitions helpers -- */
   const updateTransition = (i: number, patch: Partial<Transition>) => {
     onChange({
       ...node,
@@ -882,10 +998,13 @@ function NodeEditPanel({
         <TabButton active={tab === 'transitions'} onClick={() => setTab('transitions')}>
           <GitBranch className="h-3 w-3" /> Fork{tabBadge(node.transitions.length)}
         </TabButton>
+        <TabButton active={tab === 'actions'} onClick={() => setTab('actions')}>
+          <Zap className="h-3 w-3" /> Azioni{tabBadge(node.on_enter_actions.length)}
+        </TabButton>
       </div>
 
       <div className="p-4 space-y-5">
-        {/* ── TAB: GENERAL ────────────────────────────── */}
+        {/* -- TAB: GENERAL -- */}
         {tab === 'general' && (
           <>
             <div>
@@ -959,7 +1078,7 @@ function NodeEditPanel({
           </>
         )}
 
-        {/* ── TAB: BUTTONS ───────────────────────────── */}
+        {/* -- TAB: BUTTONS -- */}
         {tab === 'buttons' && (
           <>
             <div className="flex items-center justify-between mb-2">
@@ -1014,7 +1133,7 @@ function NodeEditPanel({
                       onChange={e => updateButton(i, { side_effect: e.target.value || undefined })}
                       className="mt-0.5 w-full rounded border bg-background px-2 py-1 text-xs outline-none focus:border-emerald-500"
                     >
-                      <option value="">— nessuno —</option>
+                      <option value="">-- nessuno --</option>
                       {Object.entries(meta?.side_effects ?? {}).map(([k, v]) => (
                         <option key={k} value={k}>{v}</option>
                       ))}
@@ -1024,14 +1143,14 @@ function NodeEditPanel({
               ))}
               {node.buttons.length === 0 && (
                 <p className="text-[10px] text-muted-foreground italic">
-                  Nessun pulsante. L'utente deve rispondere con testo libero — vai al tab Validazione.
+                  Nessun pulsante. L'utente deve rispondere con testo libero -- vai al tab Validazione.
                 </p>
               )}
             </div>
           </>
         )}
 
-        {/* ── TAB: RULES ─────────────────────────────── */}
+        {/* -- TAB: RULES -- */}
         {tab === 'rules' && (
           <>
             <p className="text-[10px] text-muted-foreground mb-2">
@@ -1073,11 +1192,11 @@ function NodeEditPanel({
           </>
         )}
 
-        {/* ── TAB: TRANSITIONS ───────────────────────── */}
+        {/* -- TAB: TRANSITIONS -- */}
         {tab === 'transitions' && (
           <>
             <p className="text-[10px] text-muted-foreground mb-2">
-              Fork condizionali sui dati della sessione, valutati DOPO bottoni e regole. Es. "se l'utente è tesserato FIT vai a X, altrimenti Y".
+              Fork condizionali sui dati della sessione, valutati DOPO bottoni e regole. Es. "se l'utente e' tesserato FIT vai a X, altrimenti Y".
             </p>
 
             <div className="space-y-3">
@@ -1104,6 +1223,91 @@ function NodeEditPanel({
             </div>
           </>
         )}
+
+        {/* -- TAB: ACTIONS -- */}
+        {tab === 'actions' && (
+          <>
+            <p className="text-[10px] text-muted-foreground mb-3">
+              Azioni eseguite automaticamente all'ingresso di questo stato, PRIMA di mostrare il messaggio. I risultati finiscono nella sessione e possono essere letti dai Fork.
+            </p>
+
+            {/* On-enter actions list */}
+            <div className="space-y-2">
+              {node.on_enter_actions.map((actionKey, i) => {
+                const actionMeta = meta?.actions?.[actionKey]
+                return (
+                  <div key={i} className="flex items-start gap-2 rounded border bg-muted/30 p-2.5">
+                    <div className="rounded bg-amber-100 p-1 mt-0.5">
+                      <Zap className="h-3 w-3 text-amber-700" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium">{actionMeta?.label ?? actionKey}</p>
+                      {actionMeta?.description && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{actionMeta.description}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => onChange({
+                        ...node,
+                        on_enter_actions: node.on_enter_actions.filter((_, idx) => idx !== i),
+                      })}
+                      className="p-1 text-red-400 hover:text-red-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {node.on_enter_actions.length === 0 && (
+              <p className="text-[10px] text-muted-foreground italic mb-2">
+                Nessuna azione all'ingresso. Lo stato mostra subito il messaggio.
+              </p>
+            )}
+
+            {/* Add pre-action */}
+            <div className="pt-2">
+              <p className="text-[10px] text-muted-foreground mb-1">Aggiungi un'azione:</p>
+              <div className="space-y-1">
+                {Object.entries(meta?.pre_actions ?? {}).map(([key, am]) => {
+                  const alreadyAdded = node.on_enter_actions.includes(key)
+                  return (
+                    <button
+                      key={key}
+                      disabled={alreadyAdded}
+                      onClick={() => onChange({
+                        ...node,
+                        on_enter_actions: [...node.on_enter_actions, key],
+                      })}
+                      className={`w-full flex items-center gap-2 rounded border px-2.5 py-2 text-left transition ${
+                        alreadyAdded
+                          ? 'opacity-40 cursor-not-allowed bg-muted/30'
+                          : 'bg-background hover:bg-muted cursor-pointer'
+                      }`}
+                    >
+                      <Zap className="h-3 w-3 text-amber-600 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium truncate">{am.label}</p>
+                        <p className="text-[9px] text-muted-foreground truncate">{am.description}</p>
+                      </div>
+                      {alreadyAdded && (
+                        <Check className="h-3 w-3 text-emerald-500 ml-auto shrink-0" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Info about post-actions */}
+            <div className="pt-3 border-t mt-3">
+              <p className="text-[10px] text-muted-foreground">
+                <strong>Le azioni post-transizione</strong> (crea prenotazione, salva profilo, ecc.) si configurano nei tab <strong>Bottoni</strong> e <strong>Validazione</strong> come "Azione" di ciascun bottone o regola.
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -1124,9 +1328,9 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   )
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Add new state dialog
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
 function AddStateDialog({
   open, onClose, onCreate, existingStates, meta,
@@ -1151,8 +1355,8 @@ function AddStateDialog({
     if (!trimmed) return 'Inserisci un nome.'
     if (!/^[A-Z][A-Z0-9_]*$/.test(trimmed)) return 'Solo lettere maiuscole, cifre e underscore. Inizia con una lettera.'
     if (trimmed.length > 30) return 'Massimo 30 caratteri.'
-    if (existingStates.includes(trimmed)) return 'Questo stato esiste già.'
-    if (meta?.built_in.includes(trimmed)) return 'Questo nome è riservato a uno stato built-in.'
+    if (existingStates.includes(trimmed)) return 'Questo stato esiste gia\'.'
+    if (meta?.built_in.includes(trimmed)) return 'Questo nome e\' riservato a uno stato built-in.'
     if (!messageKey) return 'Scegli un messaggio.'
     return null
   }
@@ -1213,7 +1417,7 @@ function AddStateDialog({
             onChange={e => setMessageKey(e.target.value)}
             className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
           >
-            <option value="">— scegli un messaggio —</option>
+            <option value="">-- scegli un messaggio --</option>
             {(meta?.messages ?? []).map(m => (
               <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
             ))}
@@ -1267,9 +1471,9 @@ function AddStateDialog({
   )
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Add new message dialog
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
 function AddMessageDialog({
   open, onClose, onCreate, existingKeys, categories, suggestedKey,
@@ -1288,7 +1492,6 @@ function AddMessageDialog({
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
-  // Reimposta il suggested quando si apre
   useEffect(() => {
     if (open) {
       setKey(suggestedKey)
@@ -1303,8 +1506,8 @@ function AddMessageDialog({
     if (!k) return 'Inserisci una chiave.'
     if (!/^[a-z][a-z0-9_]*$/.test(k)) return 'Solo minuscole, cifre e underscore. Inizia con una lettera.'
     if (k.length > 100) return 'Massimo 100 caratteri.'
-    if (existingKeys.includes(k)) return 'Questa chiave esiste già.'
-    if (!text.trim()) return 'Il testo del messaggio non può essere vuoto.'
+    if (existingKeys.includes(k)) return 'Questa chiave esiste gia\'.'
+    if (!text.trim()) return 'Il testo del messaggio non puo\' essere vuoto.'
     return null
   }
 
@@ -1358,7 +1561,7 @@ function AddMessageDialog({
             className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:border-emerald-500 font-mono"
           />
           <p className="text-[10px] text-muted-foreground mt-1">
-            Solo minuscole, cifre e _. La chiave non si può cambiare dopo la creazione.
+            Solo minuscole, cifre e _. La chiave non si puo' cambiare dopo la creazione.
           </p>
         </div>
 
@@ -1428,9 +1631,222 @@ function AddMessageDialog({
   )
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
+ *  Insert state dialog (between two nodes)
+ * ================================================================= */
+
+function InsertStateDialog({
+  open, onClose, onCreate, existingStates, meta, sourceState, targetState,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreate: (data: { state: string; message_key: string; description?: string; category?: string; sourceState: string; targetState: string }) => Promise<void>
+  existingStates: string[]
+  meta: MetaResponse | null
+  sourceState: string
+  targetState: string
+}) {
+  const [stateName, setStateName] = useState('')
+  const [messageKey, setMessageKey] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('custom')
+  const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setStateName('')
+      setMessageKey('')
+      setDescription('')
+      setCategory('custom')
+      setError(null)
+    }
+  }, [open])
+
+  if (!open) return null
+
+  const validate = (): string | null => {
+    const trimmed = stateName.trim().toUpperCase()
+    if (!trimmed) return 'Inserisci un nome.'
+    if (!/^[A-Z][A-Z0-9_]*$/.test(trimmed)) return 'Solo lettere maiuscole, cifre e underscore.'
+    if (trimmed.length > 30) return 'Massimo 30 caratteri.'
+    if (existingStates.includes(trimmed)) return 'Questo stato esiste gia\'.'
+    if (!messageKey) return 'Scegli un messaggio.'
+    return null
+  }
+
+  const submit = async () => {
+    const err = validate()
+    if (err) { setError(err); return }
+    setError(null)
+    setCreating(true)
+    try {
+      await onCreate({
+        state: stateName.trim().toUpperCase(),
+        message_key: messageKey,
+        description: description.trim() || undefined,
+        category,
+        sourceState,
+        targetState,
+      })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Errore sconosciuto')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-background rounded-lg shadow-2xl w-[460px] max-w-[90vw] p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold flex items-center gap-2">
+            <Plus className="h-4 w-4 text-teal-600" /> Inserisci stato tra
+          </h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs bg-muted/50 rounded p-2">
+          <code className="font-mono font-bold">{sourceState}</code>
+          <ArrowDown className="h-3 w-3 text-muted-foreground" />
+          <span className="text-teal-600 font-bold">NUOVO</span>
+          <ArrowDown className="h-3 w-3 text-muted-foreground" />
+          <code className="font-mono font-bold">{targetState}</code>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Nome stato</label>
+          <input
+            value={stateName}
+            onChange={e => setStateName(e.target.value.toUpperCase())}
+            placeholder="ES. STEP_INTERMEDIO"
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-sm outline-none focus:border-emerald-500 font-mono"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Messaggio</label>
+          <select
+            value={messageKey}
+            onChange={e => setMessageKey(e.target.value)}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500 font-mono"
+          >
+            <option value="">-- scegli un messaggio --</option>
+            {(meta?.messages ?? []).map(m => (
+              <option key={m.key} value={m.key}>[{m.category}] {m.key}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Categoria</label>
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+          >
+            {(meta?.categories ?? []).map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Descrizione</label>
+          <input
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="Opzionale..."
+            className="mt-1 w-full rounded border bg-background px-2 py-1.5 text-xs outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {error && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex gap-1.5">
+            <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose} disabled={creating}>Annulla</Button>
+          <Button onClick={submit} disabled={creating} className="bg-teal-600 hover:bg-teal-700">
+            {creating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+            Inserisci
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* =================================================================
+ *  Custom edge with insert "+" button
+ * ================================================================= */
+
+function InsertableEdge({
+  id, sourceX, sourceY, targetX, targetY, style, markerEnd, data,
+}: {
+  id: string
+  sourceX: number
+  sourceY: number
+  targetX: number
+  targetY: number
+  style?: React.CSSProperties
+  markerEnd?: string
+  data?: { kind: string; onInsert?: (edgeId: string) => void }
+}) {
+  const midX = (sourceX + targetX) / 2
+  const midY = (sourceY + targetY) / 2
+
+  // Simple straight or slightly curved path
+  const dx = targetX - sourceX
+  const dy = targetY - sourceY
+  const controlOffset = Math.abs(dx) > 20 ? Math.min(Math.abs(dx) * 0.3, 60) : 0
+
+  const path = controlOffset > 0
+    ? `M ${sourceX} ${sourceY} C ${sourceX} ${sourceY + dy * 0.3}, ${targetX} ${targetY - dy * 0.3}, ${targetX} ${targetY}`
+    : `M ${sourceX} ${sourceY} L ${targetX} ${targetY}`
+
+  return (
+    <>
+      <path
+        id={id}
+        d={path}
+        style={style}
+        fill="none"
+        markerEnd={markerEnd}
+      />
+      {data?.kind !== 'code' && data?.onInsert && (
+        <foreignObject
+          x={midX - 10}
+          y={midY - 10}
+          width={20}
+          height={20}
+          className="overflow-visible"
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              data.onInsert?.(id)
+            }}
+            className="w-5 h-5 rounded-full bg-white border-2 border-teal-400 text-teal-600 flex items-center justify-center hover:bg-teal-50 hover:border-teal-500 transition-colors shadow-sm"
+            title="Inserisci stato qui"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </foreignObject>
+      )}
+    </>
+  )
+}
+
+/* =================================================================
  *  Main editor (inside ReactFlowProvider)
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
 function FlowEditor() {
   const [graph, setGraph] = useState<GraphResponse | null>(null)
@@ -1439,9 +1855,10 @@ function FlowEditor() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [showCodeEdges, setShowCodeEdges] = useState(true)
+  const [showCodeEdges, setShowCodeEdges] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showNewMessageDialog, setShowNewMessageDialog] = useState(false)
+  const [showInsertDialog, setShowInsertDialog] = useState<{ source: string; target: string } | null>(null)
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
@@ -1451,7 +1868,7 @@ function FlowEditor() {
   const dirtyPositions = useRef<Map<string, { x: number; y: number }>>(new Map())
   const { fitView } = useReactFlow()
 
-  /* ── Shared keys: per ogni message_key, lista degli stati che la usano ── */
+  /* -- Shared keys: per ogni message_key, lista degli stati che la usano -- */
   const sharedKeys = useMemo<Map<string, string[]>>(() => {
     const map = new Map<string, string[]>()
     for (const n of graph?.nodes ?? []) {
@@ -1477,7 +1894,7 @@ function FlowEditor() {
     setShowNewMessageDialog(true)
   }, [])
 
-  /* ── Fetch graph + meta ───────────────────────────────────────── */
+  /* -- Fetch graph + meta -- */
 
   const fetchAll = useCallback(async () => {
     try {
@@ -1496,28 +1913,111 @@ function FlowEditor() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  /* ── Build nodes/edges from graph ─────────────────────────────── */
+  /* -- Handle insert edge click -- */
+  const handleInsertEdge = useCallback((edgeId: string) => {
+    // Parse source and target from the edge
+    const edge = edges.find(e => e.id === edgeId)
+    if (!edge) return
+    setShowInsertDialog({ source: edge.source, target: edge.target })
+  }, [edges])
+
+  /* -- Build nodes/edges from graph -- */
 
   useEffect(() => {
     if (!graph) return
 
-    const rfNodes: Node[] = graph.nodes.map(n => ({
-      id: n.id,
-      type: 'stateNode',
-      position: n.position ?? { x: 0, y: 0 },
-      data: n as unknown as Record<string, unknown>,
-    }))
-
-    // Auto-layout solo se almeno uno stato non ha posizione
-    const needsLayout = graph.nodes.some(n => !n.position)
-    const allEdgesForLayout: Edge[] = graph.buttonEdges.map(e => ({
-      id: e.id, source: e.source, target: e.target,
-    }))
-    const layoutedNodes = needsLayout ? autoLayout(rfNodes, allEdgesForLayout) : rfNodes
-
-    const rfEdges: Edge[] = []
+    // Determine incoming edges per node (to detect triggers)
+    const incomingEdges = new Set<string>()
     for (const e of graph.buttonEdges) {
-      // Color by kind: button=verde, rule=ciano, transition=violetto
+      if (e.source !== e.target) { // skip self-loops
+        incomingEdges.add(e.target)
+      }
+    }
+    for (const e of graph.codeEdges) {
+      if (e.source !== e.target) {
+        incomingEdges.add(e.target)
+      }
+    }
+
+    // Determine which targets point "back up" (to an already-visited node in topo order)
+    // We do a simple approach: collect all forward targets; anything pointing to a node
+    // that appears before it in topo is a back-edge, rendered as a goto ref
+    const stateOrder = new Map<string, number>()
+    graph.nodes.forEach((n, i) => stateOrder.set(n.state, i))
+
+    // Collect all edges, detect back-edges (goto refs)
+    const forwardButtonEdges: ButtonEdge[] = []
+    const gotoRefs: { source: string; targetState: string; edgeId: string; label: string }[] = []
+    const gotoRefNodeIds = new Set<string>()
+
+    for (const e of graph.buttonEdges) {
+      // Skip self-loops (re-prompt loops)
+      if (e.source === e.target) continue
+
+      const sourceOrder = stateOrder.get(e.source) ?? 999
+      const targetOrder = stateOrder.get(e.target) ?? 999
+
+      // If target comes before source in the natural order, it's a back-edge
+      if (targetOrder < sourceOrder) {
+        const refId = `goto_${e.source}_${e.target}_${e.id}`
+        gotoRefNodeIds.add(refId)
+        gotoRefs.push({ source: e.source, targetState: e.target, edgeId: refId, label: e.label })
+      } else {
+        forwardButtonEdges.push(e)
+      }
+    }
+
+    const rfNodes: Node[] = []
+
+    for (const n of graph.nodes) {
+      const isTrigger = !incomingEdges.has(n.state) || n.state === 'NEW'
+      rfNodes.push({
+        id: n.id,
+        type: 'flowCard',
+        position: { x: 0, y: 0 },
+        draggable: false,
+        selectable: true,
+        data: { ...n, isTrigger, isGotoRef: false } as unknown as Record<string, unknown>,
+      })
+    }
+
+    // Add goto reference nodes
+    for (const ref of gotoRefs) {
+      rfNodes.push({
+        id: ref.edgeId,
+        type: 'flowCard',
+        position: { x: 0, y: 0 },
+        draggable: false,
+        selectable: false,
+        data: {
+          state: ref.edgeId,
+          isGotoRef: true,
+          gotoTarget: ref.targetState,
+          isTrigger: false,
+          // Fill in dummy fields so TS is happy
+          id: ref.edgeId,
+          type: 'simple',
+          is_custom: false,
+          category: 'custom',
+          description: null,
+          message_key: '',
+          message_text: null,
+          fallback_key: null,
+          fallback_text: null,
+          buttons: [],
+          input_rules: [],
+          transitions: [],
+          on_enter_actions: [],
+          position: null,
+          sort_order: 0,
+        } as unknown as Record<string, unknown>,
+      })
+    }
+
+    // Build edges for layout and display
+    const rfEdges: Edge[] = []
+
+    for (const e of forwardButtonEdges) {
       const color = e.kind === 'rule'
         ? '#0891b2'
         : e.kind === 'transition'
@@ -1528,60 +2028,56 @@ function FlowEditor() {
         id: e.id,
         source: e.source,
         target: e.target,
-        label: e.label,
-        type: 'smoothstep',
-        animated: !!e.side_effect || e.kind === 'transition',
+        type: 'insertable',
         style: { stroke: color, strokeWidth: 2 },
-        labelStyle: { fontSize: 10, fontWeight: 600 },
-        labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
         markerEnd: { type: MarkerType.ArrowClosed, color },
-        data: { kind: e.kind, side_effect: e.side_effect },
+        data: { kind: e.kind, side_effect: e.side_effect, onInsert: handleInsertEdge },
       })
     }
+
+    // Edges from source to goto ref nodes
+    for (const ref of gotoRefs) {
+      rfEdges.push({
+        id: `edge_to_${ref.edgeId}`,
+        source: ref.source,
+        target: ref.edgeId,
+        type: 'insertable',
+        style: { stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '6 3' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
+        data: { kind: 'goto', onInsert: undefined },
+      })
+    }
+
     if (showCodeEdges) {
       for (const e of graph.codeEdges) {
+        if (e.source === e.target) continue
         rfEdges.push({
           id: e.id,
           source: e.source,
           target: e.target,
-          type: 'smoothstep',
+          type: 'insertable',
           style: { stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' },
           markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
-          data: { kind: 'code' },
+          data: { kind: 'code', onInsert: undefined },
         })
       }
     }
 
+    // Auto-layout with dagre
+    const layoutedNodes = autoLayout(rfNodes, rfEdges)
+
     setNodes(layoutedNodes)
     setEdges(rfEdges)
 
-    // Se servito autolayout, segna tutti i nodi come "posizione da salvare"
-    if (needsLayout) {
-      layoutedNodes.forEach(n => {
-        dirtyPositions.current.set(n.id, n.position)
-      })
-    }
+    // Save positions for all nodes
+    layoutedNodes.forEach(n => {
+      dirtyPositions.current.set(n.id, n.position)
+    })
 
-    setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 100)
-  }, [graph, showCodeEdges, fitView])
+    setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 100)
+  }, [graph, showCodeEdges, fitView, handleInsertEdge])
 
-  /* ── Node/edge change handlers ────────────────────────────────── */
-
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes(nds => applyNodeChanges(changes, nds))
-    // Track position changes per drag
-    for (const c of changes) {
-      if (c.type === 'position' && c.position && !c.dragging) {
-        dirtyPositions.current.set(c.id, c.position)
-      }
-    }
-  }, [])
-
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges(eds => applyEdgeChanges(changes, eds))
-  }, [])
-
-  /* ── Selezione nodo ───────────────────────────────────────────── */
+  /* -- Selection -- */
 
   const selectedNode = useMemo<FlowStateNode | null>(() => {
     if (!selectedId || !graph) return null
@@ -1598,16 +2094,19 @@ function FlowEditor() {
     })
     setDirtyNodes(prev => new Set(prev).add(updated.id))
 
-    // Aggiorna live anche il nodo sul canvas
-    setNodes(nds => nds.map(n => n.id === updated.id ? { ...n, data: updated as unknown as Record<string, unknown> } : n))
+    // Update live on canvas
+    setNodes(nds => nds.map(n => {
+      if (n.id !== updated.id) return n
+      const prevData = n.data as unknown as FlowNodeData
+      return { ...n, data: { ...updated, isTrigger: prevData.isTrigger, isGotoRef: false } as unknown as Record<string, unknown> }
+    }))
   }, [])
 
-  /* ── Save all ─────────────────────────────────────────────────── */
+  /* -- Save all -- */
 
   const saveAll = useCallback(async () => {
     setSaving(true)
     try {
-      // 1) Save dirty nodes
       const updates: Promise<unknown>[] = []
       for (const id of dirtyNodes) {
         const data = editedData.get(id)
@@ -1623,25 +2122,28 @@ function FlowEditor() {
               buttons: data.buttons,
               input_rules: data.input_rules.length > 0 ? data.input_rules : null,
               transitions: data.transitions.length > 0 ? data.transitions : null,
+              on_enter_actions: data.on_enter_actions.length > 0 ? data.on_enter_actions : null,
             }),
           }),
         )
       }
 
-      // 2) Save dirty positions in bulk
-      if (dirtyPositions.current.size > 0) {
-        const positions = Array.from(dirtyPositions.current.entries()).map(([state, position]) => ({
-          state, position,
-        }))
+      // Save positions in bulk (only real states, not goto refs)
+      const realPositions = Array.from(dirtyPositions.current.entries())
+        .filter(([id]) => !id.startsWith('goto_'))
+        .filter(([id]) => graph?.nodes.some(n => n.id === id))
+      if (realPositions.length > 0) {
         updates.push(
           apiFetch('/admin/bot-flow-states/positions', {
             method: 'PUT',
-            body: JSON.stringify({ positions }),
+            body: JSON.stringify({
+              positions: realPositions.map(([state, position]) => ({ state, position })),
+            }),
           }),
         )
       }
 
-      // 3) Save dirty messages
+      // Save dirty messages
       for (const [key, text] of editedMessages.entries()) {
         updates.push(
           apiFetch(`/admin/bot-messages/${encodeURIComponent(key)}`, {
@@ -1660,7 +2162,6 @@ function FlowEditor() {
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 2500)
 
-      // Refresh per riallineare cache backend
       await fetchAll()
     } catch (e) {
       console.error('Save failed', e)
@@ -1668,9 +2169,9 @@ function FlowEditor() {
     } finally {
       setSaving(false)
     }
-  }, [dirtyNodes, editedData, editedMessages, fetchAll])
+  }, [dirtyNodes, editedData, editedMessages, fetchAll, graph])
 
-  /* ── Create new state ─────────────────────────────────────────── */
+  /* -- Create new state -- */
 
   const handleCreate = useCallback(async (data: { state: string; message_key: string; description?: string; category?: string }) => {
     const created = await apiFetch<FlowStateNode>('/admin/bot-flow-states', {
@@ -1685,7 +2186,57 @@ function FlowEditor() {
     setSelectedId(created.state)
   }, [fetchAll])
 
-  /* ── Delete selected ──────────────────────────────────────────── */
+  /* -- Insert state between two nodes -- */
+
+  const handleInsertState = useCallback(async (data: {
+    state: string; message_key: string; description?: string; category?: string
+    sourceState: string; targetState: string
+  }) => {
+    // 1. Create the new state with a button pointing to targetState
+    await apiFetch<FlowStateNode>('/admin/bot-flow-states', {
+      method: 'POST',
+      body: JSON.stringify({
+        state: data.state,
+        message_key: data.message_key,
+        description: data.description,
+        category: data.category,
+        position: { x: 200, y: 200 },
+        buttons: [{ label: 'Continua', target_state: data.targetState }],
+      }),
+    })
+
+    // 2. Rewire the source: update the button/rule/transition that pointed to targetState
+    const sourceNode = editedData.get(data.sourceState) ?? graph?.nodes.find(n => n.state === data.sourceState)
+    if (sourceNode) {
+      const updatedButtons = sourceNode.buttons.map(b =>
+        b.target_state === data.targetState ? { ...b, target_state: data.state } : b
+      )
+      const updatedRules = sourceNode.input_rules.map(r =>
+        r.next_state === data.targetState ? { ...r, next_state: data.state } : r
+      )
+      const updatedTransitions = sourceNode.transitions.map(t =>
+        t.then === data.targetState ? { ...t, then: data.state } : t
+      )
+
+      await apiFetch(`/admin/bot-flow-states/${data.sourceState}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          message_key: sourceNode.message_key,
+          fallback_key: sourceNode.fallback_key,
+          description: sourceNode.description,
+          buttons: updatedButtons,
+          input_rules: updatedRules.length > 0 ? updatedRules : null,
+          transitions: updatedTransitions.length > 0 ? updatedTransitions : null,
+          on_enter_actions: sourceNode.on_enter_actions.length > 0 ? sourceNode.on_enter_actions : null,
+        }),
+      })
+    }
+
+    await fetchAll()
+    setSelectedId(data.state)
+  }, [fetchAll, editedData, graph])
+
+  /* -- Delete selected -- */
 
   const handleDelete = useCallback(async () => {
     if (!selectedNode) return
@@ -1710,28 +2261,7 @@ function FlowEditor() {
     }
   }, [selectedNode, fetchAll])
 
-  /* ── Connection (drag handle to handle = create new button) ─── */
-
-  const onConnect = useCallback((conn: Connection) => {
-    if (!conn.source || !conn.target || !graph) return
-    const sourceNode = (editedData.get(conn.source) ?? graph.nodes.find(n => n.id === conn.source))
-    if (!sourceNode) return
-    if (sourceNode.buttons.length >= 3) {
-      alert('Massimo 3 bottoni per stato.')
-      return
-    }
-    const newButton: FlowButton = {
-      label: 'Nuovo bottone',
-      target_state: conn.target,
-    }
-    handleNodeChange({
-      ...sourceNode,
-      buttons: [...sourceNode.buttons, newButton],
-    })
-    setSelectedId(conn.source)
-  }, [graph, editedData, handleNodeChange])
-
-  /* ── Search filter ────────────────────────────────────────────── */
+  /* -- Search filter -- */
 
   const filteredNodes = useMemo(() => {
     if (!search.trim()) return nodes
@@ -1748,11 +2278,16 @@ function FlowEditor() {
     )
     return nodes.map(n => ({
       ...n,
-      style: { ...n.style, opacity: matchingIds.has(n.id) ? 1 : 0.25 },
+      style: { ...n.style, opacity: matchingIds.has(n.id) ? 1 : 0.15 },
     }))
   }, [nodes, search, graph])
 
-  /* ── Render ───────────────────────────────────────────────────── */
+  /* -- Edge types (with insert button) -- */
+  const edgeTypes = useMemo(() => ({
+    insertable: InsertableEdge,
+  }), [])
+
+  /* -- Render -- */
 
   if (loading) {
     return (
@@ -1762,7 +2297,7 @@ function FlowEditor() {
     )
   }
 
-  const dirtyCount = dirtyNodes.size + dirtyPositions.current.size + editedMessages.size
+  const dirtyCount = dirtyNodes.size + editedMessages.size
   const hasChanges = dirtyCount > 0
 
   return (
@@ -1770,32 +2305,33 @@ function FlowEditor() {
       <ReactFlow
         nodes={filteredNodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeClick={(_, n) => setSelectedId(n.id)}
+        onNodeClick={(_, n) => {
+          const nd = n.data as unknown as FlowNodeData
+          // Don't select goto ref nodes, but navigate to their target instead
+          if (nd.isGotoRef && nd.gotoTarget) {
+            const target = graph?.nodes.find(gn => gn.state === nd.gotoTarget)
+            if (target) setSelectedId(target.id)
+            return
+          }
+          setSelectedId(n.id)
+        }}
         onPaneClick={() => setSelectedId(null)}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        nodesDraggable={false}
+        nodesConnectable={false}
         fitView
-        minZoom={0.2}
-        maxZoom={2}
+        minZoom={0.15}
+        maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={20} size={1} color="#e5e7eb" />
-        <Controls position="bottom-left" />
-        <MiniMap
-          position="bottom-right"
-          nodeColor={(n) => {
-            const data = n.data as unknown as FlowNodeData
-            return getCategoryColor(data?.category ?? 'errore').border.replace('border-', '#').replace('-400', '')
-          }}
-          maskColor="rgba(0,0,0,0.04)"
-        />
+        <Background gap={24} size={1} color="#e5e7eb" />
+        <Controls position="bottom-left" showInteractive={false} />
 
-        {/* ── Toolbar top ──────────────────────────────── */}
-        <Panel position="top-left" className="!m-3">
-          <div className="bg-background border rounded-lg shadow-sm p-2 flex items-center gap-2">
-            <h1 className="text-sm font-bold pl-1">Flusso Bot</h1>
+        {/* -- Toolbar top -- */}
+        <div className="absolute top-3 left-3 z-10">
+          <div className="bg-background border rounded-lg shadow-sm p-2.5 flex items-center gap-2.5">
+            <h1 className="text-sm font-bold pl-1 pr-1">Flusso Bot</h1>
             <div className="h-5 w-px bg-border" />
             <Button
               size="sm"
@@ -1820,11 +2356,11 @@ function FlowEditor() {
               {savedFlash ? 'Salvato!' : hasChanges ? `Salva (${dirtyCount})` : 'Salva'}
             </Button>
           </div>
-        </Panel>
+        </div>
 
-        {/* ── Toolbar top right: search + toggle code edges ── */}
-        <Panel position="top-right" className="!m-3">
-          <div className="bg-background border rounded-lg shadow-sm p-2 flex items-center gap-2">
+        {/* -- Toolbar top right: search + toggle -- */}
+        <div className="absolute top-3 right-3 z-10">
+          <div className="bg-background border rounded-lg shadow-sm p-2.5 flex items-center gap-2.5">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -1832,53 +2368,53 @@ function FlowEditor() {
                 placeholder="Cerca stati..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-7 pr-2 py-1 text-xs rounded border bg-background outline-none focus:border-emerald-500 w-40"
+                className="pl-7 pr-2 py-1 text-xs rounded border bg-background outline-none focus:border-emerald-500 w-44"
               />
             </div>
-            <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={showCodeEdges}
                 onChange={e => setShowCodeEdges(e.target.checked)}
                 className="cursor-pointer"
               />
-              <span>Transizioni codice</span>
+              <span>Mostra codice</span>
             </label>
           </div>
-        </Panel>
+        </div>
 
-        {/* ── Legenda ─────────────────────────────────── */}
-        <Panel position="bottom-center" className="!m-3">
+        {/* -- Legend bottom -- */}
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10">
           <div className="bg-background border rounded-lg shadow-sm px-3 py-1.5 flex items-center gap-3 text-[10px] flex-wrap">
             <div className="flex items-center gap-1">
-              <div className="w-4 h-px bg-emerald-500" />
+              <Circle className="h-2.5 w-2.5 text-green-500 fill-green-500" />
+              <span>Trigger</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-0.5 bg-emerald-500 rounded" />
               <span>Bottone</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-px bg-amber-500" />
+              <div className="w-4 h-0.5 bg-amber-500 rounded" />
               <span>Side-effect</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-px bg-cyan-600" />
+              <div className="w-4 h-0.5 bg-cyan-600 rounded" />
               <span>Validazione</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-px bg-purple-500" />
-              <span>Fork condizionale</span>
+              <div className="w-4 h-0.5 bg-purple-500 rounded" />
+              <span>Fork</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-px border-t border-dashed border-gray-400" />
-              <span>Codice</span>
+              <div className="w-4 h-px border-t border-dashed border-gray-400" style={{ width: 16 }} />
+              <span>Codice / Goto</span>
             </div>
-            <div className="h-3 w-px bg-border" />
-            <span className="flex items-center gap-1"><Cog className="h-2.5 w-2.5" /> Simple</span>
-            <span className="flex items-center gap-1"><Cpu className="h-2.5 w-2.5 text-amber-600" /> Complex</span>
-            <span className="flex items-center gap-1"><Zap className="h-2.5 w-2.5 text-teal-600" /> Custom</span>
           </div>
-        </Panel>
+        </div>
       </ReactFlow>
 
-      {/* ── Side panel ─────────────────────────────────── */}
+      {/* -- Side panel -- */}
       {selectedNode && (
         <NodeEditPanel
           node={selectedNode}
@@ -1895,7 +2431,7 @@ function FlowEditor() {
         />
       )}
 
-      {/* ── Add state dialog ───────────────────────────── */}
+      {/* -- Add state dialog -- */}
       <AddStateDialog
         open={showAddDialog}
         onClose={() => setShowAddDialog(false)}
@@ -1904,7 +2440,7 @@ function FlowEditor() {
         meta={meta}
       />
 
-      {/* ── Add message dialog ─────────────────────────── */}
+      {/* -- Add message dialog -- */}
       <AddMessageDialog
         open={showNewMessageDialog}
         onClose={() => setShowNewMessageDialog(false)}
@@ -1919,13 +2455,24 @@ function FlowEditor() {
           await fetchAll()
         }}
       />
+
+      {/* -- Insert state dialog -- */}
+      <InsertStateDialog
+        open={showInsertDialog !== null}
+        onClose={() => setShowInsertDialog(null)}
+        onCreate={handleInsertState}
+        existingStates={graph?.nodes.map(n => n.state) ?? []}
+        meta={meta}
+        sourceState={showInsertDialog?.source ?? ''}
+        targetState={showInsertDialog?.target ?? ''}
+      />
     </div>
   )
 }
 
-/* ═════════════════════════════════════════════════════════════════
+/* =================================================================
  *  Outer wrapper with provider
- * ═════════════════════════════════════════════════════════════════ */
+ * ================================================================= */
 
 export function Flusso() {
   return (

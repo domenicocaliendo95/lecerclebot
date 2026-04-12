@@ -37,7 +37,12 @@
       "Bash(find .:*)",
       "Bash(/Users/domenicocaliendo/.nvm/versions/node/v24.11.1/bin/node --version)",
       "Bash(/Users/domenicocaliendo/.nvm/versions/node/v24.11.1/bin/npm --version)",
-      "Bash(export PATH=\"/Users/domenicocaliendo/.nvm/versions/node/v24.11.1/bin:$PATH\")"
+      "Bash(export PATH=\"/Users/domenicocaliendo/.nvm/versions/node/v24.11.1/bin:$PATH\")",
+      "Bash(/usr/local/bin/npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(ls ~/.nvm/versions/node/*/bin/node)",
+      "Bash(export PATH=\"/Users/domenicocaliendo/.nvm/versions/node/v22.22.2/bin:$PATH\")",
+      "Bash(./node_modules/.bin/vite build:*)"
     ]
   }
 }

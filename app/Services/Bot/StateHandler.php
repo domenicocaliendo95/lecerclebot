@@ -32,6 +32,7 @@ class StateHandler
         private readonly UserSearchService   $userSearch,
         private readonly RuleEvaluator       $ruleEvaluator,
         private readonly TransitionEvaluator $transitionEvaluator,
+        private readonly ActionExecutor      $actionExecutor,
     ) {}
 
     /**
@@ -161,6 +162,11 @@ class StateHandler
 
     private function handleOnboardFit(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ONBOARD_FIT->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
 
         // Controllo negativo PRIMA per evitare falsi positivi su "non sono tesserato"
@@ -237,6 +243,11 @@ class StateHandler
 
     private function handleOnboardLivello(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ONBOARD_LIVELLO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $level = $this->parseLivello($input);
 
         // Fallback AI se il parser deterministico fallisce
@@ -295,6 +306,11 @@ class StateHandler
 
     private function handleOnboardSlotPref(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ONBOARD_SLOT_PREF->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $slot = $this->parseFasciaOraria($input);
 
         // Fallback AI
@@ -328,6 +344,11 @@ class StateHandler
 
     private function handleOnboardCompleto(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ONBOARD_COMPLETO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         // L'utente ha appena completato la registrazione e sceglie un'azione.
         // Reindirizziamo al menu.
         return $this->handleMenuChoice($session, $input);
@@ -700,9 +721,34 @@ class StateHandler
             );
         }
 
-        $buttons      = $flowState->buttons ?? [];
-        $messageKey   = $flowState->message_key;
-        $fallbackKey  = $flowState->fallback_key ?: $messageKey;
+        // ── 0) Esegui on_enter_actions (pre-azioni) ─────────────
+        $onEnter = $flowState->on_enter_actions ?? [];
+        if (!empty($onEnter)) {
+            // Salva l'input nella sessione per le pre-azioni che ne hanno bisogno
+            $session->mergeData(['last_input' => $input]);
+            $this->actionExecutor->executeAll($onEnter, $session, $session->phone, $user);
+            $session->refresh(); // rileggi i dati aggiornati dalle azioni
+        }
+
+        // ── Se ci sono transitions → valuta SUBITO (le pre-azioni hanno scritto i dati)
+        $transitions = $flowState->transitions ?? [];
+        if (!empty($transitions)) {
+            $target = $this->transitionEvaluator->evaluate($transitions, $session, $input);
+            if ($target !== null) {
+                $vars = array_merge(['value' => $input], $session->profile());
+                return BotResponse::make(
+                    $this->resolveMessageForTarget($target, $session, $vars),
+                    $this->resolveTargetState($target),
+                    $this->getButtonsForCustomTarget($target),
+                );
+            }
+        }
+
+        // ── Bottoni: dinamici (da pre-azioni) hanno la priorità sui statici (DB) ──
+        $dynamicBtns = $session->getData('_dynamic_buttons');
+        $buttons     = (!empty($dynamicBtns) && is_array($dynamicBtns)) ? $dynamicBtns : ($flowState->buttons ?? []);
+        $messageKey  = $flowState->message_key;
+        $fallbackKey = $flowState->fallback_key ?: $messageKey;
         $buttonLabels = array_column($buttons, 'label');
 
         // ── 1) Match diretto: la label del bottone è contenuta nell'input (case-insensitive)
@@ -722,9 +768,17 @@ class StateHandler
             $sideEffect  = $matched['side_effect'] ?? null;
             $value       = $matched['value'] ?? null;
 
-            // Salva il valore del bottone in sessione (utile per stati custom multi-step)
+            // Salva il valore del bottone in sessione
             if ($value !== null) {
-                $session->mergeData(["custom_{$stateValue}_value" => $value]);
+                $session->mergeData([
+                    "custom_{$stateValue}_value" => $value,
+                    'last_button_value'          => $value,
+                ]);
+            }
+
+            // Pulisci i bottoni dinamici dopo il match
+            if (!empty($dynamicBtns)) {
+                $session->mergeData(['_dynamic_buttons' => null]);
             }
 
             $response = BotResponse::make(
@@ -869,6 +923,15 @@ class StateHandler
             return null;
         }
 
+        // Esegui on_enter_actions (pre-azioni) se presenti
+        $onEnter = $flowState->on_enter_actions ?? [];
+        if (!empty($onEnter)) {
+            $user = User::where('phone', $session->phone)->first();
+            $session->mergeData(['last_input' => $input]);
+            $this->actionExecutor->executeAll($onEnter, $session, $session->phone, $user);
+            $session->refresh();
+        }
+
         $rules = $flowState->input_rules ?? [];
         if (empty($rules)) {
             return null;
@@ -975,6 +1038,11 @@ class StateHandler
 
     private function handleScegliQuando(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::SCEGLI_QUANDO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         // Parser locale deterministico + fallback AI
         $parsed = $this->textGenerator->parseDateTime($input);
 
@@ -1038,6 +1106,11 @@ class StateHandler
 
     private function handleScegliDurata(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::SCEGLI_DURATA->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
         $available  = PricingRule::availableDurations();
 
@@ -1076,6 +1149,11 @@ class StateHandler
 
     private function handleVerificaSlot(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::VERIFICA_SLOT->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         // Questo stato viene raggiunto dall'orchestrator dopo il check calendar.
         // I dati di disponibilità sono in session->data['calendar_result'].
         $calendarResult = $session->getData('calendar_result');
@@ -1137,6 +1215,11 @@ class StateHandler
 
     private function handleProponiSlot(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::PROPONI_SLOT->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
 
         // "Sì, prenota" → conferma
@@ -1215,6 +1298,11 @@ class StateHandler
 
     private function handleConferma(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::CONFERMA->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized  = mb_strtolower(trim($input));
         $bookingType = $session->getData('booking_type') ?? 'con_avversario';
 
@@ -1284,6 +1372,11 @@ class StateHandler
 
     private function handlePagamento(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::PAGAMENTO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         // In un flusso reale, qui verificheresti il callback di pagamento.
         // Per ora gestiamo la conferma manuale.
         return BotResponse::make(
@@ -1296,6 +1389,11 @@ class StateHandler
 
     private function handleConfermato(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::CONFERMATO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         // Qualunque messaggio dopo la conferma riporta al menu
         return BotResponse::make(
             $this->textGenerator->rephrase('menu_ritorno', $session->persona()),
@@ -1364,6 +1462,11 @@ class StateHandler
 
     private function handleModificaProfilo(BotSession $session, string $input, ?User $user): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::MODIFICA_PROFILO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
         $persona    = $session->persona();
 
@@ -1419,6 +1522,11 @@ class StateHandler
 
     private function handleModificaRisposta(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::MODIFICA_RISPOSTA->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $updateField = $session->getData('update_field');
         $persona     = $session->persona();
         $profileUpdate = [];
@@ -1607,6 +1715,11 @@ class StateHandler
      */
     private function handleAzionePrenotazione(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::AZIONE_PRENOTAZIONE->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
 
         if (str_contains($normalized, 'modifica') || str_contains($normalized, 'sposta') || str_contains($normalized, 'cambia')) {
@@ -1642,6 +1755,11 @@ class StateHandler
 
     private function handleAttesaMatch(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::ATTESA_MATCH->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
 
         // L'utente può annullare l'attesa
@@ -1662,6 +1780,11 @@ class StateHandler
 
     private function handleRispostaMatch(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::RISPOSTA_MATCH->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized      = mb_strtolower(trim($input));
         $invitedSlot     = $session->getData('invited_slot') ?? '';
         $challengerName  = $session->getData('invited_by_name') ?? 'Un giocatore';
@@ -1707,6 +1830,11 @@ class StateHandler
 
     private function handleInserisciRisultato(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::INSERISCI_RISULTATO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
         $slot       = $session->getData('result_slot') ?? 'la partita';
 
@@ -1757,6 +1885,11 @@ class StateHandler
 
     private function handleFeedback(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::FEEDBACK->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         // Step 1: raccolta rating (1-5)
         $rating = $this->parseRating($input);
 
@@ -1778,6 +1911,11 @@ class StateHandler
 
     private function handleFeedbackCommento(BotSession $session, string $input): BotResponse
     {
+        $dbResponse = $this->tryDbRules($session, $input, BotState::FEEDBACK_COMMENTO->value);
+        if ($dbResponse !== null) {
+            return $dbResponse;
+        }
+
         $normalized = mb_strtolower(trim($input));
 
         // "no", "skip", "niente" → salva senza commento

@@ -79,7 +79,7 @@ frontend/src/
 `key` PK, `text` (con `{vars}`), `category` (onboarding/menu/prenotazione/conferma/gestione/profilo/matchmaking/risultati/feedback/promemoria/errore), `description`, timestamps. Cache 1h. Fallback hardcoded in `TextGenerator::FALLBACKS`. Editabile in `/panel/messaggi`.
 
 ### `bot_flow_states`
-`state` PK, `type` (`simple`=editabile / `complex`=logica custom), `message_key` FK, `fallback_key` FK NULL, `buttons` JSON `[{label,target_state,value?,side_effect?}]`, `input_rules` JSON (validazione input testo libero), `transitions` JSON (fork condizionali), `category`, `description`, `sort_order`, `position` JSON `{x,y}` (per flow editor visuale), `is_custom` BOOL. Cache 1h. Editabile in `/panel/flusso` con flow editor visuale (React Flow). `simple`: input non matchato → classificazione AI Gemini. `complex`: logica nel codice ma label/messaggi editabili. `is_custom=true`: creato dal pannello, sempre `simple`, gestito da `StateHandler::handleGenericSimple()`, eliminabile se nessuno lo referenzia.
+`state` PK, `type` (`simple`=editabile / `complex`=logica custom), `message_key` FK, `fallback_key` FK NULL, `buttons` JSON `[{label,target_state,value?,side_effect?}]`, `input_rules` JSON (validazione input testo libero), `transitions` JSON (fork condizionali), `on_enter_actions` JSON (pre-azioni all'ingresso), `category`, `description`, `sort_order`, `position` JSON `{x,y}` (per flow editor visuale), `is_custom` BOOL. Cache 1h. Editabile in `/panel/flusso` con flow editor visuale (React Flow). `simple`: input non matchato → classificazione AI Gemini. `complex`: logica nel codice ma label/messaggi editabili. `is_custom=true`: creato dal pannello, sempre `simple`, gestito da `StateHandler::handleGenericSimple()`, eliminabile se nessuno lo referenzia.
 
 **`input_rules`** array ordinato. Ogni rule:
 - `type`: `name` | `integer_range` | `mapping` | `regex` | `free_text`
@@ -138,8 +138,21 @@ Quando `BotState::tryFrom($state)` restituisce `null` (= stato non in enum), `St
 - Target custom presente in `bot_flow_states` → ok
 - Altrimenti → resta sullo stato corrente (log warning)
 
-**Side-effect whitelist** (mappata in `StateHandler::availableSideEffects()`, esposta a `/api/admin/bot-flow-states/meta`):
-`calendarCheck`, `paymentRequired`, `bookingToCreate`, `bookingToCancel`, `matchmakingSearch`, `matchAccepted`, `matchRefused`, `matchResultToSave`, `feedbackToSave`, `opponentLinkConfirmed`, `opponentLinkRejected`.
+**Azioni atomiche** (`ActionExecutor`, esposto via `/api/admin/bot-flow-states/meta`):
+
+Pre-azioni (`on_enter_actions`, eseguite all'ingresso nello stato, PRIMA del messaggio):
+- `parse_date` — parsa NL dell'ultimo input → data.requested_date/time/friendly
+- `check_calendar` — verifica slot su Google Calendar → data.calendar_available, data.calendar_alternatives
+- `load_bookings` — carica prossime 3 prenotazioni utente → data.bookings_list
+
+Post-azioni (triggerate dal click bottone o match regola, DOPO la transizione):
+- `create_booking` — crea Booking DB + evento Calendar (legge da session data)
+- `cancel_booking` — cancella prenotazione + evento Calendar
+- `save_profile` — salva profilo utente da session data a DB users
+- `search_matchmaking`, `send_match_invite`, `confirm_match`, `refuse_match`
+- `save_match_result`, `save_feedback`, `confirm_opponent`, `reject_opponent`
+
+Backward compat: i vecchi nomi `side_effect` (`bookingToCreate`, `calendarCheck`, ecc.) sono alias che mappano alle nuove azioni.
 
 ## Stati `BotState`
 
@@ -450,19 +463,24 @@ Rimosso `FilamentInfoWidget`, mantenuto `AccountWidget`.
 ## React SPA `/panel`
 Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide, **@xyflow/react** + **@dagrejs/dagre** (per il flow editor visuale). Build → `public/panel/` + `.htaccess` SPA. URL `https://bot.lecercleclub.it/panel/`.
 
-**`/panel/flusso`** — Flow editor visuale (React Flow):
-- Custom node component con state name, badge custom/simple/complex, message preview, lista bottoni
-- Edge tipizzati per colore: verde=bottone, ambra=bottone+side_effect, ciano=validazione (input_rule), viola=fork condizionale (transition), grigio tratteggiato=transizione codice (read-only)
-- **Side panel a 4 tab**:
-  - **Generale**: descrizione, categoria, messaggio principale e fallback con **textarea inline editabili** + bottone "Crea nuovo messaggio". Variabili `{var}` evidenziate sotto come badge. Warning se la chiave è condivisa con altri stati. Eliminazione (solo custom)
-  - **Bottoni**: editor pulsanti WhatsApp con dropdown target+side_effect
-  - **Validazione**: editor `input_rules` friendly. Picker tipo (Nome/Numero/Mapping/Regex/Testo libero) con icone, sub-form contestuale, **tester live verde/rosso** che mostra il valore trasformato
-  - **Fork**: editor `transitions` con builder if/else (campo/valore tramite dropdown)
-- Toolbar: nuovo stato, salva tutto (mostra count modifiche pending include nodi, posizioni e messaggi), search, toggle code edges
-- Drag handle source → handle target = crea nuovo bottone collegato
-- Autolayout dagre se almeno uno stato non ha posizione salvata
-- Posizioni salvate in bulk via `/bot-flow-states/positions`
-- Messaggi salvati uno per uno via `PUT /bot-messages/{key}`, creati via `POST /bot-messages`
+**`/panel/flusso`** — Flow editor visuale stile Shopify Flow (React Flow + dagre vertical):
+- **Layout verticale** (dagre `rankdir: TB`), nodi NON draggabili (posizioni calcolate), zoom/pan abilitati
+- **Card wide** (380px) con stili per tipo:
+  - **Trigger** (header verde): stati entry-point senza archi in ingresso (es. NEW)
+  - **Message card** (header colorato per categoria): nome stato, badge tipo/custom, on_enter_actions, anteprima messaggio con `{var}` evidenziate, riassunto regole, bottoni come pill `[Label] → TARGET`, indicatore fork condizionali
+  - **Goto** (grigio tratteggiato): placeholder per back-reference a stati già renderizzati (cicli), evita archi lunghi verso l'alto
+- **Self-loop nascosti** (stati che puntano a sé stessi = re-prompt, filtrati dal grafo)
+- **"+" su ogni arco**: click inserisce un nuovo stato custom TRA source e target, rewirando automaticamente
+- Edge tipizzati per colore: verde=bottone, ambra=side-effect, ciano=validazione, viola=fork, grigio tratteggiato=codice/goto
+- **Side panel a 5 tab** (aperto al click su una card):
+  - **Generale**: descrizione, categoria, messaggio + fallback con **textarea inline editabili** + "Crea nuovo messaggio" + variabili badge + shared key warning + elimina (custom only)
+  - **Bottoni**: editor pulsanti WhatsApp (max 3, 20 char) con dropdown target+azione
+  - **Validazione**: editor `input_rules` a card friendly. Picker tipo con icone + sub-form + **tester live verde/rosso**
+  - **Fork**: editor `transitions` con builder if/else (dropdown campo + valore + target)
+  - **Azioni**: picker on_enter_actions (pre-azioni) con card descrittive
+- Toolbar: titolo, "Nuovo stato" (teal), "Salva (N)" (emerald), search, toggle "Mostra codice"
+- Legenda in basso con color coding per tipo di arco/nodo
+- Messaggi salvati via `PUT /bot-messages/{key}`, creati via `POST /bot-messages`
 
 **Auth**: session-based (stessa di Filament, no Sanctum). `POST /api/auth/login` (verifica `is_admin`), `GET /api/auth/me`. Middleware `auth+admin` su `/api/admin/*`. Frontend: `AuthProvider` + `RequireAuth`.
 
