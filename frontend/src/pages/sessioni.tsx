@@ -8,11 +8,12 @@ import {
   MessageCircle,
   User as UserIcon,
   Bot,
+  RotateCcw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { useApi } from '@/hooks/use-api'
+import { useApi, apiFetch } from '@/hooks/use-api'
 import type { BotSession, PaginatedResponse } from '@/types/api'
 
 const stateColors: Record<string, string> = {
@@ -37,14 +38,27 @@ export function Sessioni() {
   const params = new URLSearchParams({ page: String(page), per_page: '20' })
   if (search) params.set('search', search)
 
-  const { data, loading } = useApi<PaginatedResponse<BotSession>>(`/admin/bot-sessions?${params}`)
+  const { data, loading, refetch } = useApi<PaginatedResponse<BotSession>>(`/admin/bot-sessions?${params}`)
 
   const sessions = data?.data ?? []
   const meta = data?.meta
+  const [deleting, setDeleting] = useState<number | null>(null)
 
   const handleSearch = () => {
     setSearch(searchInput)
     setPage(1)
+  }
+
+  const handleReset = async (session: BotSession) => {
+    const name = (session.profile as Record<string, string> | null)?.name ?? session.phone
+    if (!confirm(`Eliminare la sessione di ${name}?\n\nIl prossimo messaggio ripartirà da zero (onboarding se nuovo, menu se registrato).`)) return
+    setDeleting(session.id)
+    try {
+      await apiFetch(`/admin/bot-sessions/${session.id}`, { method: 'DELETE' })
+      if (selected?.id === session.id) setSelected(null)
+      refetch()
+    } catch { /* */ }
+    setDeleting(null)
   }
 
   return (
@@ -189,6 +203,20 @@ export function Sessioni() {
                     <span className="font-medium">{selected.history.length}</span>
                   </div>
                 </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleReset(selected)}
+                  disabled={deleting === selected.id}
+                  className="w-full mt-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                >
+                  {deleting === selected.id
+                    ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                    : <RotateCcw className="h-3 w-3 mr-1.5" />
+                  }
+                  Reset sessione
+                </Button>
               </div>
             )}
           </CardContent>

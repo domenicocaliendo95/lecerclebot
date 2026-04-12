@@ -35,4 +35,16 @@ class BotSessionController extends Controller
     {
         return new BotSessionResource($botSession);
     }
+
+    /**
+     * Elimina la sessione. Il prossimo messaggio dell'utente
+     * ripartirà da zero (NEW se non registrato, MENU se registrato).
+     */
+    public function destroy(BotSession $botSession): \Illuminate\Http\JsonResponse
+    {
+        $phone = $botSession->phone;
+        $botSession->delete();
+
+        return response()->json(['message' => "Sessione {$phone} eliminata."]);
+    }
 }

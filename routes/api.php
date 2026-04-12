@@ -41,6 +41,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     // Sessioni Bot
     Route::get('/bot-sessions', [BotSessionController::class, 'index']);
     Route::get('/bot-sessions/{botSession}', [BotSessionController::class, 'show']);
+    Route::delete('/bot-sessions/{botSession}', [BotSessionController::class, 'destroy']);
 
     // Match Results
     Route::get('/match-results', [MatchResultController::class, 'index']);
