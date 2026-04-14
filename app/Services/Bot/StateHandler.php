@@ -868,6 +868,7 @@ class StateHandler
         }
 
         return match ($sideEffect) {
+            // Nomi legacy (backward compat)
             'calendarCheck'         => $response->withCalendarCheck(true),
             'paymentRequired'       => $response->withPaymentRequired(true),
             'bookingToCreate'       => $response->withBookingToCreate(true),
@@ -879,6 +880,19 @@ class StateHandler
             'feedbackToSave'        => $response->withFeedbackToSave(true),
             'opponentLinkConfirmed' => $response->withOpponentLinkConfirmed(true),
             'opponentLinkRejected'  => $response->withOpponentLinkRejected(true),
+            // Nomi nuovi (azioni atomiche)
+            'create_booking'        => $response->withBookingToCreate(true),
+            'cancel_booking'        => $response->withBookingToCancel(true),
+            'search_matchmaking'    => $response->withMatchmakingSearch(true),
+            'confirm_match'         => $response->withMatchAccepted(true),
+            'refuse_match'          => $response->withMatchRefused(true),
+            'save_match_result'     => $response->withMatchResultToSave(true),
+            'save_feedback'         => $response->withFeedbackToSave(true),
+            'confirm_opponent'      => $response->withOpponentLinkConfirmed(true),
+            'reject_opponent'       => $response->withOpponentLinkRejected(true),
+            // save_profile: non mappabile su BotResponse flag (serve la sessione).
+            // Gestito inline: ignora qui, eseguito nell'on_enter_actions o in tryDbRules
+            'save_profile'          => $response,
             default => $response,
         };
     }
@@ -979,7 +993,15 @@ class StateHandler
             $this->getButtonsForCustomTarget($nextState),
         );
 
-        return $this->applySideEffect($response, $rule['side_effect'] ?? null);
+        $sideEffect = $rule['side_effect'] ?? null;
+
+        // save_profile è speciale: va eseguito direttamente qui perché serve la sessione
+        if ($sideEffect === 'save_profile') {
+            $user = User::where('phone', $session->phone)->first();
+            $this->actionExecutor->execute('save_profile', $session, $session->phone, $user);
+        }
+
+        return $this->applySideEffect($response, $sideEffect);
     }
 
     /**
@@ -1347,9 +1369,7 @@ class StateHandler
             $session->mergeData(['payment_method' => 'in_loco']);
 
             return BotResponse::make(
-                $this->textGenerator->rephrase('prenotazione_confermata', $session->persona(), [
-                    'slot' => $session->getData('requested_friendly') ?? '',
-                ]),
+                $this->textGenerator->rephrase('prenotazione_confermata', $session->persona(), $this->bookingSummaryVars($session)),
                 BotState::CONFERMATO,
             )->withBookingToCreate(true);
         }
@@ -1377,14 +1397,34 @@ class StateHandler
             return $dbResponse;
         }
 
-        // In un flusso reale, qui verificheresti il callback di pagamento.
-        // Per ora gestiamo la conferma manuale.
         return BotResponse::make(
-            $this->textGenerator->rephrase('prenotazione_confermata', $session->persona(), [
-                'slot' => $session->getData('requested_friendly') ?? '',
-            ]),
+            $this->textGenerator->rephrase('prenotazione_confermata', $session->persona(), $this->bookingSummaryVars($session)),
             BotState::CONFERMATO,
         )->withBookingToCreate(true);
+    }
+
+    /**
+     * Variabili {slot}, {duration}, {price} per i template di riepilogo/conferma.
+     */
+    private function bookingSummaryVars(BotSession $session): array
+    {
+        $duration = $session->getData('requested_duration_minutes') ?? 60;
+        $date     = $session->getData('requested_date');
+        $time     = $session->getData('requested_time') ?? '08:00';
+
+        $price = 0;
+        if ($date) {
+            $price = \App\Models\PricingRule::getPriceForSlot(
+                \Carbon\Carbon::parse("{$date} {$time}", 'Europe/Rome'),
+                $duration,
+            );
+        }
+
+        return [
+            'slot'     => $session->getData('requested_friendly') ?? '',
+            'duration' => \App\Models\PricingRule::durationLabel($duration),
+            'price'    => number_format($price, 0),
+        ];
     }
 
     private function handleConfermato(BotSession $session, string $input): BotResponse

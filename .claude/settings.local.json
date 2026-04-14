@@ -47,7 +47,8 @@
       "Bash(php -l app/Http/Controllers/Api/SettingsController.php)",
       "Bash(php -l app/Http/Controllers/Api/BotFlowStateController.php)",
       "Bash(php -l app/Models/BotFlowState.php)",
-      "Bash(php -l database/migrations/2026_04_12_000005_add_ai_prompt_to_bot_flow_states.php)"
+      "Bash(php -l database/migrations/2026_04_12_000005_add_ai_prompt_to_bot_flow_states.php)",
+      "Bash(php:*)"
     ]
   }
 }
