@@ -1,5 +1,18 @@
 # Le Cercle Tennis Club — Bot WhatsApp
-Bibbia progetto — agg. 2026-04-11 (rules+transitions)
+Bibbia progetto — agg. 2026-04-15 (refactor Flow Runner)
+
+> ⚠️ **REFACTOR IN CORSO (aprile 2026)** ⚠️
+> Il sistema vecchio "macchina a stati + `BotFlowState` + `StateHandler`" è
+> stato **rimosso**. Il nuovo motore è un **grafo di moduli** eseguito dal
+> `FlowRunner`. Le sezioni sotto descrivono il **nuovo** sistema. Le sezioni
+> legacy (stati `BotState`, `bot_flow_states`, transizioni hardcoded, input
+> rules DB-driven) sono da considerare **storiche** e verranno rimosse da
+> questa documentazione quando il refactor sarà stabile.
+>
+> Il framework sta evolvendo da bot tennis-specifico a motore **generico**
+> di automazione conversazionale: i moduli dominio (prenotazione, calendario)
+> sono solo una libreria possibile. Prossimi step: pannello moduli on/off,
+> ChannelAdapter (WhatsApp/Webchat/App).
 
 ## Identità
 Bot WhatsApp per **Le Cercle Tennis Club** (San Gennaro Vesuviano, NA). Gestisce registrazione, prenotazione campi, matchmaking, profilo. Italiano, tono amichevole/diretto/sportivo. Max 3 righe per messaggio, max 1 emoji.
@@ -8,23 +21,91 @@ Bot WhatsApp per **Le Cercle Tennis Club** (San Gennaro Vesuviano, NA). Gestisce
 - Laravel 11 + Filament 3 (legacy admin)
 - React SPA (Vite + Tailwind v4 + Shadcn) in `frontend/` → build `public/panel/`
 - MySQL `lecercle_db`
-- Gemini `gemini-2.5-flash` — SOLO date parsing + classificazione bottoni (no rephrase, template da DB)
+- Gemini `gemini-2.5-flash` — oggi usato via modulo `gemini_classifica` (generico) e dal parser date del `TextGenerator`
 - Google Calendar API (service account JSON)
-- WhatsApp Business API (Meta Cloud v21.0)
+- WhatsApp Business API (Meta Cloud v21.0) — **temporaneamente cablato direttamente nel webhook; diventerà un `ChannelAdapter`**
 - Server `bot.lecercleclub.it` su Plesk, TZ `Europe/Rome`
 
-## Architettura — Principio
-**L'AI NON controlla la logica.** Macchina a stati deterministica. Gemini solo per (1) parsing date NL fallback, (2) classificazione bottone se input non matcha.
+## Architettura — Nuovo motore: Flow Runner (dal 2026-04-15)
 
-**Stati ibridi**: gli stati possono essere **built-in** (definiti come case in `BotState` enum, hanno handler PHP dedicato) o **custom** (creati dal pannello, vivono solo in `bot_flow_states`, gestiti dal `handleGenericSimple` universale). I custom sono **sempre** `type=simple` e supportano solo bottoni + side_effect dalla whitelist.
+Il bot non è più una macchina a stati deterministica con handler PHP dedicati.
+È un **interprete di grafo**: ogni "stato" è un **nodo** configurato di un
+`Module` (classe PHP con schema dichiarativo). Gli **archi** collegano la porta
+di output di un nodo a quella di input del successivo. La sessione tiene un
+**cursore** nel grafo (`bot_sessions.current_node_id`).
 
 ```
-WhatsAppController → BotOrchestrator → StateHandler → TextGenerator
-                         ├ BotFlowState (DB, bottoni/transizioni editabili)
-                         ├ CalendarService
-                         ├ UserProfileService
-                         └ WhatsAppService
+WhatsAppController → FlowRunner → ModuleRegistry → Module::execute()
+                         │
+                         ├ FlowNode (DB, config editabile dal pannello)
+                         ├ FlowEdge (DB, connessioni porta→porta)
+                         └ BotSession.current_node_id (cursore nel grafo)
 ```
+
+**Regole core**:
+- `FlowRunner::walk()` cammina il grafo finché un modulo restituisce
+  `ModuleResult::wait()` (tipicamente `invia_bottoni`, `attendi_input`,
+  `chiedi_campo`). A quel punto salva il cursore e attende il prossimo
+  messaggio utente.
+- Al messaggio successivo, se c'è un cursore il runner riprende da lì
+  (`resuming=true`). Altrimenti cerca un trigger d'ingresso (`is_entry=true`)
+  che matchi l'input (`first_message` o `keyword:…`).
+- I moduli scrivono/leggono `session.data` con dot notation (`profile.name`,
+  `data.requested_date`). Nessun modulo "conosce" WhatsApp: spediscono
+  messaggi tramite `ModuleResult::withSend()`, il runner li dispatcha alla
+  fine del walk.
+- Il **registry** (`ModuleRegistry`) auto-scopre le classi sotto
+  `app/Services/Flow/Modules/` e le espone al pannello via `/api/admin/flow/modules`.
+
+**Moduli disponibili** (aprile 2026):
+
+| Categoria | Chiave | Cosa fa |
+|---|---|---|
+| trigger | `primo_messaggio` | Entry point, matcha il primo messaggio |
+| trigger | `trigger_keyword` | Entry point su parola chiave |
+| logica | `utente_registrato` | Branch sì/no (con check onboarding) |
+| invio | `invia_testo` | Messaggio con interpolazione `{user.name}`, `{profile.*}`, `{data.*}` |
+| invio | `invia_bottoni` | Invia + wait + match risposta, porte dinamiche per bottone |
+| attesa | `attendi_input` | Pausa pura, salva risposta in session.data |
+| attesa | `chiedi_campo` | Macro: invia domanda, attende, valida, salva, ri-chiede se invalido |
+| attesa | `fine_flusso` | Termina il flusso (reset cursore) |
+| dati | `salva_in_sessione` | Assegnazioni chiave→valore in session.data |
+| dati | `parse_data` | NL → `requested_date/time/friendly` (usa TextGenerator esistente) |
+| dati | `verifica_calendario` | Check Google Calendar, porte `libero/occupato/errore` |
+| dati | `carica_prenotazioni` | Popola `bookings_list`, porte `trovate/nessuna` |
+| azione | `salva_profilo` | Persiste `session.data.profile` su users (UserProfileService) |
+| azione | `crea_prenotazione` | Booking DB + evento gcal |
+| azione | `cancella_prenotazione` | Cancella booking + gcal |
+| ai | `gemini_classifica` | Testo → categoria, una porta di uscita per categoria |
+
+Ogni modulo ha uno **schema di config** (campi: `string/text/int/bool/select/button_list/key_value/string_list`) che il pannello legge via `/api/admin/flow/modules` per disegnare il form di editing.
+
+**Schema DB nuovo**:
+- `flow_nodes` — `id, module_key, label, config JSON, position JSON, is_entry, entry_trigger, timestamps`
+- `flow_edges` — `id, from_node_id, from_port, to_node_id, to_port, timestamps` (cascade delete)
+- `bot_sessions.current_node_id` — FK nullable su `flow_nodes` (cursore)
+
+**Test offline**:
+```
+php artisan flow:simulate +39XXXXXXX "ciao" --reset --state
+php artisan flow:simulate +39XXXXXXX "Mario" --state
+# ...
+```
+Esegue il FlowRunner sulla sessione del numero senza spedire messaggi reali.
+
+**Pannello `/panel/flusso`** — React Flow con porte tipate:
+- Click "Aggiungi modulo" → drawer col registry raggruppato per categoria
+- Click su nodo → side panel con editor del `config_schema` + label + trigger toggle
+- Drag da handle di output a handle di input → crea edge (persistito)
+- Tasto cestino sul nodo → delete (cascade edges)
+
+### Sezioni LEGACY (storiche, riferite al vecchio motore — rimosse da codice)
+Quanto segue descriveva il vecchio sistema basato su `BotState` enum,
+`StateHandler`, `BotFlowState`/`bot_flow_states`, `ActionExecutor`,
+`RuleEvaluator`, `TransitionEvaluator`. **Queste classi sono state eliminate
+il 2026-04-15**. La documentazione sotto è conservata come riferimento
+storico finché il refactor non sarà completo ma non riflette più il codice
+attuale.
 
 ## Mappa file
 ```

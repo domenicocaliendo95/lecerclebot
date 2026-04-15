@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class BotSession extends Model
 {
-    protected $fillable = ['phone', 'state', 'data'];
+    protected $fillable = ['phone', 'state', 'data', 'current_node_id'];
 
     protected $casts = [
         'data' => 'array',

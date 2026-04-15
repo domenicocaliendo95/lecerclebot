@@ -2,18 +2,22 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\Bot\BotOrchestrator;
+use App\Services\Flow\FlowRunner;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Controller sottile: valida il webhook e delega tutto al BotOrchestrator.
+ * Controller sottile: valida il webhook e delega tutto al FlowRunner.
+ *
+ * Nota architetturale: questo controller è temporaneamente WhatsApp-specifico,
+ * ma il FlowRunner sottostante è agnostico al canale. Quando introdurremo
+ * ChannelAdapter, questo controller diventerà un adapter tra i molti possibili.
  */
 class WhatsAppController extends Controller
 {
     public function __construct(
-        private readonly BotOrchestrator $orchestrator,
+        private readonly FlowRunner $runner,
     ) {}
 
     /* ───────── Verifica webhook Meta ───────── */
@@ -56,7 +60,7 @@ class WhatsAppController extends Controller
                 return response('OK', 200);
             }
 
-            $this->orchestrator->process($from, $input);
+            $this->runner->process($from, $input);
         } catch (\Throwable $e) {
             // Log ma rispondi comunque 200 — Meta non deve riprovare
             Log::error('WhatsApp webhook handler error', [

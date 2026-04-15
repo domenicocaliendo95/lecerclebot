@@ -11,7 +11,7 @@ use App\Http\Controllers\Api\MatchResultController;
 use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\BotMessageController;
-use App\Http\Controllers\Api\BotFlowStateController;
+use App\Http\Controllers\Api\FlowGraphController;
 
 // ── WhatsApp Webhook (nessuna auth) ──────────────────────────────────
 Route::get('/webhook', [WhatsAppController::class, 'verify']);
@@ -62,12 +62,13 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::post('/bot-messages', [BotMessageController::class, 'store']);
     Route::put('/bot-messages/{key}', [BotMessageController::class, 'update']);
 
-    // Bot Flow States
-    Route::get('/bot-flow-states', [BotFlowStateController::class, 'index']);
-    Route::get('/bot-flow-states/graph', [BotFlowStateController::class, 'graph']);
-    Route::get('/bot-flow-states/meta', [BotFlowStateController::class, 'meta']);
-    Route::post('/bot-flow-states', [BotFlowStateController::class, 'store']);
-    Route::put('/bot-flow-states/positions', [BotFlowStateController::class, 'savePositions']);
-    Route::put('/bot-flow-states/{state}', [BotFlowStateController::class, 'update']);
-    Route::delete('/bot-flow-states/{state}', [BotFlowStateController::class, 'destroy']);
+    // Flow graph (nuovo runner a moduli)
+    Route::get('/flow/modules',  [FlowGraphController::class, 'modules']);   // registry metadata
+    Route::get('/flow/graph',    [FlowGraphController::class, 'graph']);     // nodes + edges
+    Route::post('/flow/nodes',   [FlowGraphController::class, 'createNode']);
+    Route::put('/flow/nodes/positions', [FlowGraphController::class, 'savePositions']);
+    Route::put('/flow/nodes/{node}',    [FlowGraphController::class, 'updateNode']);
+    Route::delete('/flow/nodes/{node}', [FlowGraphController::class, 'deleteNode']);
+    Route::post('/flow/edges',   [FlowGraphController::class, 'createEdge']);
+    Route::delete('/flow/edges/{edge}', [FlowGraphController::class, 'deleteEdge']);
 });
