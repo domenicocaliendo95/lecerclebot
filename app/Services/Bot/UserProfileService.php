@@ -53,7 +53,7 @@ class UserProfileService
                     'name'            => $name,
                     'email'           => $this->generatePlaceholderEmail($phone),
                     'password'        => bcrypt(Str::random(32)),
-                    'is_fit'          => $profile['is_fit'] ?? false,
+                    'is_fit'          => $this->toBool($profile['is_fit'] ?? false),
                     'fit_rating'      => $profile['fit_rating'] ?? null,
                     'self_level'      => $profile['self_level'] ?? null,
                     'age'             => $profile['age'] ?? null,
@@ -69,6 +69,23 @@ class UserProfileService
 
             return null;
         }
+    }
+
+    /**
+     * Normalizza in bool valori come 'yes'/'no', 'sì'/'true', 1/0, true/false.
+     * Le input_rules `mapping` salvano la chiave canonica come stringa, quindi
+     * `profile.is_fit` può arrivare come 'yes'/'no' anziché bool.
+     */
+    private function toBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_string($value)) {
+            $v = mb_strtolower(trim($value));
+            return in_array($v, ['yes', 'true', '1', 'sì', 'si', 'tesserato'], true);
+        }
+        return (bool) $value;
     }
 
     /**
