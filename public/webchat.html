@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Le Cercle — Webchat</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #f4f4f5;
+      color: #18181b;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chat {
+      width: 100%;
+      max-width: 480px;
+      height: 100%;
+      max-height: 720px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    @media (max-width: 480px) {
+      .chat { border-radius: 0; max-height: none; }
+      body { padding: 0; }
+    }
+    .header {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .header h1 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.1; }
+    .header p  { margin: 0; font-size: 12px; opacity: 0.9; }
+    .reset {
+      margin-left: auto;
+      background: none;
+      border: 1px solid rgba(255,255,255,0.25);
+      color: white;
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .reset:hover { background: rgba(255,255,255,0.1); }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #fafafa;
+    }
+    .msg {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .msg.bot {
+      align-self: flex-start;
+      background: white;
+      border: 1px solid #e4e4e7;
+      border-bottom-left-radius: 4px;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #10b981;
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.error {
+      align-self: center;
+      background: #fee2e2;
+      color: #991b1b;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+    .buttons {
+      align-self: flex-start;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 80%;
+    }
+    .buttons button {
+      background: white;
+      border: 1px solid #10b981;
+      color: #059669;
+      font-size: 13px;
+      padding: 7px 14px;
+      border-radius: 16px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .buttons button:hover { background: #ecfdf5; }
+    .buttons button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .input-bar {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid #e4e4e7;
+      background: white;
+    }
+    .input-bar input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #d4d4d8;
+      border-radius: 20px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+    }
+    .input-bar input:focus { border-color: #10b981; }
+    .input-bar button {
+      background: #10b981;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .input-bar button:hover:not(:disabled) { background: #059669; }
+    .input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .typing {
+      align-self: flex-start;
+      color: #a1a1aa;
+      font-size: 12px;
+      padding: 4px 14px;
+    }
+    .footer {
+      padding: 8px 12px;
+      font-size: 10px;
+      color: #a1a1aa;
+      text-align: center;
+      border-top: 1px solid #e4e4e7;
+      background: white;
+      font-family: ui-monospace, monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat">
+    <div class="header">
+      <div class="avatar">LC</div>
+      <div>
+        <h1>Le Cercle</h1>
+        <p>Webchat · test canale</p>
+      </div>
+      <button class="reset" onclick="resetSession()">Reset</button>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="input-bar">
+      <input id="input" type="text" placeholder="Scrivi un messaggio..." autofocus
+             onkeydown="if(event.key==='Enter') sendMessage()">
+      <button onclick="sendMessage()" aria-label="Invia">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m5 12 14-7-7 14v-7z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="footer" id="footer">session: <span id="sessionIdLabel">-</span></div>
+  </div>
+
+<script>
+  /* ── Session id persistente in localStorage ── */
+  const SESSION_KEY = 'lecercle_webchat_session';
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = (crypto.randomUUID ? crypto.randomUUID() : 'web_' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
+  document.getElementById('sessionIdLabel').textContent = sessionId.slice(0, 12) + '...';
+
+  const API_BASE = '/api/webchat';
+  const messagesEl = document.getElementById('messages');
+  const inputEl    = document.getElementById('input');
+
+  /* ── UI helpers ── */
+  function addMessage(side, text) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + side;
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+  }
+  function addButtons(labels) {
+    const wrap = document.createElement('div');
+    wrap.className = 'buttons';
+    labels.forEach(label => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.onclick = () => {
+        // Disabilita tutti i bottoni del gruppo dopo il click
+        wrap.querySelectorAll('button').forEach(b => b.disabled = true);
+        inputEl.value = label;
+        sendMessage();
+      };
+      wrap.appendChild(btn);
+    });
+    messagesEl.appendChild(wrap);
+    scrollToBottom();
+  }
+  function addError(text) {
+    const div = document.createElement('div');
+    div.className = 'msg error';
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    scrollToBottom();
+  }
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  /* ── HTTP ── */
+  async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    addMessage('user', text);
+
+    try {
+      const res = await fetch(`${API_BASE}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: sessionId, text }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Polla subito per ridurre la latenza della prima risposta
+      setTimeout(pollMessages, 300);
+    } catch (e) {
+      addError('Errore invio: ' + e.message);
+    }
+  }
+
+  async function pollMessages() {
+    try {
+      const res = await fetch(`${API_BASE}/poll?session=${encodeURIComponent(sessionId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      for (const m of data.messages || []) {
+        if (m.type === 'buttons') {
+          if (m.text) addMessage('bot', m.text);
+          if (Array.isArray(m.buttons)) addButtons(m.buttons);
+        } else if (m.type === 'list') {
+          if (m.text) addMessage('bot', m.text);
+          if (Array.isArray(m.items)) addButtons(m.items);
+        } else {
+          addMessage('bot', m.text || '');
+        }
+      }
+    } catch (e) {
+      console.warn('poll error', e);
+    }
+  }
+
+  /* ── Polling continuo (ogni 2s) ── */
+  setInterval(pollMessages, 2000);
+  pollMessages(); // primo fetch immediato
+
+  /* ── Reset: nuova sessione (anche lato server: nuovo external_id) ── */
+  function resetSession() {
+    if (!confirm('Vuoi iniziare una nuova conversazione? La sessione attuale verrà scartata.')) return;
+    localStorage.removeItem(SESSION_KEY);
+    location.reload();
+  }
+</script>
+</body>
+</html>
