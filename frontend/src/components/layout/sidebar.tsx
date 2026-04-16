@@ -7,6 +7,7 @@ import {
   MessageSquare,
   MessageSquareText,
   GitBranch,
+  Package,
   Settings,
   Trophy,
   LogOut,
@@ -32,6 +33,7 @@ const navigation: NavItem[] = [
   { label: 'Sessioni Bot', to: '/sessioni', icon: MessageSquare, group: 'bot' },
   { label: 'Messaggi Bot', to: '/messaggi', icon: MessageSquareText, group: 'bot' },
   { label: 'Flusso', to: '/flusso', icon: GitBranch, group: 'bot' },
+  { label: 'Moduli', to: '/moduli', icon: Package, group: 'bot' },
   { label: 'Impostazioni', to: '/impostazioni', icon: Settings, group: 'sistema' },
 ]
 

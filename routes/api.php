@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\BotMessageController;
 use App\Http\Controllers\Api\FlowGraphController;
+use App\Http\Controllers\Api\ModuleCatalogController;
 
 // ── WhatsApp Webhook (nessuna auth) ──────────────────────────────────
 Route::get('/webhook', [WhatsAppController::class, 'verify']);
@@ -71,4 +72,12 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::delete('/flow/nodes/{node}', [FlowGraphController::class, 'deleteNode']);
     Route::post('/flow/edges',   [FlowGraphController::class, 'createEdge']);
     Route::delete('/flow/edges/{edge}', [FlowGraphController::class, 'deleteEdge']);
+
+    // Catalogo moduli: on/off + preset
+    Route::get('/flow/catalog',        [ModuleCatalogController::class, 'catalog']);
+    Route::put('/flow/catalog/toggles', [ModuleCatalogController::class, 'updateToggles']);
+    Route::get('/flow/presets',        [ModuleCatalogController::class, 'listPresets']);
+    Route::post('/flow/presets',       [ModuleCatalogController::class, 'createPreset']);
+    Route::put('/flow/presets/{preset}',    [ModuleCatalogController::class, 'updatePreset']);
+    Route::delete('/flow/presets/{preset}', [ModuleCatalogController::class, 'deletePreset']);
 });

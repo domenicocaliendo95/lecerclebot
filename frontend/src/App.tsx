@@ -12,6 +12,7 @@ import { Match } from '@/pages/match'
 import { Impostazioni } from '@/pages/impostazioni'
 import { Messaggi } from '@/pages/messaggi'
 import { Flusso } from '@/pages/flusso'
+import { Moduli } from '@/pages/moduli'
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="match" element={<Match />} />
             <Route path="messaggi" element={<Messaggi />} />
             <Route path="flusso" element={<Flusso />} />
+            <Route path="moduli" element={<Moduli />} />
             <Route path="impostazioni" element={<Impostazioni />} />
           </Route>
         </Routes>
