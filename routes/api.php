@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\BotMessageController;
 use App\Http\Controllers\Api\FlowGraphController;
+use App\Http\Controllers\Api\FlowCompositeController;
 use App\Http\Controllers\Api\ModuleCatalogController;
 
 // ── WhatsApp Webhook (nessuna auth) ──────────────────────────────────
@@ -80,4 +81,19 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::post('/flow/presets',       [ModuleCatalogController::class, 'createPreset']);
     Route::put('/flow/presets/{preset}',    [ModuleCatalogController::class, 'updatePreset']);
     Route::delete('/flow/presets/{preset}', [ModuleCatalogController::class, 'deletePreset']);
+
+    // Moduli compositi (sotto-grafi riusabili)
+    Route::get('/flow/composites',                 [FlowCompositeController::class, 'index']);
+    Route::post('/flow/composites',                [FlowCompositeController::class, 'store']);
+    Route::put('/flow/composites/{composite}',     [FlowCompositeController::class, 'update']);
+    Route::delete('/flow/composites/{composite}',  [FlowCompositeController::class, 'destroy']);
+
+    // Sotto-grafo del composito (stesso pattern dei flow_nodes/edges principali)
+    Route::get('/flow/composites/{composite}/graph',  [FlowCompositeController::class, 'graph']);
+    Route::post('/flow/composites/{composite}/nodes', [FlowCompositeController::class, 'createNode']);
+    Route::put('/flow/composites/{composite}/nodes/positions', [FlowCompositeController::class, 'savePositions']);
+    Route::put('/flow/composites/{composite}/nodes/{node}',    [FlowCompositeController::class, 'updateNode']);
+    Route::delete('/flow/composites/{composite}/nodes/{node}', [FlowCompositeController::class, 'deleteNode']);
+    Route::post('/flow/composites/{composite}/edges',          [FlowCompositeController::class, 'createEdge']);
+    Route::delete('/flow/composites/{composite}/edges/{edge}', [FlowCompositeController::class, 'deleteEdge']);
 });

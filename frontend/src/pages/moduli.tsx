@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch, useApi } from '@/hooks/use-api'
 import { FieldEditor, type ConfigField } from '@/components/flow/field-editor'
-import { Plus, X, Save, Trash2, Package, Sparkles, Info, Search } from 'lucide-react'
+import { Plus, X, Save, Trash2, Package, Sparkles, Info, Search, Layers, ArrowRight } from 'lucide-react'
 
 /* ────────────────── Tipi condivisi col backend ────────────────── */
 
@@ -54,24 +55,27 @@ const catColors = (c: string) => CATEGORY_COLORS[c] ?? { bg: 'bg-zinc-50', text:
 /* ────────────────── Pagina principale ────────────────── */
 
 export function Moduli() {
-  const [tab, setTab] = useState<'catalog' | 'presets'>('catalog')
+  const [tab, setTab] = useState<'catalog' | 'presets' | 'composites'>('catalog')
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold text-zinc-900">Moduli</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Gestisci i blocchi disponibili per costruire i flussi. Disattiva quelli che non ti servono e
-          crea preset con configurazione preimpostata per velocizzare la costruzione.
+          Gestisci i blocchi disponibili per costruire i flussi. Attiva quelli che ti servono, crea
+          preset con config preimpostata, oppure impacchetta un sotto-grafo come modulo riusabile.
         </p>
       </header>
 
       <div className="flex gap-1 border-b border-zinc-200 mb-6">
-        <TabButton active={tab === 'catalog'} onClick={() => setTab('catalog')} icon={<Package className="w-4 h-4" />} label="Catalogo" />
-        <TabButton active={tab === 'presets'} onClick={() => setTab('presets')} icon={<Sparkles className="w-4 h-4" />} label="Preset" />
+        <TabButton active={tab === 'catalog'}    onClick={() => setTab('catalog')}    icon={<Package className="w-4 h-4" />}   label="Catalogo" />
+        <TabButton active={tab === 'presets'}    onClick={() => setTab('presets')}    icon={<Sparkles className="w-4 h-4" />}  label="Preset" />
+        <TabButton active={tab === 'composites'} onClick={() => setTab('composites')} icon={<Layers className="w-4 h-4" />}    label="Compositi" />
       </div>
 
-      {tab === 'catalog' ? <CatalogTab /> : <PresetsTab />}
+      {tab === 'catalog'    && <CatalogTab />}
+      {tab === 'presets'    && <PresetsTab />}
+      {tab === 'composites' && <CompositesTab />}
     </div>
   )
 }
@@ -523,6 +527,257 @@ function PresetEditor({
         >
           Annulla
         </button>
+      </div>
+    </div>
+  )
+}
+
+/* ────────────────── Tab Compositi ────────────────── */
+
+type Composite = {
+  id: number
+  key: string
+  label: string
+  description: string | null
+  icon: string | null
+  category: string | null
+  node_count: number
+}
+
+function CompositesTab() {
+  const { data, refetch } = useApi<{ composites: Composite[] }>('/admin/flow/composites')
+  const [creating, setCreating] = useState(false)
+
+  if (!data) return <div className="text-sm text-zinc-500">Caricamento...</div>
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-zinc-600 flex items-start gap-2">
+          <Info className="w-4 h-4 text-zinc-400 mt-0.5 shrink-0" />
+          I compositi sono sotto-grafi riusabili. Costruiscili una volta, usali in più punti del
+          grafo principale. L'uscita del composito è segnata da moduli <code className="text-xs font-mono">composite_output</code>,
+          che diventano le porte del modulo nel picker.
+        </p>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium px-3 py-2 rounded-lg shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          Crea composito
+        </button>
+      </div>
+
+      {data.composites.length === 0 && !creating && (
+        <div className="text-center py-12 border-2 border-dashed border-zinc-200 rounded-lg">
+          <Layers className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+          <p className="text-sm text-zinc-500">Nessun composito ancora creato.</p>
+          <button onClick={() => setCreating(true)} className="mt-2 text-sm text-emerald-600 hover:text-emerald-700 font-medium">
+            Crea il primo
+          </button>
+        </div>
+      )}
+
+      {creating && (
+        <CompositeCreateForm
+          onCreated={(c) => {
+            setCreating(false)
+            refetch()
+            // Naviga subito all'editor interno del composito appena creato.
+            window.location.href = `/panel/flusso?composite=${c.id}`
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      )}
+
+      {!creating && data.composites.length > 0 && (
+        <div className="space-y-2">
+          {data.composites.map((c) => (
+            <CompositeRow key={c.id} composite={c} onChanged={refetch} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CompositeRow({ composite, onChanged }: { composite: Composite; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false)
+
+  const del = async () => {
+    if (!confirm(`Eliminare il composito "${composite.label}"?`)) return
+    try {
+      await apiFetch(`/admin/flow/composites/${composite.id}`, { method: 'DELETE' })
+      onChanged()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Errore eliminazione')
+    }
+  }
+
+  if (editing) {
+    return (
+      <CompositeEditForm
+        composite={composite}
+        onSaved={() => { setEditing(false); onChanged() }}
+        onCancel={() => setEditing(false)}
+      />
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-3 p-3 border border-zinc-200 rounded-lg hover:border-emerald-300 transition-colors group">
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-50 text-violet-700">
+        <Layers className="w-4 h-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-zinc-900 text-sm">{composite.label}</div>
+        <div className="text-[11px] text-zinc-500 mt-0.5">
+          <span className="font-mono">{composite.key}</span>
+          {' · '}
+          {composite.node_count} nodi
+          {composite.category && <> · categoria <span className="font-mono">{composite.category}</span></>}
+        </div>
+      </div>
+      {composite.description && <div className="text-xs text-zinc-500 max-w-sm truncate">{composite.description}</div>}
+      <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+        <Link
+          to={`/flusso?composite=${composite.id}`}
+          className="flex items-center gap-1 text-xs text-emerald-600 hover:bg-emerald-50 font-medium px-2 py-1 rounded"
+        >
+          Modifica sotto-grafo <ArrowRight className="w-3 h-3" />
+        </Link>
+        <button onClick={() => setEditing(true)} className="p-1 text-zinc-400 hover:text-zinc-600 rounded" title="Modifica metadati">
+          <Info className="w-4 h-4" />
+        </button>
+        <button onClick={del} className="p-1 text-zinc-400 hover:text-rose-500 rounded" title="Elimina">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CompositeCreateForm({ onCreated, onCancel }: { onCreated: (c: Composite) => void; onCancel: () => void }) {
+  const [label, setLabel] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('custom')
+  const [icon, setIcon] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (!label.trim()) return
+    setSaving(true)
+    try {
+      const created = await apiFetch<Composite>('/admin/flow/composites', {
+        method: 'POST',
+        body: JSON.stringify({
+          label: label.trim(),
+          description: description.trim() || null,
+          category: category.trim() || 'custom',
+          icon: icon.trim() || null,
+        }),
+      })
+      onCreated(created)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white border border-zinc-200 rounded-lg p-6 max-w-2xl">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">Nuovo composito</h2>
+          <p className="text-xs text-zinc-500 mt-1">Dopo la creazione ti porto subito all'editor per costruire il sotto-grafo.</p>
+        </div>
+        <button onClick={onCancel} className="text-zinc-400 hover:text-zinc-600"><X className="w-5 h-5" /></button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <div className="mb-1 text-xs font-medium text-zinc-700">Nome<span className="text-rose-500 ml-0.5">*</span></div>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Es. Chiedi nome e valida" className="w-full rounded border border-zinc-300 px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-medium text-zinc-700">Categoria</div>
+          <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="custom" className="w-full rounded border border-zinc-300 px-2 py-1.5 text-sm font-mono" />
+        </div>
+        <div className="md:col-span-2">
+          <div className="mb-1 text-xs font-medium text-zinc-700">Descrizione</div>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="w-full rounded border border-zinc-300 px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-medium text-zinc-700">Icona (lucide)</div>
+          <input value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="layers" className="w-full rounded border border-zinc-300 px-2 py-1.5 text-sm font-mono" />
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={saving || !label.trim()} className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50">
+          <Save className="w-4 h-4" />
+          {saving ? 'Creo...' : 'Crea e modifica'}
+        </button>
+        <button onClick={onCancel} className="text-sm text-zinc-600 hover:text-zinc-900 px-3 py-2">Annulla</button>
+      </div>
+    </div>
+  )
+}
+
+function CompositeEditForm({ composite, onSaved, onCancel }: { composite: Composite; onSaved: () => void; onCancel: () => void }) {
+  const [label, setLabel] = useState(composite.label)
+  const [description, setDescription] = useState(composite.description ?? '')
+  const [category, setCategory] = useState(composite.category ?? '')
+  const [icon, setIcon] = useState(composite.icon ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await apiFetch(`/admin/flow/composites/${composite.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          label: label.trim(),
+          description: description.trim() || null,
+          category: category.trim() || null,
+          icon: icon.trim() || null,
+        }),
+      })
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white border border-emerald-300 rounded-lg p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-zinc-900">Metadati composito <span className="font-mono text-xs text-zinc-500 ml-2">{composite.key}</span></h3>
+        <button onClick={onCancel} className="text-zinc-400 hover:text-zinc-600"><X className="w-4 h-4" /></button>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        <div>
+          <div className="mb-1 text-xs font-medium text-zinc-700">Nome</div>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded border border-zinc-300 px-2 py-1 text-sm" />
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-medium text-zinc-700">Categoria</div>
+          <input value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded border border-zinc-300 px-2 py-1 text-sm font-mono" />
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-medium text-zinc-700">Icona</div>
+          <input value={icon} onChange={(e) => setIcon(e.target.value)} className="w-full rounded border border-zinc-300 px-2 py-1 text-sm font-mono" />
+        </div>
+        <div className="col-span-2 md:col-span-4">
+          <div className="mb-1 text-xs font-medium text-zinc-700">Descrizione</div>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="w-full rounded border border-zinc-300 px-2 py-1 text-sm" />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={save} disabled={saving} className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded disabled:opacity-50">
+          <Save className="w-3.5 h-3.5" />
+          {saving ? 'Salvo...' : 'Salva'}
+        </button>
+        <button onClick={onCancel} className="text-xs text-zinc-600 hover:text-zinc-900 px-3 py-1.5">Annulla</button>
       </div>
     </div>
   )

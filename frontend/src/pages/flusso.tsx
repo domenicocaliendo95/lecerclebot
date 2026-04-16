@@ -15,8 +15,9 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, useApi } from '@/hooks/use-api'
-import { Plus, X, Save, Trash2, Zap, Play } from 'lucide-react'
+import { Plus, X, Save, Trash2, Zap, Play, Layers, ArrowLeft } from 'lucide-react'
 import { FieldEditor, type ConfigField } from '@/components/flow/field-editor'
 
 /* ────────────────────────────── Tipi ────────────────────────────── */
@@ -53,7 +54,21 @@ type GraphEdge = {
 }
 
 type ModulesResponse = { grouped: Record<string, ModuleMeta[]> }
-type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[] }
+
+type CompositeInfo = {
+  id: number
+  key: string
+  label: string
+  description: string | null
+  icon: string | null
+  category: string
+}
+
+type GraphResponse = {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  composite?: CompositeInfo
+}
 
 /* ───────────────────── Colori per categoria ───────────────────── */
 
@@ -131,8 +146,16 @@ const nodeTypes = { module: ModuleCard }
 /* ──────────────────────── Pagina Flusso ──────────────────────── */
 
 export function Flusso() {
+  const [searchParams] = useSearchParams()
+  const compositeId = searchParams.get('composite')
+  const isComposite = compositeId !== null
+
+  // Prefisso API: il controller principale e quello compositi hanno lo stesso
+  // shape di rotte (graph/nodes/edges/positions), così parametrizzare è banale.
+  const apiBase = isComposite ? `/admin/flow/composites/${compositeId}` : '/admin/flow'
+
   const { data: modulesData } = useApi<ModulesResponse>('/admin/flow/modules')
-  const { data: graphData, refetch: refetchGraph } = useApi<GraphResponse>('/admin/flow/graph')
+  const { data: graphData, refetch: refetchGraph } = useApi<GraphResponse>(`${apiBase}/graph`)
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -181,7 +204,7 @@ export function Flusso() {
       if (!conn.source || !conn.target) return
       setEdges((eds) => addEdge({ ...conn, animated: false, style: { stroke: '#a1a1aa', strokeWidth: 2 } }, eds))
       try {
-        await apiFetch('/admin/flow/edges', {
+        await apiFetch(`${apiBase}/edges`, {
           method: 'POST',
           body: JSON.stringify({
             from_node_id: Number(conn.source),
@@ -195,7 +218,7 @@ export function Flusso() {
         console.error('createEdge failed', e)
       }
     },
-    [setEdges, refetchGraph],
+    [setEdges, refetchGraph, apiBase],
   )
 
   /* Handler: click nodo → apre side panel */
@@ -207,7 +230,7 @@ export function Flusso() {
   /* Crea nuovo nodo da module picker */
   const addNode = async (moduleKey: string) => {
     try {
-      const created = await apiFetch<GraphNode>('/admin/flow/nodes', {
+      const created = await apiFetch<GraphNode>(`${apiBase}/nodes`, {
         method: 'POST',
         body: JSON.stringify({
           module_key: moduleKey,
@@ -228,7 +251,7 @@ export function Flusso() {
     if (!selectedId) return
     setSaving(true)
     try {
-      await apiFetch(`/admin/flow/nodes/${selectedId}`, {
+      await apiFetch(`${apiBase}/nodes/${selectedId}`, {
         method: 'PUT',
         body: JSON.stringify(patch),
       })
@@ -241,7 +264,7 @@ export function Flusso() {
   const deleteSelected = async () => {
     if (!selectedId) return
     if (!confirm('Eliminare questo nodo? Gli archi collegati verranno rimossi.')) return
-    await apiFetch(`/admin/flow/nodes/${selectedId}`, { method: 'DELETE' })
+    await apiFetch(`${apiBase}/nodes/${selectedId}`, { method: 'DELETE' })
     setSelectedId(null)
     refetchGraph()
   }
@@ -266,7 +289,16 @@ export function Flusso() {
         </ReactFlow>
 
         {/* Toolbar in alto */}
-        <div className="absolute top-4 left-4 z-10 flex gap-2">
+        <div className="absolute top-4 left-4 z-10 flex gap-2 flex-wrap max-w-[calc(100%-2rem)]">
+          {isComposite && (
+            <Link
+              to="/moduli"
+              className="flex items-center gap-1.5 bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50 text-sm font-medium px-3 py-2 rounded-lg shadow-sm"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Moduli
+            </Link>
+          )}
           <button
             onClick={() => { setShowPicker(!showPicker); setSelectedId(null) }}
             className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium px-3 py-2 rounded-lg shadow-sm"
@@ -275,8 +307,16 @@ export function Flusso() {
             Aggiungi modulo
           </button>
           <div className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs text-zinc-600 shadow-sm flex items-center gap-1.5">
-            <Play className="w-3 h-3" />
-            {nodes.length} nodi · {edges.length} archi
+            {isComposite ? <Layers className="w-3 h-3 text-violet-500" /> : <Play className="w-3 h-3" />}
+            {isComposite && graphData?.composite ? (
+              <>
+                <span className="font-medium text-violet-700">{graphData.composite.label}</span>
+                <span className="text-zinc-400">·</span>
+              </>
+            ) : (
+              <span className="font-medium text-zinc-700">Grafo principale</span>
+            )}
+            <span>{nodes.length} nodi · {edges.length} archi</span>
           </div>
         </div>
       </div>
@@ -325,6 +365,7 @@ export function Flusso() {
               onDelete={deleteSelected}
               onClose={() => setSelectedId(null)}
               saving={saving}
+              isComposite={isComposite}
             />
           )}
         </div>
@@ -342,6 +383,7 @@ function NodeEditor({
   onDelete,
   onClose,
   saving,
+  isComposite,
 }: {
   node: GraphNode
   meta: ModuleMeta
@@ -349,6 +391,7 @@ function NodeEditor({
   onDelete: () => void
   onClose: () => void
   saving: boolean
+  isComposite: boolean
 }) {
   const [label, setLabel] = useState(node.label ?? '')
   const [config, setConfig] = useState<Record<string, unknown>>(node.config ?? {})
@@ -363,12 +406,15 @@ function NodeEditor({
   }, [node])
 
   const save = () => {
-    onSave({
+    const patch: Partial<GraphNode> = {
       label: label || null,
       config,
       is_entry: isEntry,
-      entry_trigger: isEntry ? entryTrigger || null : null,
-    } as Partial<GraphNode>)
+    }
+    if (!isComposite) {
+      patch.entry_trigger = isEntry ? entryTrigger || null : null
+    }
+    onSave(patch)
   }
 
   return (
@@ -401,9 +447,14 @@ function NodeEditor({
       <div className="mb-4 p-3 bg-zinc-50 rounded border border-zinc-200">
         <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
           <input type="checkbox" checked={isEntry} onChange={(e) => setIsEntry(e.target.checked)} />
-          Punto di ingresso (trigger)
+          {isComposite ? 'Nodo di ingresso del composito' : 'Punto di ingresso (trigger)'}
         </label>
-        {isEntry && (
+        {isComposite && isEntry && (
+          <div className="mt-2 text-[11px] text-zinc-500">
+            Il composito ha un solo ingresso: attivarlo qui disattiva quello precedente.
+          </div>
+        )}
+        {!isComposite && isEntry && (
           <div className="mt-2">
             <input
               value={entryTrigger}

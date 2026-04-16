@@ -3,6 +3,7 @@
 namespace App\Services\Flow;
 
 use App\Models\BotSetting;
+use App\Models\FlowComposite;
 use App\Models\FlowModulePreset;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -44,8 +45,15 @@ class ModuleRegistry
     /** @var array<string, ModuleMeta> */
     private array $presetMeta = [];
 
+    /** @var array<string, FlowComposite> */
+    private array $compositesByKey = [];
+
+    /** @var array<string, ModuleMeta> */
+    private array $compositeMeta = [];
+
     private bool $bootedBuiltIn = false;
     private bool $bootedPresets = false;
+    private bool $bootedComposites = false;
 
     /* ───────── Boot ───────── */
 
@@ -106,10 +114,36 @@ class ModuleRegistry
         }
     }
 
+    public function bootComposites(): void
+    {
+        if ($this->bootedComposites) {
+            return;
+        }
+        $this->bootedComposites = true;
+
+        try {
+            $composites = FlowComposite::all();
+        } catch (\Throwable $e) {
+            Log::warning('ModuleRegistry: flow_composites not available', [
+                'error' => $e->getMessage(),
+            ]);
+            return;
+        }
+
+        foreach ($composites as $composite) {
+            $this->compositesByKey[$composite->key] = $composite;
+            // Meta construita on-the-fly perché gli outputs dipendono dai
+            // composite_output interni e possono cambiare nel tempo.
+            $probe = new CompositeRefModule($composite);
+            $this->compositeMeta[$composite->key] = $probe->meta();
+        }
+    }
+
     private function boot(): void
     {
         $this->bootBuiltIn();
         $this->bootPresets();
+        $this->bootComposites();
     }
 
     /* ───────── Istanziazione ───────── */
@@ -122,6 +156,12 @@ class ModuleRegistry
     public function instantiate(string $key, array $config = []): ?Module
     {
         $this->boot();
+
+        // Composito → CompositeRefModule (decisione presa dal runner:
+        // execute() restituisce descendCompositeId).
+        if (isset($this->compositesByKey[$key])) {
+            return new CompositeRefModule($this->compositesByKey[$key], $config);
+        }
 
         // Preset → base class + merge config_defaults.
         if (isset($this->presetsByKey[$key])) {
@@ -151,7 +191,9 @@ class ModuleRegistry
     public function has(string $key): bool
     {
         $this->boot();
-        return isset($this->builtInByKey[$key]) || isset($this->presetsByKey[$key]);
+        return isset($this->builtInByKey[$key])
+            || isset($this->presetsByKey[$key])
+            || isset($this->compositesByKey[$key]);
     }
 
     /* ───────── Meta ───────── */
@@ -162,7 +204,10 @@ class ModuleRegistry
     public function meta(string $key): ?ModuleMeta
     {
         $this->boot();
-        return $this->builtInMeta[$key] ?? $this->presetMeta[$key] ?? null;
+        return $this->builtInMeta[$key]
+            ?? $this->presetMeta[$key]
+            ?? $this->compositeMeta[$key]
+            ?? null;
     }
 
     /**
@@ -198,6 +243,15 @@ class ModuleRegistry
             ];
         }
 
+        foreach ($this->compositeMeta as $key => $meta) {
+            $composite = $this->compositesByKey[$key];
+            $out[] = $meta->toArray() + [
+                'type'         => 'composite',
+                'composite_id' => $composite->id,
+                'enabled'      => $toggles[$key] ?? true,
+            ];
+        }
+
         usort($out, fn($a, $b) => [$a['category'], $a['label']] <=> [$b['category'], $b['label']]);
         return $out;
     }
@@ -214,12 +268,16 @@ class ModuleRegistry
         $toggles = $this->toggles();
 
         $out = [];
-        foreach (array_merge($this->builtInMeta, $this->presetMeta) as $key => $meta) {
+        $all = array_merge($this->builtInMeta, $this->presetMeta, $this->compositeMeta);
+        foreach ($all as $key => $meta) {
             if (!($toggles[$key] ?? true)) {
                 continue;
             }
             $row = $meta->toArray();
-            if (isset($this->presetsByKey[$key])) {
+            if (isset($this->compositesByKey[$key])) {
+                $row['type'] = 'composite';
+                $row['composite_id'] = $this->compositesByKey[$key]->id;
+            } elseif (isset($this->presetsByKey[$key])) {
                 $row['type'] = 'preset';
                 $row['base_module_key'] = $this->presetsByKey[$key]->base_module_key;
             } else {
@@ -292,6 +350,13 @@ class ModuleRegistry
         $this->presetsByKey = [];
         $this->presetMeta   = [];
         $this->bootedPresets = false;
+    }
+
+    public function invalidateComposites(): void
+    {
+        $this->compositesByKey = [];
+        $this->compositeMeta   = [];
+        $this->bootedComposites = false;
     }
 
     /**
