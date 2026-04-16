@@ -51,7 +51,12 @@
       "Bash(php:*)",
       "Bash(grep -A20 \"Schema::create.*bookings\\\\|Schema::create.*match_invitations\\\\|Schema::create.*match_results\" database/migrations/2026_03_21*.php database/migrations/*bookings*.php)",
       "Bash(ls -la /Users/domenicocaliendo/Desktop/lecerclebot/app/Services/Bot/*.php)",
-      "Bash(grep *)"
+      "Bash(grep *)",
+      "Read(//Users/domenicocaliendo/.nvm/versions/node/**)",
+      "Bash(command -v volta)",
+      "Bash(export PATH=\"$HOME/.nvm/versions/node/v22.22.2/bin:$PATH\")",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }
