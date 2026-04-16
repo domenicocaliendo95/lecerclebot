@@ -8,83 +8,93 @@ use App\Models\FlowCompositeNode;
 use App\Models\FlowEdge;
 use App\Models\FlowNode;
 use App\Models\User;
-use App\Services\WhatsAppService;
+use App\Services\Channel\ChannelRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Interprete del grafo di moduli.
+ * Interprete del grafo di moduli, agnostico al canale.
  *
- * Ogni messaggio in arrivo risolve la sessione, trova il nodo corrente (o il
- * trigger d'ingresso adatto) e cammina il grafo finché non incontra un modulo
- * che chiede `wait`.
+ * L'input entra via `process($channel, $externalId, $input)` dal controller
+ * del canale (WhatsApp, Webchat, Telegram…); l'output viene dispatcato via
+ * il `ChannelAdapter` corrispondente letto da `ChannelRegistry`.
  *
  * ## Composites (sotto-grafi)
  *
- * Il runner supporta il richiamo di sotto-grafi riusabili ("compositi"):
+ * Il runner supporta il richiamo di sotto-grafi riusabili:
  *   - un nodo del grafo può essere un `CompositeRefModule` (istanziato dal
- *     registry quando `module_key = "composite:<key>"`); esegue e restituisce
- *     `descendCompositeId` al runner
- *   - il runner "discende" nel sotto-grafo: push su `session.data.__flow_stack`
- *     di `{parent_node_id, parent_graph}`, jump al nodo `is_entry=true` del
+ *     registry quando il module_key corrisponde a un composite); esegue e
+ *     restituisce `descendCompositeId` al runner
+ *   - il runner push'a su `session.data.__flow_stack`
+ *     `{parent_node_id, parent_graph}` e salta al nodo `is_entry=true` del
  *     composito, cambia `currentGraph` al suo id
  *   - quando l'esecuzione raggiunge un `CompositeOutputModule`, restituisce
- *     `ascendPort`; il runner "risale": pop dallo stack, continua dal parent
- *     nella porta specificata
- *   - `wait` dentro un composito salva il cursore includendo il graph corrente
- *     (via `session.data.__cursor`), così al prossimo messaggio riprendiamo
- *     dentro il sotto-grafo senza perdere contesto
+ *     `ascendPort`; il runner pop'pa e continua dal parent nella porta emessa
+ *   - un `wait` dentro un composito salva il cursore includendo il graph
+ *     corrente (via `session.data.__cursor`), così il prossimo messaggio
+ *     riprende dentro il sotto-grafo senza perdere contesto
  */
 class FlowRunner
 {
     private const MAX_STEPS = 100;
 
     public function __construct(
-        private readonly ModuleRegistry $registry,
-        private readonly WhatsAppService $whatsApp,
+        private readonly ModuleRegistry  $registry,
+        private readonly ChannelRegistry $channels,
     ) {}
 
     /* ───────────────────── Ingressi pubblici ───────────────────── */
 
-    public function process(string $phone, string $input): void
+    public function process(string $channel, string $externalId, string $input): void
     {
-        $this->dispatch($phone, $this->run($phone, $input));
+        $this->dispatch($channel, $externalId, $this->run($channel, $externalId, $input));
     }
 
-    public function simulate(string $phone, string $input): array
+    public function simulate(string $channel, string $externalId, string $input): array
     {
-        return $this->run($phone, $input);
+        return $this->run($channel, $externalId, $input);
     }
 
     /* ───────────────────── Core ───────────────────── */
 
-    private function run(string $phone, string $input): array
+    private function run(string $channel, string $externalId, string $input): array
     {
         $queue = [];
 
         try {
-            DB::transaction(function () use ($phone, $input, &$queue) {
-                $user    = User::where('phone', $phone)->first();
-                $session = $this->resolveSession($phone);
+            DB::transaction(function () use ($channel, $externalId, $input, &$queue) {
+                $session = $this->resolveSession($channel, $externalId);
+                $user    = $this->resolveUser($channel, $externalId, $session);
                 $session->mergeData(['last_input' => $input]);
 
                 [$startNode, $startGraph, $resuming] = $this->resolveStart($session, $input);
                 if ($startNode === null) {
                     Log::warning('FlowRunner: no matching entry node', [
-                        'phone' => $phone,
-                        'input' => $input,
+                        'channel'     => $channel,
+                        'external_id' => $externalId,
+                        'input'       => $input,
                     ]);
                     return;
                 }
 
-                $queue = $this->walk($startNode, $startGraph, $session, $phone, $input, $user, $resuming);
+                $queue = $this->walk(
+                    start:        $startNode,
+                    currentGraph: $startGraph,
+                    session:      $session,
+                    channel:      $channel,
+                    externalId:   $externalId,
+                    input:        $input,
+                    user:         $user,
+                    resuming:     $resuming,
+                );
             });
         } catch (\Throwable $e) {
             Log::error('FlowRunner: fatal error', [
-                'phone' => $phone,
-                'input' => $input,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'channel'     => $channel,
+                'external_id' => $externalId,
+                'input'       => $input,
+                'error'       => $e->getMessage(),
+                'trace'       => $e->getTraceAsString(),
             ]);
             return [[
                 'type' => 'text',
@@ -96,16 +106,14 @@ class FlowRunner
     }
 
     /**
-     * Cammina il grafo. `$currentGraph` è null per il grafo principale, int
-     * (composite_id) quando siamo dentro un sotto-grafo.
-     *
      * @return array<int,array>
      */
     private function walk(
         FlowNode|FlowCompositeNode $start,
         ?int                        $currentGraph,
         BotSession                  $session,
-        string                      $phone,
+        string                      $channel,
+        string                      $externalId,
         string                      $input,
         ?User                       $user,
         bool                        $resuming,
@@ -125,16 +133,14 @@ class FlowRunner
                 break;
             }
 
-            // Il FlowContext prende sempre un FlowNode per compatibilità.
-            // All'interno di un composito facciamo una proiezione leggera
-            // (i moduli in genere leggono solo config, non toccano $ctx->node).
             $ctx = new FlowContext(
-                session:  $session,
-                phone:    $phone,
-                input:    $currentInput,
-                user:     $user,
-                node:     $this->projectNode($node),
-                resuming: $resuming,
+                session:    $session,
+                channel:    $channel,
+                externalId: $externalId,
+                input:      $currentInput,
+                user:       $user,
+                node:       $this->projectNode($node),
+                resuming:   $resuming,
             );
 
             try {
@@ -184,8 +190,6 @@ class FlowRunner
             if ($result->ascendPort !== null) {
                 $frame = $this->popStack($session);
                 if ($frame === null) {
-                    // Nessuno stack: siamo al top-level con un composite_output
-                    // orfano. Termina il flusso.
                     $this->clearCursor($session);
                     return $queue;
                 }
@@ -222,8 +226,9 @@ class FlowRunner
         }
 
         Log::warning('FlowRunner: MAX_STEPS reached', [
-            'phone' => $phone,
-            'last'  => $node->id ?? null,
+            'channel'     => $channel,
+            'external_id' => $externalId,
+            'last'        => $node->id ?? null,
         ]);
         return $queue;
     }
@@ -232,7 +237,6 @@ class FlowRunner
 
     /**
      * @return array{0: FlowNode|FlowCompositeNode|null, 1: ?int, 2: bool}
-     *         [startNode, currentGraph, resuming]
      */
     private function resolveStart(BotSession $session, string $input): array
     {
@@ -252,7 +256,6 @@ class FlowRunner
             }
         }
 
-        // Trigger search sul grafo principale.
         $triggers = FlowNode::where('is_entry', true)
             ->orderByRaw("CASE WHEN entry_trigger LIKE 'keyword:%' THEN 0 ELSE 1 END")
             ->get();
@@ -267,11 +270,9 @@ class FlowRunner
     private function saveCursor(BotSession $session, int $nodeId, ?int $currentGraph): void
     {
         if ($currentGraph === null) {
-            // Siamo nel grafo principale: usa la colonna nativa.
             $session->update(['current_node_id' => $nodeId]);
             $session->mergeData(['__cursor' => null]);
         } else {
-            // Dentro un composito: usa __cursor JSON.
             $session->update(['current_node_id' => null]);
             $session->mergeData(['__cursor' => [
                 'graph'   => $currentGraph,
@@ -347,21 +348,35 @@ class FlowRunner
         return false;
     }
 
-    /* ───────────────────── Sessione ───────────────────── */
+    /* ───────────────────── Sessione & utente ───────────────────── */
 
-    private function resolveSession(string $phone): BotSession
+    private function resolveSession(string $channel, string $externalId): BotSession
     {
+        // Per WhatsApp popoliamo anche la colonna phone (backward compat).
+        $attrs = ['state' => 'NEW', 'data' => []];
+        if ($channel === 'whatsapp') {
+            $attrs['phone'] = $externalId;
+        }
         return BotSession::firstOrCreate(
-            ['phone' => $phone],
-            ['state' => 'NEW', 'data' => []],
+            ['channel' => $channel, 'external_id' => $externalId],
+            $attrs,
         );
     }
 
     /**
-     * Moduli leggono `$ctx->node` principalmente per id/config; normalizziamo
-     * i nodi compositi a FlowNode-like via cast di dati (i moduli non si
-     * accorgono della differenza finché non persistono riferimenti al model).
+     * L'identificazione utente è specifica del canale. Per WhatsApp cerchiamo
+     * per `phone`; per altri canali non c'è (ancora) un concetto di utente
+     * tennistico autenticato, quindi ritorniamo null. I moduli dominio che
+     * hanno bisogno di un User gestiranno il caso null.
      */
+    private function resolveUser(string $channel, string $externalId, BotSession $session): ?User
+    {
+        if ($channel === 'whatsapp') {
+            return User::where('phone', $externalId)->first();
+        }
+        return null;
+    }
+
     private function projectNode(FlowNode|FlowCompositeNode $n): FlowNode
     {
         if ($n instanceof FlowNode) return $n;
@@ -378,18 +393,36 @@ class FlowRunner
 
     /* ───────────────────── Invio messaggi ───────────────────── */
 
-    private function dispatch(string $phone, array $queue): void
+    private function dispatch(string $channel, string $externalId, array $queue): void
     {
+        if (empty($queue)) return;
+
+        $adapter = $this->channels->get($channel);
+        if ($adapter === null) {
+            Log::warning('FlowRunner: no adapter for channel', ['channel' => $channel]);
+            return;
+        }
+
         foreach ($queue as $msg) {
             try {
                 $type = $msg['type'] ?? 'text';
                 if ($type === 'buttons' && !empty($msg['buttons'])) {
-                    $this->whatsApp->sendButtons($phone, (string) ($msg['text'] ?? ''), (array) $msg['buttons']);
+                    $adapter->sendButtons($externalId, (string) ($msg['text'] ?? ''), (array) $msg['buttons']);
+                } elseif ($type === 'list' && !empty($msg['items'])) {
+                    $adapter->sendList(
+                        $externalId,
+                        (string) ($msg['text'] ?? ''),
+                        (string) ($msg['button'] ?? 'Opzioni'),
+                        (array) $msg['items'],
+                    );
                 } else {
-                    $this->whatsApp->sendText($phone, (string) ($msg['text'] ?? ''));
+                    $adapter->sendText($externalId, (string) ($msg['text'] ?? ''));
                 }
             } catch (\Throwable $e) {
-                Log::warning('FlowRunner: dispatch failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+                Log::warning('FlowRunner: dispatch failed', [
+                    'channel' => $channel,
+                    'error'   => $e->getMessage(),
+                ]);
             }
         }
     }

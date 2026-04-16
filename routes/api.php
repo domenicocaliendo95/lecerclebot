@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\WhatsAppController;
+use App\Http\Controllers\WebchatController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\BookingController;
@@ -15,9 +16,14 @@ use App\Http\Controllers\Api\FlowGraphController;
 use App\Http\Controllers\Api\FlowCompositeController;
 use App\Http\Controllers\Api\ModuleCatalogController;
 
-// ── WhatsApp Webhook (nessuna auth) ──────────────────────────────────
+// ── Canali (inbound/outbound, nessuna auth) ──────────────────────────
+// WhatsApp (Meta Cloud API webhook)
 Route::get('/webhook', [WhatsAppController::class, 'verify']);
 Route::post('/webhook', [WhatsAppController::class, 'handle']);
+
+// Webchat: inbound via POST, outbound via polling
+Route::post('/webchat/message', [WebchatController::class, 'inbound']);
+Route::get('/webchat/poll',     [WebchatController::class, 'poll']);
 
 // ── Auth ─────────────────────────────────────────────────────────────
 Route::post('/auth/login', [AuthController::class, 'login']);

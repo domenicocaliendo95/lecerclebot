@@ -60,7 +60,7 @@ class WhatsAppController extends Controller
                 return response('OK', 200);
             }
 
-            $this->runner->process($from, $input);
+            $this->runner->process('whatsapp', $from, $input);
         } catch (\Throwable $e) {
             // Log ma rispondi comunque 200 — Meta non deve riprovare
             Log::error('WhatsApp webhook handler error', [
