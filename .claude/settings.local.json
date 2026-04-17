@@ -56,7 +56,8 @@
       "Bash(command -v volta)",
       "Bash(export PATH=\"$HOME/.nvm/versions/node/v22.22.2/bin:$PATH\")",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(awk 'NR>=460 && NR<=500' src/pages/flusso.tsx)"
     ]
   }
 }
