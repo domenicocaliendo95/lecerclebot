@@ -92,7 +92,7 @@ function ShopifyCard({ data, selected }: NodeProps) {
       ${selected ? 'border-blue-500 shadow-lg' : 'border-zinc-200 hover:shadow-md'}
     `}>
       {/* Invisible handles */}
-      <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white !-left-1.5" />
+      <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white !-top-1.5" />
 
       {/* Header label */}
       <div className={`px-4 pt-3 pb-1 text-[11px] font-medium tracking-wide ${s.color}`}>
@@ -118,10 +118,10 @@ function ShopifyCard({ data, selected }: NodeProps) {
         <Handle
           key={port}
           type="source"
-          position={Position.Right}
+          position={Position.Bottom}
           id={port}
-          className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white !-right-1.5"
-          style={{ top: `${30 + (i * 60 / Math.max(arr.length - 1, 1))}%` }}
+          className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white !-bottom-1.5"
+          style={{ left: arr.length > 1 ? `${20 + (i * 60 / Math.max(arr.length - 1, 1))}%` : '50%' }}
         />
       ))}
     </div>
@@ -138,7 +138,7 @@ function layoutGraph(
 ): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 120, marginx: 40, marginy: 40 })
+  g.setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 100, marginx: 40, marginy: 40 })
 
   for (const n of graphNodes) {
     g.setNode(String(n.id), { width: 240, height: 90 })
