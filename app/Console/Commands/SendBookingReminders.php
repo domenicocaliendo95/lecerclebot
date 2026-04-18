@@ -12,32 +12,26 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Invia promemoria per le prenotazioni imminenti.
+ * Cron unico per i promemoria prenotazioni — gira ogni 5 minuti.
  *
- * Ogni reminder slot in bot_settings.reminders punta a un flow_node_id —
- * un nodo `invia_bottoni` nel grafo. Il comando:
- *   1. Carica il nodo e ne legge testo + bottoni dal config
- *   2. Interpola le variabili ({name}, {slot}, {hours})
- *   3. Manda il messaggio via ChannelAdapter (WhatsApp di default)
- *   4. Setta session.data.selected_booking_id + current_node_id così che
- *      quando l'utente clicca un bottone (es. "Disdici"), il FlowRunner
- *      riprende dal nodo e segue l'edge corrispondente
- *
- * Schedulato ogni 15 minuti via routes/console.php.
+ * Per ogni slot attivo in bot_settings.reminders:
+ *   1. Trova le prenotazioni nella finestra temporale (±8 min)
+ *   2. Controlla se il reminder per quello slot è già stato inviato
+ *      (campo bookings.reminders_sent JSON, persistente e affidabile)
+ *   3. Se non inviato: legge testo + bottoni dal nodo del flusso,
+ *      manda via ChannelAdapter, setta il cursore del FlowRunner
+ *      sulla sessione, marca come inviato su DB
  */
 class SendBookingReminders extends Command
 {
     protected $signature = 'bot:send-reminders
                            {--dry-run : Mostra senza inviare}';
 
-    protected $description = 'Invia promemoria prenotazioni con messaggio e bottoni dal flusso configurato';
+    protected $description = 'Invia promemoria prenotazioni (dedup su DB, gira ogni 5 min)';
 
     public function handle(ChannelRegistry $channels): int
     {
-        $settings = BotSetting::get('reminders', [
-            'enabled' => true,
-            'slots'   => [],
-        ]);
+        $settings = BotSetting::get('reminders', ['enabled' => true, 'slots' => []]);
 
         if (!($settings['enabled'] ?? true)) {
             $this->info('Reminders disabilitati.');
@@ -53,30 +47,31 @@ class SendBookingReminders extends Command
             return self::SUCCESS;
         }
 
-        $now   = Carbon::now('Europe/Rome');
-        $sent  = 0;
-        $isDry = $this->option('dry-run');
+        $now     = Carbon::now('Europe/Rome');
+        $sent    = 0;
+        $isDry   = $this->option('dry-run');
         $adapter = $channels->get('whatsapp');
 
         foreach ($slots as $slot) {
             $hoursBefore = (int) ($slot['hours_before'] ?? 0);
+            $slotKey     = (string) $hoursBefore;
             $nodeId      = (int) $slot['flow_node_id'];
 
             $flowNode = FlowNode::find($nodeId);
             if (!$flowNode) {
-                $this->warn("Slot {$hoursBefore}h: flow_node_id={$nodeId} non trovato, skip.");
+                $this->warn("Slot {$hoursBefore}h: nodo {$nodeId} non trovato.");
                 continue;
             }
 
             $config  = $flowNode->config ?? [];
             $text    = (string) ($config['text'] ?? 'Promemoria prenotazione');
-            $buttons = array_map(
-                fn($b) => is_array($b) ? (string) ($b['label'] ?? '') : (string) $b,
-                (array) ($config['buttons'] ?? [])
-            );
-            $buttons = array_filter($buttons, fn($l) => $l !== '');
+            $buttons = collect($config['buttons'] ?? [])
+                ->map(fn($b) => is_array($b) ? (string) ($b['label'] ?? '') : (string) $b)
+                ->filter(fn($l) => $l !== '')
+                ->values()
+                ->all();
 
-            $windowStart = $now->copy()->addHours($hoursBefore)->subMinutes(7);
+            $windowStart = $now->copy()->addHours($hoursBefore)->subMinutes(8);
             $windowEnd   = $now->copy()->addHours($hoursBefore)->addMinutes(8);
 
             $bookings = Booking::whereIn('status', ['confirmed', 'pending_match'])
@@ -89,10 +84,12 @@ class SendBookingReminders extends Command
                 ->get();
 
             foreach ($bookings as $booking) {
-                $cacheKey = "reminder:{$booking->id}:{$hoursBefore}h";
-                if (cache()->has($cacheKey)) continue;
+                // Dedup su DB: controlla se già inviato per questo slot
+                $alreadySent = $booking->reminders_sent[$slotKey] ?? false;
+                if ($alreadySent) continue;
 
-                $slotLabel = Carbon::parse($booking->booking_date)->locale('it')->isoFormat('dddd D MMMM')
+                $slotLabel = Carbon::parse($booking->booking_date)
+                    ->locale('it')->isoFormat('dddd D MMMM')
                     . ' alle ' . substr($booking->start_time, 0, 5);
 
                 $players = array_filter([
@@ -100,12 +97,17 @@ class SendBookingReminders extends Command
                     $booking->player2 && $booking->player2->phone ? $booking->player2 : null,
                 ]);
 
+                if (empty($players)) continue;
+
                 foreach ($players as $player) {
-                    $msg = $this->interpolate($text, $player->name, $slotLabel, $hoursBefore);
+                    $msg = str_replace(
+                        ['{name}', '{slot}', '{hours}'],
+                        [$player->name, $slotLabel, (string) $hoursBefore],
+                        $text
+                    );
 
                     if ($isDry) {
-                        $this->line("  [DRY] {$player->phone}: {$msg}");
-                        $sent++;
+                        $this->line("  [DRY] {$slotKey}h · {$player->phone}: {$msg}");
                         continue;
                     }
 
@@ -116,13 +118,15 @@ class SendBookingReminders extends Command
                             $adapter->sendText($player->phone, $msg);
                         }
 
-                        // Setta il cursore sul nodo reminder così il FlowRunner gestirà
-                        // la risposta dell'utente (es. click su "Disdici")
                         if (!empty($buttons)) {
                             $this->setCursorForResponse($player->phone, $booking->id, $nodeId);
                         }
 
-                        $sent++;
+                        Log::info('Reminder inviato', [
+                            'booking'      => $booking->id,
+                            'phone'        => $player->phone,
+                            'hours_before' => $hoursBefore,
+                        ]);
                     } catch (\Throwable $e) {
                         Log::warning('Reminder send failed', [
                             'phone' => $player->phone,
@@ -131,28 +135,18 @@ class SendBookingReminders extends Command
                     }
                 }
 
-                cache()->put($cacheKey, true, now()->addHours(48));
+                // Marca come inviato su DB (persistente, sopravvive a cache clear)
+                $existing = $booking->reminders_sent ?? [];
+                $existing[$slotKey] = now()->toIso8601String();
+                $booking->update(['reminders_sent' => $existing]);
+                $sent++;
             }
         }
 
-        $this->info(($isDry ? '[DRY] ' : '') . "Reminders inviati: {$sent}");
+        $this->info(($isDry ? '[DRY] ' : '') . "Prenotazioni notificate: {$sent}");
         return self::SUCCESS;
     }
 
-    private function interpolate(string $template, string $name, string $slot, int $hours): string
-    {
-        return str_replace(
-            ['{name}', '{slot}', '{hours}'],
-            [$name, $slot, (string) $hours],
-            $template
-        );
-    }
-
-    /**
-     * Setta la sessione dell'utente affinché la prossima risposta venga
-     * gestita dal FlowRunner a partire dal nodo reminder (dove matcherà
-     * il bottone cliccato e seguirà l'edge corrispondente).
-     */
     private function setCursorForResponse(string $phone, int $bookingId, int $nodeId): void
     {
         $session = BotSession::where('channel', 'whatsapp')
@@ -169,7 +163,6 @@ class SendBookingReminders extends Command
             ]);
         }
 
-        // Solo se la sessione è "idle" (nessun flusso in corso)
         if ($session->current_node_id !== null || !empty($session->getData('__cursor'))) {
             return;
         }

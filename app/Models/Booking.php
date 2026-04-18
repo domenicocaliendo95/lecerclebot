@@ -12,12 +12,14 @@ class Booking extends Model
         'status', 'gcal_event_id',
         'stripe_payment_link_p1', 'stripe_payment_link_p2',
         'payment_status_p1', 'payment_status_p2',
+        'reminders_sent',
     ];
 
     protected $casts = [
         'booking_date'         => 'date',
         'is_peak'              => 'boolean',
         'player2_confirmed_at' => 'datetime',
+        'reminders_sent'       => 'array',
     ];
 
     public function player1() {

@@ -9,32 +9,21 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 /*
- * Ogni 15 minuti: invia richiesta risultato ai giocatori
- * la cui partita è terminata da almeno 1 ora.
- *
- * Lanciabile manualmente:
- *   php artisan bot:send-result-requests
- *   php artisan bot:send-result-requests --dry-run
+ * Ogni 5 minuti: invia promemoria per prenotazioni imminenti.
+ * Dedup su DB (bookings.reminders_sent), no cache.
+ * Configurazione: Impostazioni → Promemoria.
+ * Flusso risposta (es. disdetta): editabile da /panel/flusso.
  */
-Schedule::command('bot:send-result-requests')
-    ->everyFifteenMinutes()
+Schedule::command('bot:send-reminders')
+    ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
 
 /*
- * bot:retry-matchmaking è stato rimosso durante la migrazione al FlowRunner.
- * Il matchmaking sarà ricostruito come grafo di moduli nel nuovo editor.
+ * Ogni 15 minuti: invia richiesta risultato ai giocatori
+ * la cui partita è terminata da almeno 1 ora.
  */
-
-/*
- * Ogni 15 minuti: invia promemoria per prenotazioni imminenti.
- * Orari configurabili da pannello admin (Impostazioni → Promemoria).
- *
- * Lanciabile manualmente:
- *   php artisan bot:send-reminders
- *   php artisan bot:send-reminders --dry-run
- */
-Schedule::command('bot:send-reminders')
+Schedule::command('bot:send-result-requests')
     ->everyFifteenMinutes()
     ->withoutOverlapping()
     ->runInBackground();
