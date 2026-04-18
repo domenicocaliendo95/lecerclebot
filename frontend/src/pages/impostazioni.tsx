@@ -3,6 +3,7 @@ import {
   Loader2, Zap, Info, Plus, Pencil, Trash2, Bell, Check,
   MessageCircle, Sparkles, Calendar, Clock, Eye, EyeOff, AlertTriangle,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +19,7 @@ interface RuleForm {
 }
 const emptyForm: RuleForm = { label: '', day_of_week: '', specific_date: '', start_time: '08:00', end_time: '22:00', duration_minutes: '', price: '', price_per_hour: '', is_peak: false, priority: '0' }
 
-interface ReminderSlot { hours_before: number; enabled: boolean }
+interface ReminderSlot { hours_before: number; enabled: boolean; flow_node_id?: number }
 interface ReminderSettings { enabled: boolean; slots: ReminderSlot[] }
 
 interface EnvConfig {
@@ -653,14 +654,27 @@ function ReminderConfig() {
                         <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                         {slot.hours_before >= 24 ? `${Math.floor(slot.hours_before / 24)} giorno${slot.hours_before >= 48 ? 'i' : ''} prima` : `${slot.hours_before} ore prima`}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {slot.hours_before >= 12 ? 'Messaggio: "Hai una prenotazione domani..."' : 'Messaggio: "Ci siamo quasi! Tra poco..."'}
-                      </p>
+                      {slot.flow_node_id ? (
+                        <p className="text-xs text-muted-foreground">
+                          Messaggio e bottoni configurati nel flusso
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-600">
+                          Nessun flusso collegato — configura il messaggio
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <button onClick={() => removeSlot(i)} className="rounded p-1 hover:bg-red-100 text-red-500 transition-colors">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {slot.flow_node_id && (
+                      <Link to="/flusso" className="rounded px-2 py-1 text-xs text-emerald-600 hover:bg-emerald-50 font-medium transition-colors">
+                        Modifica messaggio
+                      </Link>
+                    )}
+                    <button onClick={() => removeSlot(i)} className="rounded p-1 hover:bg-red-100 text-red-500 transition-colors">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

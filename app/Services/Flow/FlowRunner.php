@@ -340,6 +340,9 @@ class FlowRunner
     private function matchesTrigger(FlowNode $trigger, string $input): bool
     {
         $t = $trigger->entry_trigger ?? 'first_message';
+        // I trigger 'scheduler:*' sono solo per invocazione programmatica
+        // (es. SendBookingReminders), mai matchati da messaggi utente.
+        if (str_starts_with($t, 'scheduler:')) return false;
         if ($t === 'first_message') return true;
         if (str_starts_with($t, 'keyword:')) {
             $kw = trim(mb_strtolower(substr($t, 8)));
