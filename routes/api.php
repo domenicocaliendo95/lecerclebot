@@ -73,6 +73,7 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     // Flow graph (nuovo runner a moduli)
     Route::get('/flow/modules',  [FlowGraphController::class, 'modules']);   // registry metadata
     Route::get('/flow/graph',    [FlowGraphController::class, 'graph']);     // nodes + edges
+    Route::get('/flow/nodes/{node}', [FlowGraphController::class, 'showNode']);
     Route::post('/flow/nodes',   [FlowGraphController::class, 'createNode']);
     Route::put('/flow/nodes/positions', [FlowGraphController::class, 'savePositions']);
     Route::put('/flow/nodes/{node}',    [FlowGraphController::class, 'updateNode']);

@@ -77,6 +77,19 @@ class FlowGraphController extends Controller
         ]);
     }
 
+    public function showNode(FlowNode $node): JsonResponse
+    {
+        $module = $this->registry->instantiate($node->module_key, $node->config ?? []);
+        return response()->json([
+            'id'           => $node->id,
+            'module_key'   => $node->module_key,
+            'module_label' => $module?->meta()->label ?? $node->module_key,
+            'label'        => $node->label,
+            'config'       => $node->config ?? [],
+            'outputs'      => $module?->outputs() ?? ['out' => 'Continua'],
+        ]);
+    }
+
     public function createNode(Request $request): JsonResponse
     {
         $data = $request->validate([

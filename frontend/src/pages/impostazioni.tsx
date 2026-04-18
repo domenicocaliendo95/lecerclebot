@@ -3,7 +3,6 @@ import {
   Loader2, Zap, Info, Plus, Pencil, Trash2, Bell, Check,
   MessageCircle, Sparkles, Calendar, Clock, Eye, EyeOff, AlertTriangle,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +20,9 @@ const emptyForm: RuleForm = { label: '', day_of_week: '', specific_date: '', sta
 
 interface ReminderSlot { hours_before: number; enabled: boolean; flow_node_id?: number }
 interface ReminderSettings { enabled: boolean; slots: ReminderSlot[] }
+
+interface FlowNodeConfig { text?: string; buttons?: { label: string }[] }
+interface FlowNodeData { id: number; config: FlowNodeConfig }
 
 interface EnvConfig {
   whatsapp_phone_number_id: string
@@ -639,43 +641,14 @@ function ReminderConfig() {
           <p className="text-sm text-muted-foreground text-center py-4">Promemoria disabilitati.</p>
         ) : (
           <>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {settings.slots.map((slot, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleSlot(i)}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${slot.enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
-                    >
-                      <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${slot.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
-                    </button>
-                    <div>
-                      <p className="text-sm font-medium flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                        {slot.hours_before >= 24 ? `${Math.floor(slot.hours_before / 24)} giorno${slot.hours_before >= 48 ? 'i' : ''} prima` : `${slot.hours_before} ore prima`}
-                      </p>
-                      {slot.flow_node_id ? (
-                        <p className="text-xs text-muted-foreground">
-                          Messaggio e bottoni configurati nel flusso
-                        </p>
-                      ) : (
-                        <p className="text-xs text-amber-600">
-                          Nessun flusso collegato — configura il messaggio
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {slot.flow_node_id && (
-                      <Link to="/flusso" className="rounded px-2 py-1 text-xs text-emerald-600 hover:bg-emerald-50 font-medium transition-colors">
-                        Modifica messaggio
-                      </Link>
-                    )}
-                    <button onClick={() => removeSlot(i)} className="rounded p-1 hover:bg-red-100 text-red-500 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
+                <ReminderSlotCard
+                  key={i}
+                  slot={slot}
+                  onToggle={() => toggleSlot(i)}
+                  onRemove={() => removeSlot(i)}
+                />
               ))}
             </div>
 
@@ -692,5 +665,147 @@ function ReminderConfig() {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ── Componente card per singolo slot reminder con editing inline ──────
+
+function ReminderSlotCard({ slot, onToggle, onRemove }: {
+  slot: ReminderSlot; onToggle: () => void; onRemove: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [, setNodeData] = useState<FlowNodeData | null>(null)
+  const [text, setText] = useState('')
+  const [buttons, setButtons] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
+  const [loadingNode, setLoadingNode] = useState(false)
+
+  const openEdit = async () => {
+    if (!slot.flow_node_id) return
+    if (editing) { setEditing(false); return }
+    setLoadingNode(true)
+    try {
+      const node = await apiFetch<FlowNodeData>(`/admin/flow/nodes/${slot.flow_node_id}`)
+      setNodeData(node)
+      setText((node.config?.text as string) ?? '')
+      setButtons(((node.config?.buttons as { label: string }[]) ?? []).map(b => b.label))
+      setEditing(true)
+    } catch {
+      setNodeData({ id: slot.flow_node_id, config: {} })
+      setText('')
+      setButtons([])
+      setEditing(true)
+    } finally {
+      setLoadingNode(false)
+    }
+  }
+
+  const saveMessage = async () => {
+    if (!slot.flow_node_id) return
+    setSaving(true)
+    try {
+      await apiFetch(`/admin/flow/nodes/${slot.flow_node_id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          config: {
+            text,
+            buttons: buttons.filter(b => b.trim() !== '').map(label => ({ label })),
+          },
+        }),
+      })
+      setEditing(false)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Errore salvataggio')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onToggle}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${slot.enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${slot.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+          </button>
+          <div>
+            <p className="text-sm font-medium flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+              {slot.hours_before >= 24 ? `${Math.floor(slot.hours_before / 24)} giorno${slot.hours_before >= 48 ? 'i' : ''} prima` : `${slot.hours_before} ore prima`}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          {slot.flow_node_id && (
+            <button
+              onClick={openEdit}
+              disabled={loadingNode}
+              className="rounded px-2 py-1 text-xs text-emerald-600 hover:bg-emerald-50 font-medium transition-colors"
+            >
+              {loadingNode ? 'Carico...' : editing ? 'Chiudi' : 'Modifica messaggio'}
+            </button>
+          )}
+          <button onClick={onRemove} className="rounded p-1 hover:bg-red-100 text-red-500 transition-colors">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {editing && (
+        <div className="mt-3 space-y-3 border-t pt-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Messaggio</label>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              rows={3}
+              placeholder="Ciao {name}! Ti ricordo la prenotazione di {slot} 🎾"
+              className={`${inputClass} !h-auto mt-1`}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Variabili: <code>{'{name}'}</code> <code>{'{slot}'}</code> <code>{'{hours}'}</code>
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Bottoni (max 3, 20 char)</label>
+            <div className="space-y-1 mt-1">
+              {buttons.map((btn, bi) => (
+                <div key={bi} className="flex gap-1">
+                  <input
+                    value={btn}
+                    onChange={e => {
+                      const next = [...buttons]
+                      next[bi] = e.target.value
+                      setButtons(next)
+                    }}
+                    maxLength={20}
+                    placeholder={`Bottone ${bi + 1}`}
+                    className={`${inputClass} flex-1`}
+                  />
+                  <button onClick={() => setButtons(buttons.filter((_, j) => j !== bi))}
+                    className="px-2 text-red-400 hover:text-red-600">✕</button>
+                </div>
+              ))}
+              {buttons.length < 3 && (
+                <button onClick={() => setButtons([...buttons, ''])}
+                  className="w-full text-xs text-muted-foreground border border-dashed rounded py-1 hover:bg-muted/50">
+                  + Aggiungi bottone
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={saveMessage} disabled={saving}
+              className="bg-emerald-600 hover:bg-emerald-700">
+              {saving ? 'Salvo...' : 'Salva messaggio'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Annulla</Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
