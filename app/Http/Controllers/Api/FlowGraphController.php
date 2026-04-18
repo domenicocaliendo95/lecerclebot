@@ -36,7 +36,16 @@ class FlowGraphController extends Controller
 
     public function graph(): JsonResponse
     {
-        $nodes = FlowNode::all()->map(function (FlowNode $n) {
+        // Filtra i nodi scheduler:* (reminder, risultati, feedback) dal grafo
+        // principale — sono gestiti nella sezione Impostazioni, non nell'editor.
+        $schedulerNodeIds = FlowNode::where('entry_trigger', 'like', 'scheduler:%')
+            ->pluck('id')->all();
+
+        // Trova anche tutti i nodi raggiungibili SOLO da scheduler entries
+        // (i loro sotto-flussi) così non inquinano la vista principale.
+        $excludeIds = $this->collectReachable($schedulerNodeIds);
+
+        $nodes = FlowNode::whereNotIn('id', $excludeIds)->get()->map(function (FlowNode $n) {
             $module = $this->registry->instantiate($n->module_key, $n->config ?? []);
             return [
                 'id'            => $n->id,
@@ -53,7 +62,8 @@ class FlowGraphController extends Controller
             ];
         });
 
-        $edges = FlowEdge::all()->map(fn(FlowEdge $e) => [
+        $edges = FlowEdge::whereNotIn('from_node_id', $excludeIds)
+            ->whereNotIn('to_node_id', $excludeIds)->get()->map(fn(FlowEdge $e) => [
             'id'           => $e->id,
             'from_node_id' => $e->from_node_id,
             'from_port'    => $e->from_port,
@@ -131,6 +141,41 @@ class FlowGraphController extends Controller
     {
         $node->delete();
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Da un set di nodi radice, trova tutti i nodi raggiungibili via edges
+     * che NON hanno archi in ingresso dal grafo principale (= sotto-flussi
+     * esclusivi dello scheduler, non condivisi col flusso principale).
+     */
+    private function collectReachable(array $rootIds): array
+    {
+        if (empty($rootIds)) return [];
+
+        $visited = [];
+        $queue   = $rootIds;
+
+        while (!empty($queue)) {
+            $current = array_pop($queue);
+            if (in_array($current, $visited, true)) continue;
+            $visited[] = $current;
+
+            // Trova nodi collegati in uscita
+            $nextIds = FlowEdge::where('from_node_id', $current)->pluck('to_node_id')->all();
+            foreach ($nextIds as $nextId) {
+                // Includi solo se il nodo non ha archi IN INGRESSO da nodi NON-scheduler
+                $incomingFromMainGraph = FlowEdge::where('to_node_id', $nextId)
+                    ->whereNotIn('from_node_id', $visited)
+                    ->whereNotIn('from_node_id', $rootIds)
+                    ->exists();
+
+                if (!$incomingFromMainGraph && !in_array($nextId, $visited, true)) {
+                    $queue[] = $nextId;
+                }
+            }
+        }
+
+        return $visited;
     }
 
     public function createEdge(Request $request): JsonResponse

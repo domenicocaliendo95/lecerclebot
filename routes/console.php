@@ -27,3 +27,12 @@ Schedule::command('bot:send-result-requests')
     ->everyFifteenMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+ * Ogni 15 minuti: invia richiesta feedback ai giocatori
+ * X ore dopo la richiesta risultato. Configurabile in Impostazioni.
+ */
+Schedule::command('bot:send-feedback-requests')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();
