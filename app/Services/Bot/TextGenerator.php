@@ -299,23 +299,45 @@ PROMPT;
 
         /* ─── 2. Estrai l'ORA ─── */
 
-        // "alle 15", "alle 9", "alle 15:30", "ore 18", "h 10", "alle 9.30"
-        if (preg_match('/(?:alle|ore|h|per le)\s*(\d{1,2})(?:[:.](\d{2}))?\b/', $clean, $m)) {
+        // "alle 15", "alle 9:30", "ore 18", "h 10", "alle 9.30", "alle 17,30"
+        // "alle 17 e 30", "alle 9 e mezza/mezzo"
+        if (preg_match('/(?:alle|ore|h|per le)\s*(\d{1,2})\s*e\s*(?:mezz[oa]|30)/', $clean)) {
+            preg_match('/(?:alle|ore|h|per le)\s*(\d{1,2})/', $clean, $m);
             $hour = (int) $m[1];
-            $min  = isset($m[2]) ? (int) $m[2] : 0;
-
+            if ($hour >= 0 && $hour <= 23) {
+                $time = sprintf('%02d:30', $hour);
+            }
+        } elseif (preg_match('/(?:alle|ore|h|per le)\s*(\d{1,2})\s*e\s*(\d{1,2})/', $clean, $m)) {
+            $hour = (int) $m[1];
+            $min  = (int) $m[2];
             if ($hour >= 0 && $hour <= 23 && $min >= 0 && $min <= 59) {
                 $time = sprintf('%02d:%02d', $hour, $min);
             }
+        } elseif (preg_match('/(?:alle|ore|h|per le)\s*(\d{1,2})[:.,' . "'" . '](\d{1,2})/', $clean, $m)) {
+            $hour = (int) $m[1];
+            $min  = (int) $m[2];
+            if ($hour >= 0 && $hour <= 23 && $min >= 0 && $min <= 59) {
+                $time = sprintf('%02d:%02d', $hour, $min);
+            }
+        } elseif (preg_match('/(?:alle|ore|h|per le)\s*(\d{1,2})(?!\s*[:.,' . "'" . 'e\d])/', $clean, $m)) {
+            $hour = (int) $m[1];
+            if ($hour >= 0 && $hour <= 23) {
+                $time = sprintf('%02d:00', $hour);
+            }
         }
 
-        // Ora senza prefisso se c'è già una data: "domani 15", "sabato 18:00"
+        // Ora senza prefisso se c'è già una data: "domani 15", "sabato 18:00", "domani 17.30"
         if ($time === null && $date !== null) {
-            if (preg_match('/\b(\d{1,2})(?:[:.](\d{2}))?\s*$/', $clean, $m)) {
+            if (preg_match('/\b(\d{1,2})[:.,' . "'" . '](\d{1,2})\s*$/', $clean, $m)) {
                 $hour = (int) $m[1];
-                $min  = isset($m[2]) ? (int) $m[2] : 0;
+                $min  = (int) $m[2];
                 if ($hour >= 6 && $hour <= 23 && $min >= 0 && $min <= 59) {
                     $time = sprintf('%02d:%02d', $hour, $min);
+                }
+            } elseif (preg_match('/\b(\d{1,2})\s*$/', $clean, $m)) {
+                $hour = (int) $m[1];
+                if ($hour >= 6 && $hour <= 23) {
+                    $time = sprintf('%02d:00', $hour);
                 }
             }
         }
