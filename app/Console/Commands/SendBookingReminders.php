@@ -122,6 +122,9 @@ class SendBookingReminders extends Command
                             $this->setCursorForResponse($player->phone, $booking->id, $nodeId);
                         }
 
+                        // Log nella history della sessione
+                        $this->logToHistory($player->phone, $msg);
+
                         Log::info('Reminder inviato', [
                             'booking'      => $booking->id,
                             'phone'        => $player->phone,
@@ -145,6 +148,14 @@ class SendBookingReminders extends Command
 
         $this->info(($isDry ? '[DRY] ' : '') . "Prenotazioni notificate: {$sent}");
         return self::SUCCESS;
+    }
+
+    private function logToHistory(string $phone, string $message): void
+    {
+        $session = BotSession::where('channel', 'whatsapp')
+            ->where('external_id', $phone)
+            ->first();
+        $session?->appendHistory('bot', $message);
     }
 
     private function setCursorForResponse(string $phone, int $bookingId, int $nodeId): void

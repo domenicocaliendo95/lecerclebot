@@ -67,6 +67,11 @@ class FlowRunner
                 $user    = $this->resolveUser($channel, $externalId, $session);
                 $session->mergeData(['last_input' => $input]);
 
+                // Log messaggio in ingresso
+                if ($input !== '') {
+                    $session->appendHistory('user', $input);
+                }
+
                 [$startNode, $startGraph, $resuming] = $this->resolveStart($session, $input);
                 if ($startNode === null) {
                     Log::warning('FlowRunner: no matching entry node', [
@@ -87,6 +92,14 @@ class FlowRunner
                     user:         $user,
                     resuming:     $resuming,
                 );
+
+                // Log messaggi in uscita nella history della sessione
+                foreach ($queue as $msg) {
+                    $text = (string) ($msg['text'] ?? '');
+                    if ($text !== '') {
+                        $session->appendHistory('bot', $text);
+                    }
+                }
             });
         } catch (\Throwable $e) {
             Log::error('FlowRunner: fatal error', [
