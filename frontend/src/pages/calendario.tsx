@@ -8,6 +8,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { FormDialog, FormField, inputClass } from '@/components/ui/form-dialog'
+import { PlayerSearch } from '@/components/ui/player-search'
 import { apiFetch } from '@/hooks/use-api'
 import type { Booking } from '@/types/api'
 
@@ -55,6 +57,42 @@ export function Calendario() {
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
   const [bookingsByDate, setBookingsByDate] = useState<Record<string, Booking[]>>({})
   const [loading, setLoading] = useState(true)
+
+  // Dialog creazione prenotazione
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState({ player1_id: '', player1_name: '', player2_id: '', player2_name: '', booking_date: '', start_time: '09:00', end_time: '10:00' })
+  const [submitting, setSubmitting] = useState(false)
+
+  const openCreate = (date?: string, time?: string) => {
+    const d = date ?? formatDate(selectedDate)
+    const t = time ?? '09:00'
+    const endH = Math.min(Number(t.split(':')[0]) + 1, 22)
+    setCreateForm({ player1_id: '', player1_name: '', player2_id: '', player2_name: '', booking_date: d, start_time: t, end_time: `${String(endH).padStart(2, '0')}:00` })
+    setShowCreate(true)
+  }
+
+  const submitCreate = async () => {
+    if (!createForm.player1_id || !createForm.booking_date) return
+    setSubmitting(true)
+    try {
+      await apiFetch('/admin/bookings', {
+        method: 'POST',
+        body: JSON.stringify({
+          player1_id: Number(createForm.player1_id),
+          player2_id: createForm.player2_id ? Number(createForm.player2_id) : null,
+          booking_date: createForm.booking_date,
+          start_time: createForm.start_time,
+          end_time: createForm.end_time,
+        }),
+      })
+      setShowCreate(false)
+      fetchBookings()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Errore creazione')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const weekStart = useMemo(() => startOfWeek(selectedDate), [selectedDate])
   const weekDays = useMemo(
@@ -145,7 +183,7 @@ export function Calendario() {
               Settimana
             </Button>
           </div>
-          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => openCreate()}>
             <Plus className="mr-1 h-4 w-4" />
             Nuova
           </Button>
@@ -198,12 +236,13 @@ export function Calendario() {
             </div>
           )}
 
-          {/* Hour lines */}
+          {/* Hour lines (clickable to create) */}
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="absolute left-0 right-0 border-b border-dashed border-border/50"
+              className="absolute left-0 right-0 border-b border-dashed border-border/50 cursor-pointer hover:bg-emerald-50/50 transition-colors"
               style={{ top: `${(hour - 8) * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}
+              onClick={() => openCreate(formatDate(selectedDate), `${String(hour).padStart(2, '0')}:00`)}
             >
               <span className="absolute -top-2.5 left-2 text-xs text-muted-foreground font-mono w-12">
                 {String(hour).padStart(2, '0')}:00
@@ -230,6 +269,57 @@ export function Calendario() {
           )}
         </div>
       </Card>
+
+      {/* Dialog creazione prenotazione */}
+      <FormDialog
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        title="Nuova prenotazione"
+        onSubmit={submitCreate}
+        submitting={submitting}
+        submitLabel="Crea prenotazione"
+      >
+        <FormField label="Giocatore 1 *">
+          <PlayerSearch
+            value={createForm.player1_id}
+            onChange={(id, name) => setCreateForm(f => ({ ...f, player1_id: id, player1_name: name }))}
+            placeholder="Cerca giocatore..."
+          />
+        </FormField>
+        <FormField label="Giocatore 2 (opzionale)">
+          <PlayerSearch
+            value={createForm.player2_id}
+            onChange={(id, name) => setCreateForm(f => ({ ...f, player2_id: id, player2_name: name }))}
+            placeholder="Cerca avversario..."
+          />
+        </FormField>
+        <FormField label="Data">
+          <input
+            type="date"
+            value={createForm.booking_date}
+            onChange={e => setCreateForm(f => ({ ...f, booking_date: e.target.value }))}
+            className={inputClass}
+          />
+        </FormField>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Ora inizio">
+            <input
+              type="time"
+              value={createForm.start_time}
+              onChange={e => setCreateForm(f => ({ ...f, start_time: e.target.value }))}
+              className={inputClass}
+            />
+          </FormField>
+          <FormField label="Ora fine">
+            <input
+              type="time"
+              value={createForm.end_time}
+              onChange={e => setCreateForm(f => ({ ...f, end_time: e.target.value }))}
+              className={inputClass}
+            />
+          </FormField>
+        </div>
+      </FormDialog>
     </div>
   )
 }
