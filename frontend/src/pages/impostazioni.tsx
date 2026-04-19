@@ -170,6 +170,7 @@ export function Impostazioni() {
 
       {/* Reminder settings */}
       <ReminderConfig />
+      <PostMatchConfig />
 
       {/* Pricing rules */}
       <div className="flex items-center justify-between">
@@ -665,6 +666,206 @@ function ReminderConfig() {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ── Post-partita: risultato + feedback ───────────────────────────────
+
+interface PostMatchSettings {
+  result_request: { enabled: boolean; hours_after: number; flow_node_id: number | null }
+  feedback_request: { enabled: boolean; hours_after: number; flow_node_id: number | null }
+}
+
+function PostMatchConfig() {
+  const [settings, setSettings] = useState<PostMatchSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    apiFetch<{ key: string; value: PostMatchSettings }>('/admin/settings/post_match')
+      .then(res => setSettings(res.value))
+      .catch(() => setSettings({
+        result_request:   { enabled: true, hours_after: 1, flow_node_id: null },
+        feedback_request: { enabled: true, hours_after: 3, flow_node_id: null },
+      }))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const save = async (updated: PostMatchSettings) => {
+    setSettings(updated)
+    setSaving(true)
+    setSaved(false)
+    try {
+      await apiFetch('/admin/settings/post_match', { method: 'PUT', body: JSON.stringify({ value: updated }) })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch { /* */ }
+    setSaving(false)
+  }
+
+  if (loading) return <Card className="rounded-xl shadow-sm"><CardContent className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></CardContent></Card>
+
+  if (!settings) return null
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100">
+            <Sparkles className="h-4 w-4 text-violet-700" />
+          </div>
+          <div>
+            <span>Post-partita</span>
+            <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Richiesta risultato e feedback dopo la partita</p>
+          </div>
+          {saved && <span className="ml-auto text-xs text-emerald-600 flex items-center gap-1"><Check className="h-3 w-3" /> Salvato!</span>}
+          {saving && <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Richiesta risultato */}
+        <PostMatchSlot
+          label="Richiesta risultato"
+          description="Chiede ai giocatori com'è andata la partita"
+          config={settings.result_request}
+          onChange={(cfg) => save({ ...settings, result_request: cfg })}
+        />
+
+        {/* Richiesta feedback */}
+        <PostMatchSlot
+          label="Richiesta feedback"
+          description="Chiede un giudizio sull'esperienza al circolo"
+          config={settings.feedback_request}
+          onChange={(cfg) => save({ ...settings, feedback_request: cfg })}
+        />
+      </CardContent>
+    </Card>
+  )
+}
+
+function PostMatchSlot({ label, description, config, onChange }: {
+  label: string; description: string
+  config: { enabled: boolean; hours_after: number; flow_node_id: number | null }
+  onChange: (c: { enabled: boolean; hours_after: number; flow_node_id: number | null }) => void
+}) {
+  const [editingMsg, setEditingMsg] = useState(false)
+  const [msgText, setMsgText] = useState('')
+  const [msgButtons, setMsgButtons] = useState<string[]>([])
+  const [loadingMsg, setLoadingMsg] = useState(false)
+  const [savingMsg, setSavingMsg] = useState(false)
+
+  const openEdit = async () => {
+    if (!config.flow_node_id) return
+    if (editingMsg) { setEditingMsg(false); return }
+    setLoadingMsg(true)
+    try {
+      const node = await apiFetch<FlowNodeData>(`/admin/flow/nodes/${config.flow_node_id}`)
+      setMsgText((node.config?.text as string) ?? '')
+      setMsgButtons(((node.config?.buttons as { label: string }[]) ?? []).map(b => b.label))
+      setEditingMsg(true)
+    } catch {
+      setMsgText('')
+      setMsgButtons([])
+      setEditingMsg(true)
+    } finally {
+      setLoadingMsg(false)
+    }
+  }
+
+  const saveMsg = async () => {
+    if (!config.flow_node_id) return
+    setSavingMsg(true)
+    try {
+      await apiFetch(`/admin/flow/nodes/${config.flow_node_id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          config: {
+            text: msgText,
+            buttons: msgButtons.filter(b => b.trim()).map(l => ({ label: l })),
+          },
+        }),
+      })
+      setEditingMsg(false)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Errore')
+    } finally {
+      setSavingMsg(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onChange({ ...config, enabled: !config.enabled })}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${config.enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${config.enabled ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+          </button>
+          <div>
+            <p className="text-sm font-medium">{label}</p>
+            <p className="text-[10px] text-muted-foreground">{description}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <input
+              type="number" min="1" max="72"
+              value={config.hours_after}
+              onChange={e => onChange({ ...config, hours_after: Math.max(1, Number(e.target.value)) })}
+              className={`${inputClass} !w-16 text-center text-xs`}
+            />
+            <span className="text-xs text-muted-foreground">ore dopo</span>
+          </div>
+          {config.flow_node_id && (
+            <button onClick={openEdit} disabled={loadingMsg}
+              className="rounded px-2 py-1 text-xs text-emerald-600 hover:bg-emerald-50 font-medium">
+              {loadingMsg ? '...' : 'Modifica messaggio'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {editingMsg && (
+        <div className="mt-3 space-y-3 border-t pt-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Messaggio</label>
+            <textarea value={msgText} onChange={e => setMsgText(e.target.value)} rows={3}
+              className={`${inputClass} !h-auto mt-1`} />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Variabili: <code>{'{name}'}</code> <code>{'{slot}'}</code>
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Bottoni (max 3)</label>
+            <div className="space-y-1 mt-1">
+              {msgButtons.map((btn, bi) => (
+                <div key={bi} className="flex gap-1">
+                  <input value={btn} onChange={e => { const n = [...msgButtons]; n[bi] = e.target.value; setMsgButtons(n) }}
+                    maxLength={20} className={`${inputClass} flex-1`} />
+                  <button onClick={() => setMsgButtons(msgButtons.filter((_, j) => j !== bi))}
+                    className="px-2 text-red-400 hover:text-red-600">✕</button>
+                </div>
+              ))}
+              {msgButtons.length < 3 && (
+                <button onClick={() => setMsgButtons([...msgButtons, ''])}
+                  className="w-full text-xs text-muted-foreground border border-dashed rounded py-1 hover:bg-muted/50">
+                  + Aggiungi bottone
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={saveMsg} disabled={savingMsg} className="bg-emerald-600 hover:bg-emerald-700">
+              {savingMsg ? 'Salvo...' : 'Salva'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setEditingMsg(false)}>Annulla</Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
