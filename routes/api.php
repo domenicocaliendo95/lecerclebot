@@ -51,6 +51,11 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::get('/bot-sessions/{botSession}', [BotSessionController::class, 'show']);
     Route::delete('/bot-sessions/{botSession}', [BotSessionController::class, 'destroy']);
 
+    // Feedback
+    Route::get('/feedbacks', [\App\Http\Controllers\Api\FeedbackController::class, 'index']);
+    Route::post('/feedbacks/{feedback}/read', [\App\Http\Controllers\Api\FeedbackController::class, 'markRead']);
+    Route::post('/feedbacks/read-all', [\App\Http\Controllers\Api\FeedbackController::class, 'markAllRead']);
+
     // Match Results
     Route::get('/match-results', [MatchResultController::class, 'index']);
     Route::get('/match-results/{matchResult}', [MatchResultController::class, 'show']);
