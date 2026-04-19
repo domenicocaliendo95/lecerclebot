@@ -194,7 +194,7 @@ class FlowRunner
                 $this->pushStack($session, $node->id, $currentGraph);
                 $node          = $entry;
                 $currentGraph  = $result->descendCompositeId;
-                $currentInput  = '';
+                // currentInput preservato (vedi nota in fondo al loop)
                 $resuming      = false;
                 continue;
             }
@@ -221,7 +221,7 @@ class FlowRunner
                 }
                 $node         = $next;
                 $currentGraph = $parentGraph;
-                $currentInput = '';
+                // currentInput preservato
                 $resuming     = false;
                 continue;
             }
@@ -233,9 +233,12 @@ class FlowRunner
                 return $queue;
             }
 
-            $node         = $next;
-            $currentInput = '';
-            $resuming     = false;
+            $node     = $next;
+            $resuming = false;
+            // NON azzeriamo currentInput: i moduli successivi nella catena
+            // possono aver bisogno dell'input originale (es. parse_risultato
+            // dopo invia_bottoni, parse_data dopo attendi_input).
+            // I moduli che non necessitano dell'input semplicemente lo ignorano.
         }
 
         Log::warning('FlowRunner: MAX_STEPS reached', [

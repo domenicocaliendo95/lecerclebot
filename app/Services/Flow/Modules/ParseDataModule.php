@@ -39,8 +39,8 @@ class ParseDataModule extends Module
                 'source' => [
                     'type'    => 'string',
                     'label'   => 'Sorgente',
-                    'default' => 'last_input',
-                    'help'    => 'Chiave in session.data. Default "last_input" (ultimo messaggio utente salvato dal runner).',
+                    'default' => 'input',
+                    'help'    => '"input" = ultimo messaggio utente. Oppure una chiave di session.data.',
                 ],
             ],
             icon: 'calendar-clock',
@@ -57,7 +57,7 @@ class ParseDataModule extends Module
 
     public function execute(FlowContext $ctx): ModuleResult
     {
-        $source = (string) $this->cfg('source', 'last_input');
+        $source = (string) $this->cfg('source', 'input');
         $text   = $source === 'input' ? $ctx->input : (string) $ctx->get($source, '');
 
         if (trim($text) === '') {
