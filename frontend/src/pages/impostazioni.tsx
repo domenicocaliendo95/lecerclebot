@@ -672,8 +672,9 @@ function ReminderConfig() {
 // ── Post-partita: risultato + feedback ───────────────────────────────
 
 interface PostMatchSettings {
-  result_request: { enabled: boolean; hours_after: number; flow_node_id: number | null }
-  feedback_request: { enabled: boolean; hours_after: number; flow_node_id: number | null }
+  enabled: boolean
+  hours_after: number
+  flow_node_id: number | null
 }
 
 function PostMatchConfig() {
@@ -685,10 +686,7 @@ function PostMatchConfig() {
   useEffect(() => {
     apiFetch<{ key: string; value: PostMatchSettings }>('/admin/settings/post_match')
       .then(res => setSettings(res.value))
-      .catch(() => setSettings({
-        result_request:   { enabled: true, hours_after: 1, flow_node_id: null },
-        feedback_request: { enabled: true, hours_after: 3, flow_node_id: null },
-      }))
+      .catch(() => setSettings({ enabled: true, hours_after: 1, flow_node_id: null }))
       .finally(() => setLoading(false))
   }, [])
 
@@ -717,27 +715,18 @@ function PostMatchConfig() {
           </div>
           <div>
             <span>Post-partita</span>
-            <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Richiesta risultato e feedback dopo la partita</p>
+            <p className="text-[10px] font-normal text-muted-foreground mt-0.5">Risultato + feedback in un unico flusso dopo la partita</p>
           </div>
           {saved && <span className="ml-auto text-xs text-emerald-600 flex items-center gap-1"><Check className="h-3 w-3" /> Salvato!</span>}
           {saving && <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Richiesta risultato */}
         <PostMatchSlot
-          label="Richiesta risultato"
-          description="Chiede ai giocatori com'è andata la partita"
-          config={settings.result_request}
-          onChange={(cfg) => save({ ...settings, result_request: cfg })}
-        />
-
-        {/* Richiesta feedback */}
-        <PostMatchSlot
-          label="Richiesta feedback"
-          description="Chiede un giudizio sull'esperienza al circolo"
-          config={settings.feedback_request}
-          onChange={(cfg) => save({ ...settings, feedback_request: cfg })}
+          label="Flusso post-partita"
+          description="Chiede risultato → feedback rating → commento"
+          config={settings}
+          onChange={(cfg) => save(cfg)}
         />
       </CardContent>
     </Card>

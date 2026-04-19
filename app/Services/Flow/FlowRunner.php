@@ -371,8 +371,13 @@ class FlowRunner
 
     private function resolveSession(string $channel, string $externalId): BotSession
     {
-        // Per WhatsApp popoliamo anche la colonna phone (backward compat).
-        $attrs = ['state' => 'NEW', 'data' => []];
+        $attrs = [
+            'state' => 'NEW',
+            'data'  => [
+                'persona' => \App\Services\Bot\BotPersona::pickRandom(),
+                'history' => [],
+            ],
+        ];
         if ($channel === 'whatsapp') {
             $attrs['phone'] = $externalId;
         }
