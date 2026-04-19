@@ -78,42 +78,132 @@ function portLabel(port: string, nodeOutputs: Record<string, string>): string {
 
 /* ────────── Custom Node: Shopify-style card ────────── */
 
+/**
+ * Genera una descrizione leggibile per un nodo in base al tipo e config.
+ * Es: "Chiedi: Con chi giocherai?" oppure "Se booking_type = matchmaking"
+ */
+function smartDescription(n: GraphNode): { title: string; detail: string; tooltip: string } {
+  const c = n.config ?? {}
+  const label = n.label || n.module_label
+  const text = String(c.text ?? c.question ?? '')
+  const shortText = text.length > 50 ? text.slice(0, 47) + '...' : text
+  const buttons = Array.isArray(c.buttons) ? (c.buttons as { label: string }[]).map(b => b.label).join(' / ') : ''
+
+  switch (n.module_key) {
+    case 'primo_messaggio':
+      return { title: 'Quando un utente scrive', detail: n.entry_trigger === 'first_message' ? 'Prima volta o sessione nuova' : n.entry_trigger ?? '', tooltip: 'Punto di ingresso: scatta quando arriva un messaggio senza sessione attiva' }
+    case 'trigger_keyword':
+      return { title: `Quando scrive "${(c.keyword as string) ?? '...'}"`, detail: 'Parola chiave riconosciuta', tooltip: 'Scatta quando il messaggio contiene questa parola chiave' }
+    case 'utente_registrato':
+      return { title: "L'utente è già registrato?", detail: 'Controlla se ha completato la registrazione', tooltip: 'Verifica se esiste un profilo completo (nome, età, livello, fascia oraria)' }
+    case 'condizione_campo': {
+      const campo = String(c.campo ?? '?')
+      const valori = Array.isArray(c.valori) ? (c.valori as string[]).join(', ') : '?'
+      return { title: `Se ${campo} è...`, detail: valori, tooltip: `Legge il campo "${campo}" dalla sessione e segue la porta corrispondente al valore trovato` }
+    }
+    case 'invia_testo':
+      return { title: shortText || 'Invia un messaggio', detail: '', tooltip: `Messaggio completo: ${text}` }
+    case 'invia_bottoni':
+      return { title: shortText || 'Chiedi con bottoni', detail: buttons, tooltip: `Messaggio: ${text}\nBottoni: ${buttons}` }
+    case 'chiedi_campo': {
+      const q = String(c.question ?? '')
+      const saveTo = String(c.save_to ?? '')
+      return { title: q.length > 45 ? q.slice(0, 42) + '...' : q || 'Chiedi un dato', detail: saveTo ? `Salva in: ${saveTo}` : '', tooltip: `Domanda: ${q}\nValidatore: ${c.validator ?? 'qualsiasi'}\nSalva in: ${saveTo}` }
+    }
+    case 'attendi_input':
+      return { title: 'Aspetta la risposta', detail: `Salva in: ${c.save_to ?? 'user_reply'}`, tooltip: "Mette in pausa il flusso finché l'utente non risponde" }
+    case 'parse_data':
+      return { title: '📅 Interpreta data e ora', detail: "Dall'ultimo messaggio dell'utente", tooltip: 'Converte testo libero ("domani alle 17.30") in data+ora strutturati' }
+    case 'parse_risultato':
+      return { title: '🎾 Interpreta il punteggio', detail: 'Formato ATP: 6-3 6-4, ho vinto...', tooltip: 'Capisce punteggi in vari formati: standard (6-3), compresso (63), italiano, dichiarazioni' }
+    case 'verifica_calendario':
+      return { title: '📅 Slot disponibile?', detail: 'Controlla su Google Calendar', tooltip: 'Verifica se lo slot richiesto è libero. Se occupato, propone alternative.' }
+    case 'crea_prenotazione':
+      return { title: '📋 Crea la prenotazione', detail: 'Booking + Google Calendar', tooltip: 'Crea il record nel database e l\'evento su Google Calendar con i dati della sessione' }
+    case 'cancella_prenotazione':
+      return { title: '❌ Cancella la prenotazione', detail: 'Rimuove booking + evento', tooltip: 'Cancella la prenotazione selezionata dal database e da Google Calendar' }
+    case 'salva_profilo':
+      return { title: '💾 Salva il profilo', detail: 'Nome, età, livello → database', tooltip: 'Persiste i dati raccolti durante la registrazione sulla tabella utenti' }
+    case 'salva_in_sessione': {
+      const assignments = Array.isArray(c.assignments) ? (c.assignments as { key: string; value: unknown }[]) : []
+      const summary = assignments.map(a => `${a.key} = ${JSON.stringify(a.value)}`).join(', ')
+      return { title: `💾 ${summary || 'Salva dati'}`, detail: '', tooltip: `Scrive nella sessione: ${summary}` }
+    }
+    case 'salva_feedback':
+      return { title: '⭐ Salva il feedback', detail: 'Rating + commento → database', tooltip: 'Salva la valutazione e il commento nella tabella feedbacks' }
+    case 'cerca_utente':
+      return { title: '🔍 Cerca nel circolo', detail: 'Ricerca per nome (fuzzy)', tooltip: "Cerca l'avversario tra i giocatori iscritti. Mostra i risultati come bottoni per conferma." }
+    case 'cerca_matchmaking':
+      return { title: '🎯 Trova avversario per livello', detail: 'Ricerca per ELO simile', tooltip: 'Cerca un avversario con punteggio ELO simile (±100, ±200, ±400) e invia invito' }
+    case 'aggiorna_elo':
+      return { title: '🏆 Aggiorna classifica', detail: 'Calcolo ELO dopo il risultato', tooltip: 'Aggiorna il punteggio ELO di entrambi i giocatori basandosi sul risultato della partita' }
+    case 'gemini_classifica': {
+      const cats = Array.isArray(c.categorie) ? (c.categorie as string[]).join(', ') : ''
+      return { title: '🤖 Classifica con AI', detail: cats || 'Categorie da configurare', tooltip: `Manda il testo a Gemini per classificarlo in: ${cats}` }
+    }
+    case 'fine_flusso':
+      return { title: '🏁 Fine', detail: 'Il flusso si conclude qui', tooltip: 'Termina il flusso. La prossima volta che l\'utente scrive, partirà da un nuovo trigger.' }
+    default:
+      return { title: label, detail: shortText, tooltip: `Modulo: ${n.module_key}` }
+  }
+}
+
 function ShopifyCard({ data, selected }: NodeProps) {
   const n = data as unknown as GraphNode
   const s = cardStyle(n.category)
+  const desc = smartDescription(n)
   const config = n.config ?? {}
-  const title = n.label || n.module_label
-  const detail = String(config.text ?? config.question ?? '')
-  const shortDetail = detail.length > 60 ? detail.slice(0, 57) + '...' : detail
+  const buttons = Array.isArray(config.buttons) ? (config.buttons as { label: string }[]) : []
 
   return (
-    <div className={`
-      bg-white rounded-xl shadow-sm border-2 transition-all min-w-[200px] max-w-[260px]
-      ${selected ? 'border-blue-500 shadow-lg' : 'border-zinc-200 hover:shadow-md'}
-    `}>
-      {/* Invisible handles */}
+    <div
+      title={desc.tooltip}
+      className={`
+        bg-white rounded-xl shadow-sm border-2 transition-all min-w-[200px] max-w-[280px]
+        ${selected ? 'border-blue-500 shadow-lg' : 'border-zinc-200 hover:shadow-md'}
+      `}
+    >
       <Handle type="target" position={Position.Top} id="in" className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white !-top-1.5" />
 
-      {/* Header label */}
-      <div className={`px-4 pt-3 pb-1 text-[11px] font-medium tracking-wide ${s.color}`}>
+      {/* Category header */}
+      <div className={`px-4 pt-3 pb-0.5 text-[10px] font-semibold uppercase tracking-wider ${s.color} opacity-70`}>
         {s.header}
       </div>
 
-      {/* Title */}
-      <div className="px-4 pb-1 text-[14px] font-semibold text-zinc-900 leading-snug">
-        {title}
+      {/* Smart title */}
+      <div className="px-4 pb-0.5 text-[13px] font-semibold text-zinc-900 leading-snug">
+        {desc.title}
       </div>
 
-      {/* Optional detail line */}
-      {shortDetail ? (
-        <div className="px-4 pb-3 text-[12px] text-zinc-500 leading-snug">
-          {shortDetail}
+      {/* Detail line */}
+      {desc.detail ? (
+        <div className="px-4 pb-2 text-[11px] text-zinc-500 leading-snug">
+          {desc.detail}
+        </div>
+      ) : null}
+
+      {/* Button pills for invia_bottoni */}
+      {buttons.length > 0 ? (
+        <div className="px-4 pb-3 flex flex-wrap gap-1">
+          {buttons.map((btn, i) => (
+            <span key={i} className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+              {btn.label || '...'}
+            </span>
+          ))}
         </div>
       ) : (
-        <div className="pb-3" />
+        <div className="pb-2" />
       )}
 
-      {/* Output handles — invisible, positioned at right edge */}
+      {/* Entry trigger badge */}
+      {n.is_entry && n.entry_trigger ? (
+        <div className="px-4 pb-2">
+          <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">
+            {n.entry_trigger.startsWith('scheduler:') ? '⏰ Schedulato' : n.entry_trigger === 'first_message' ? '💬 Primo messaggio' : `🔑 ${n.entry_trigger}`}
+          </span>
+        </div>
+      ) : null}
+
       {Object.keys(n.outputs).map((port, i, arr) => (
         <Handle
           key={port}
