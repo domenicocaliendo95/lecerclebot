@@ -18,7 +18,7 @@ import dagre from '@dagrejs/dagre'
 import { Link, useSearchParams } from 'react-router-dom'
 import { apiFetch, useApi } from '@/hooks/use-api'
 import { FieldEditor, type ConfigField } from '@/components/flow/field-editor'
-import { Plus, X, Save, Trash2, ArrowLeft } from 'lucide-react'
+import { Plus, X, Save, Trash2, ArrowLeft, LayoutGrid } from 'lucide-react'
 
 /* ────────── Tipi ────────── */
 
@@ -360,14 +360,90 @@ export function Flusso() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [positionsDirty, setPositionsDirty] = useState(false)
+  const [savingPositions, setSavingPositions] = useState(false)
 
-  // Auto-layout on data change
+  // Layout: usa posizioni salvate se disponibili, altrimenti dagre auto-layout
   useEffect(() => {
     if (!graphData) return
-    const { nodes: ln, edges: le } = layoutGraph(graphData.nodes, graphData.edges)
-    setNodes(ln)
-    setEdges(le)
+
+    const hasSavedPositions = graphData.nodes.some(n =>
+      n.position && (n.position.x !== 0 || n.position.y !== 0)
+    )
+
+    if (hasSavedPositions) {
+      // Usa le posizioni dal DB
+      setNodes(graphData.nodes.map(n => ({
+        id: String(n.id),
+        type: 'n8n',
+        position: { x: n.position?.x ?? 0, y: n.position?.y ?? 0 },
+        data: n as unknown as Record<string, unknown>,
+        selected: false,
+      })))
+    } else {
+      // Primo caricamento: calcola con dagre
+      const { nodes: ln } = layoutGraph(graphData.nodes, graphData.edges)
+      setNodes(ln)
+    }
+
+    // Edges sempre calcolati dal grafo
+    const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]))
+    setEdges(graphData.edges.map(e => {
+      const sourceNode = nodeMap.get(e.from_node_id)
+      const label = sourceNode ? portLabel(e.from_port, sourceNode.outputs) : 'Poi'
+      return {
+        id: String(e.id),
+        source: String(e.from_node_id),
+        sourceHandle: e.from_port,
+        target: String(e.to_node_id),
+        targetHandle: e.to_port,
+        type: 'smoothstep',
+        animated: false,
+        label,
+        labelStyle: { fontSize: 10, fontWeight: 500, fill: '#9ca3af' },
+        labelBgStyle: { fill: '#f9fafb', fillOpacity: 0.9 },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 4,
+        style: { stroke: '#6b7280', strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#6b7280', width: 14, height: 14 },
+      }
+    }))
+    setPositionsDirty(false)
   }, [graphData, setNodes, setEdges])
+
+  // Traccia modifiche posizione (drag)
+  const handleNodesChange = (changes: Parameters<typeof onNodesChange>[0]) => {
+    onNodesChange(changes)
+    if (changes.some((c: { type: string }) => c.type === 'position')) {
+      setPositionsDirty(true)
+    }
+  }
+
+  const savePositions = async () => {
+    setSavingPositions(true)
+    try {
+      const positions = nodes.map(n => ({
+        id: Number(n.id),
+        position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
+      }))
+      await apiFetch(`${apiBase}/nodes/positions`, {
+        method: 'PUT',
+        body: JSON.stringify({ positions }),
+      })
+      setPositionsDirty(false)
+    } catch (e) {
+      console.error('savePositions failed', e)
+    } finally {
+      setSavingPositions(false)
+    }
+  }
+
+  const autoLayout = () => {
+    if (!graphData) return
+    const { nodes: ln } = layoutGraph(graphData.nodes, graphData.edges)
+    setNodes(ln)
+    setPositionsDirty(true)
+  }
 
   const selectedNode = useMemo(
     () => graphData?.nodes.find(n => n.id === selectedId) ?? null,
@@ -435,7 +511,7 @@ export function Flusso() {
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={(_, node) => { setSelectedId(Number(node.id)); setShowPicker(false) }}
@@ -464,6 +540,23 @@ export function Flusso() {
           >
             <Plus className="w-4 h-4" />
             Aggiungi step
+          </button>
+          {positionsDirty && (
+            <button
+              onClick={savePositions}
+              disabled={savingPositions}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {savingPositions ? 'Salvo...' : 'Salva posizioni'}
+            </button>
+          )}
+          <button
+            onClick={autoLayout}
+            className="bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50 text-sm px-3 py-2 rounded-lg shadow-sm flex items-center gap-1.5"
+            title="Riorganizza automaticamente"
+          >
+            <LayoutGrid className="w-4 h-4" />
           </button>
           <div className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs text-zinc-500 shadow-sm">
             {isComposite && graphData?.composite
