@@ -164,17 +164,17 @@ function N8nNode({ data, selected }: NodeProps) {
     <div
       title={desc.tooltip}
       className={`
-        flex items-center gap-2.5 rounded-lg px-1 py-1 transition-all cursor-pointer
+        flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-all cursor-pointer border
         ${selected
-          ? 'bg-[#2a2a3d] ring-2 ring-blue-500 shadow-lg shadow-blue-500/20'
-          : 'bg-[#2a2a3d] hover:bg-[#32324a] shadow-md shadow-black/30'
+          ? 'bg-white ring-2 ring-blue-500 shadow-lg border-blue-300'
+          : 'bg-white hover:shadow-md shadow-sm border-zinc-200'
         }
       `}
       style={{ minWidth: 180, maxWidth: 260 }}
     >
       {/* Target handle */}
       <Handle type="target" position={Position.Top} id="in"
-        className="!w-2.5 !h-2.5 !bg-[#555] !border-2 !border-[#1e1e2e] !-top-1" />
+        className="!w-2.5 !h-2.5 !bg-zinc-400 !border-2 !border-white !-top-1" />
 
       {/* Icon circle */}
       <div className={`shrink-0 w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center text-white text-base shadow-sm`}>
@@ -183,11 +183,11 @@ function N8nNode({ data, selected }: NodeProps) {
 
       {/* Text */}
       <div className="min-w-0 flex-1 py-1 pr-2">
-        <div className="text-[12px] font-semibold text-white/90 leading-tight truncate">
+        <div className="text-[12px] font-semibold text-zinc-800 leading-tight truncate">
           {desc.title}
         </div>
         {desc.detail ? (
-          <div className="text-[10px] text-white/40 leading-tight truncate mt-0.5">
+          <div className="text-[10px] text-zinc-400 leading-tight truncate mt-0.5">
             {desc.detail}
           </div>
         ) : null}
@@ -200,7 +200,7 @@ function N8nNode({ data, selected }: NodeProps) {
           type="source"
           position={Position.Bottom}
           id={port}
-          className="!w-2.5 !h-2.5 !bg-[#555] !border-2 !border-[#1e1e2e] !-bottom-1"
+          className="!w-2.5 !h-2.5 !bg-zinc-400 !border-2 !border-white !-bottom-1"
           style={{ left: arr.length > 1 ? `${15 + (i * 70 / Math.max(arr.length - 1, 1))}%` : '50%' }}
         />
       ))}
@@ -267,7 +267,7 @@ function layoutGraph(
 
   // 3. Layout ogni gruppo con dagre, poi offset orizzontale
   const allPositioned: { id: number; x: number; y: number }[] = []
-  const groupOffsetX: Record<CompGroup, number> = { pre: -600, main: 0, post: 600 }
+  const groupOffsetX: Record<CompGroup, number> = { pre: -800, main: 0, post: 800 }
   const groupWidths: Record<CompGroup, number> = { pre: 0, main: 0, post: 0 }
 
   // Raggruppa componenti per gruppo
@@ -282,7 +282,7 @@ function layoutGraph(
 
       const g = new dagre.graphlib.Graph()
       g.setDefaultEdgeLabel(() => ({}))
-      g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 80, marginx: 20, marginy: 20 })
+      g.setGraph({ rankdir: 'TB', nodesep: 100, ranksep: 120, marginx: 40, marginy: 40 })
 
       for (const n of compNodes) g.setNode(String(n.id), { width: 200, height: 50 })
       for (const e of compEdges) g.setEdge(String(e.from_node_id), String(e.to_node_id))
@@ -333,7 +333,7 @@ function layoutGraph(
       animated: false,
       label,
       labelStyle: { fontSize: 10, fontWeight: 500, fill: '#9ca3af' },
-      labelBgStyle: { fill: '#1e1e2e', fillOpacity: 0.9 },
+      labelBgStyle: { fill: '#f9fafb', fillOpacity: 0.9 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
       style: { stroke: '#6b7280', strokeWidth: 1.5 },
@@ -431,7 +431,7 @@ export function Flusso() {
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       {/* ── Canvas ── */}
-      <div className="flex-1 relative" style={{ background: '#1e1e2e' }}>
+      <div className="flex-1 relative bg-zinc-50">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -446,26 +446,26 @@ export function Flusso() {
           proOptions={{ hideAttribution: true }}
           defaultEdgeOptions={{ type: 'smoothstep' }}
         >
-          <Background color="#2a2a3d" gap={24} size={1} />
-          <Controls className="!bottom-4 !left-4 [&>button]:!bg-[#2a2a3d] [&>button]:!text-white [&>button]:!border-[#3a3a4d] [&>button:hover]:!bg-[#3a3a4d]" />
+          <Background color="#e5e7eb" gap={20} size={1} />
+          <Controls className="!bottom-4 !left-4" />
         </ReactFlow>
 
         {/* Toolbar */}
         <div className="absolute top-4 left-4 z-10 flex gap-2 items-center">
           {isComposite && (
-            <Link to="/moduli" className="bg-[#2a2a3d] border border-[#3a3a4d] rounded-lg px-3 py-2 text-sm text-white/70 hover:bg-[#3a3a4d] flex items-center gap-1.5 shadow-sm">
+            <Link to="/moduli" className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-1.5 shadow-sm">
               <ArrowLeft className="w-4 h-4" />
               Indietro
             </Link>
           )}
           <button
             onClick={() => { setShowPicker(!showPicker); setSelectedId(null) }}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm flex items-center gap-1.5"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
             Aggiungi step
           </button>
-          <div className="bg-[#2a2a3d] border border-[#3a3a4d] rounded-lg px-3 py-2 text-xs text-white/50 shadow-sm">
+          <div className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs text-zinc-500 shadow-sm">
             {isComposite && graphData?.composite
               ? graphData.composite.label
               : 'Flusso principale'
