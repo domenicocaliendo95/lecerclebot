@@ -43,8 +43,8 @@ class ParseRisultatoModule extends Module
                 'source' => [
                     'type'    => 'string',
                     'label'   => 'Sorgente',
-                    'default' => 'input',
-                    'help'    => '"input" = ultimo messaggio, oppure una chiave di session.data.',
+                    'default' => 'last_input',
+                    'help'    => 'Chiave in session.data. Default "last_input" (ultimo messaggio utente salvato dal runner).',
                 ],
             ],
             icon: 'trophy',
@@ -62,7 +62,7 @@ class ParseRisultatoModule extends Module
 
     public function execute(FlowContext $ctx): ModuleResult
     {
-        $source = (string) $this->cfg('source', 'input');
+        $source = (string) $this->cfg('source', 'last_input');
         $raw    = trim($source === 'input' ? $ctx->input : (string) $ctx->get($source, ''));
         $lower  = mb_strtolower($raw);
 
