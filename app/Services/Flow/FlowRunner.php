@@ -256,6 +256,16 @@ class FlowRunner
      */
     private function resolveStart(BotSession $session, string $input): array
     {
+        // ── 1. Keyword globali: SEMPRE controllate prima del cursore.
+        // Se l'utente scrive "menu" a metà di un flusso, interrompe
+        // e riparte dal trigger keyword corrispondente.
+        $keywordMatch = $this->findKeywordTrigger($input);
+        if ($keywordMatch !== null) {
+            $this->clearCursor($session);
+            return [$keywordMatch, null, false];
+        }
+
+        // ── 2. Cursore attivo: riprendi da dove eri rimasto.
         $cursor = $session->getData('__cursor');
         if (is_array($cursor) && isset($cursor['node_id'])) {
             $graph = $cursor['graph'] ?? null;
@@ -272,6 +282,7 @@ class FlowRunner
             }
         }
 
+        // ── 3. Nessun cursore: cerca un trigger che matchi.
         $triggers = FlowNode::where('is_entry', true)
             ->orderByRaw("CASE WHEN entry_trigger LIKE 'keyword:%' THEN 0 ELSE 1 END")
             ->get();
@@ -281,6 +292,30 @@ class FlowRunner
             }
         }
         return [null, null, false];
+    }
+
+    /**
+     * Cerca tra i trigger keyword:* se l'input matcha. Restituisce il nodo
+     * trigger se trovato, null altrimenti. I trigger scheduler:* sono esclusi.
+     */
+    private function findKeywordTrigger(string $input): ?FlowNode
+    {
+        if (trim($input) === '') return null;
+
+        $triggers = FlowNode::where('is_entry', true)
+            ->where('entry_trigger', 'like', 'keyword:%')
+            ->get();
+
+        $lower = mb_strtolower(trim($input));
+
+        foreach ($triggers as $trigger) {
+            $kw = trim(mb_strtolower(substr($trigger->entry_trigger, 8)));
+            if ($kw !== '' && str_contains($lower, $kw)) {
+                return $trigger;
+            }
+        }
+
+        return null;
     }
 
     private function saveCursor(BotSession $session, int $nodeId, ?int $currentGraph): void
