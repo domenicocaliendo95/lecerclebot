@@ -43,20 +43,26 @@ type CompositeInfo = { id: number; key: string; label: string }
 type ModulesResponse = { grouped: Record<string, ModuleMeta[]> }
 type GraphResponse = { nodes: GraphNode[]; edges: GraphEdge[]; composite?: CompositeInfo }
 
-/* ────────── Card headers per categoria (stile Shopify) ────────── */
+/* ────────── Stili nodo n8n-style ────────── */
 
-const CARD_HEADERS: Record<string, { header: string; color: string; bg: string; border: string }> = {
-  trigger: { header: 'Inizia quando...', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  logica:  { header: 'Controlla se...',  color: 'text-violet-700',  bg: 'bg-violet-50',  border: 'border-violet-200' },
-  invio:   { header: 'Invia...',         color: 'text-sky-700',     bg: 'bg-sky-50',      border: 'border-sky-200' },
-  attesa:  { header: 'Aspetta...',       color: 'text-amber-700',   bg: 'bg-amber-50',    border: 'border-amber-200' },
-  dati:    { header: 'Elabora...',       color: 'text-slate-700',   bg: 'bg-slate-50',    border: 'border-slate-200' },
-  azione:  { header: 'Esegui...',        color: 'text-rose-700',    bg: 'bg-rose-50',     border: 'border-rose-200' },
-  ai:      { header: 'AI...',            color: 'text-fuchsia-700', bg: 'bg-fuchsia-50',  border: 'border-fuchsia-200' },
-  composito: { header: 'Sotto-flusso...', color: 'text-violet-700', bg: 'bg-violet-50',   border: 'border-violet-200' },
-  custom:  { header: 'Sotto-flusso...',  color: 'text-violet-700',  bg: 'bg-violet-50',   border: 'border-violet-200' },
+const CAT_ICON_COLORS: Record<string, string> = {
+  trigger:   'bg-emerald-500',
+  logica:    'bg-violet-500',
+  invio:     'bg-sky-500',
+  attesa:    'bg-amber-500',
+  dati:      'bg-slate-500',
+  azione:    'bg-rose-500',
+  ai:        'bg-fuchsia-500',
+  composito: 'bg-indigo-500',
+  custom:    'bg-indigo-500',
 }
-const cardStyle = (c: string) => CARD_HEADERS[c] ?? CARD_HEADERS.dati
+const catIconColor = (c: string) => CAT_ICON_COLORS[c] ?? 'bg-slate-500'
+
+const CAT_EMOJI: Record<string, string> = {
+  trigger: '⚡', logica: '🔀', invio: '💬', attesa: '⏳',
+  dati: '📊', azione: '▶️', ai: '✨', composito: '📦', custom: '📦',
+}
+const catEmoji = (c: string) => CAT_EMOJI[c] ?? '📋'
 
 /* ────────── Edge labels: port name → label leggibile ────────── */
 
@@ -148,77 +154,61 @@ function smartDescription(n: GraphNode): { title: string; detail: string; toolti
   }
 }
 
-function ShopifyCard({ data, selected }: NodeProps) {
+function N8nNode({ data, selected }: NodeProps) {
   const n = data as unknown as GraphNode
-  const s = cardStyle(n.category)
   const desc = smartDescription(n)
-  const config = n.config ?? {}
-  const buttons = Array.isArray(config.buttons) ? (config.buttons as { label: string }[]) : []
+  const iconBg = catIconColor(n.category)
+  const emoji = catEmoji(n.category)
 
   return (
     <div
       title={desc.tooltip}
       className={`
-        bg-white rounded-xl shadow-sm border-2 transition-all min-w-[200px] max-w-[280px]
-        ${selected ? 'border-blue-500 shadow-lg' : 'border-zinc-200 hover:shadow-md'}
+        flex items-center gap-2.5 rounded-lg px-1 py-1 transition-all cursor-pointer
+        ${selected
+          ? 'bg-[#2a2a3d] ring-2 ring-blue-500 shadow-lg shadow-blue-500/20'
+          : 'bg-[#2a2a3d] hover:bg-[#32324a] shadow-md shadow-black/30'
+        }
       `}
+      style={{ minWidth: 180, maxWidth: 260 }}
     >
-      <Handle type="target" position={Position.Top} id="in" className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white !-top-1.5" />
+      {/* Target handle */}
+      <Handle type="target" position={Position.Top} id="in"
+        className="!w-2.5 !h-2.5 !bg-[#555] !border-2 !border-[#1e1e2e] !-top-1" />
 
-      {/* Category header */}
-      <div className={`px-4 pt-3 pb-0.5 text-[10px] font-semibold uppercase tracking-wider ${s.color} opacity-70`}>
-        {s.header}
+      {/* Icon circle */}
+      <div className={`shrink-0 w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center text-white text-base shadow-sm`}>
+        {emoji}
       </div>
 
-      {/* Smart title */}
-      <div className="px-4 pb-0.5 text-[13px] font-semibold text-zinc-900 leading-snug">
-        {desc.title}
+      {/* Text */}
+      <div className="min-w-0 flex-1 py-1 pr-2">
+        <div className="text-[12px] font-semibold text-white/90 leading-tight truncate">
+          {desc.title}
+        </div>
+        {desc.detail ? (
+          <div className="text-[10px] text-white/40 leading-tight truncate mt-0.5">
+            {desc.detail}
+          </div>
+        ) : null}
       </div>
 
-      {/* Detail line */}
-      {desc.detail ? (
-        <div className="px-4 pb-2 text-[11px] text-zinc-500 leading-snug">
-          {desc.detail}
-        </div>
-      ) : null}
-
-      {/* Button pills for invia_bottoni */}
-      {buttons.length > 0 ? (
-        <div className="px-4 pb-3 flex flex-wrap gap-1">
-          {buttons.map((btn, i) => (
-            <span key={i} className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
-              {btn.label || '...'}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <div className="pb-2" />
-      )}
-
-      {/* Entry trigger badge */}
-      {n.is_entry && n.entry_trigger ? (
-        <div className="px-4 pb-2">
-          <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">
-            {n.entry_trigger.startsWith('scheduler:') ? '⏰ Schedulato' : n.entry_trigger === 'first_message' ? '💬 Primo messaggio' : `🔑 ${n.entry_trigger}`}
-          </span>
-        </div>
-      ) : null}
-
+      {/* Source handles */}
       {Object.keys(n.outputs).map((port, i, arr) => (
         <Handle
           key={port}
           type="source"
           position={Position.Bottom}
           id={port}
-          className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white !-bottom-1.5"
-          style={{ left: arr.length > 1 ? `${20 + (i * 60 / Math.max(arr.length - 1, 1))}%` : '50%' }}
+          className="!w-2.5 !h-2.5 !bg-[#555] !border-2 !border-[#1e1e2e] !-bottom-1"
+          style={{ left: arr.length > 1 ? `${15 + (i * 70 / Math.max(arr.length - 1, 1))}%` : '50%' }}
         />
       ))}
     </div>
   )
 }
 
-const nodeTypes = { shopify: ShopifyCard }
+const nodeTypes = { n8n: N8nNode }
 
 /* ────────── Dagre auto-layout (Left → Right) ────────── */
 
@@ -294,7 +284,7 @@ function layoutGraph(
       g.setDefaultEdgeLabel(() => ({}))
       g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 80, marginx: 20, marginy: 20 })
 
-      for (const n of compNodes) g.setNode(String(n.id), { width: 240, height: 90 })
+      for (const n of compNodes) g.setNode(String(n.id), { width: 200, height: 50 })
       for (const e of compEdges) g.setEdge(String(e.from_node_id), String(e.to_node_id))
 
       dagre.layout(g)
@@ -322,7 +312,7 @@ function layoutGraph(
     const pos = posMap.get(n.id)
     return {
       id: String(n.id),
-      type: 'shopify',
+      type: 'n8n',
       position: { x: (pos?.x ?? 0) - 120, y: (pos?.y ?? 0) - 45 },
       data: n as unknown as Record<string, unknown>,
       selected: false,
@@ -342,12 +332,12 @@ function layoutGraph(
       type: 'smoothstep',
       animated: false,
       label,
-      labelStyle: { fontSize: 11, fontWeight: 500, fill: '#6b7280' },
-      labelBgStyle: { fill: '#f9fafb', fillOpacity: 0.9 },
+      labelStyle: { fontSize: 10, fontWeight: 500, fill: '#9ca3af' },
+      labelBgStyle: { fill: '#1e1e2e', fillOpacity: 0.9 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
-      style: { stroke: '#3b82f6', strokeWidth: 2 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6', width: 16, height: 16 },
+      style: { stroke: '#6b7280', strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#6b7280', width: 14, height: 14 },
     }
   })
 
@@ -441,7 +431,7 @@ export function Flusso() {
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       {/* ── Canvas ── */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative" style={{ background: '#1e1e2e' }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -456,26 +446,26 @@ export function Flusso() {
           proOptions={{ hideAttribution: true }}
           defaultEdgeOptions={{ type: 'smoothstep' }}
         >
-          <Background color="#e5e7eb" gap={32} />
-          <Controls className="!bottom-4 !left-4" />
+          <Background color="#2a2a3d" gap={24} size={1} />
+          <Controls className="!bottom-4 !left-4 [&>button]:!bg-[#2a2a3d] [&>button]:!text-white [&>button]:!border-[#3a3a4d] [&>button:hover]:!bg-[#3a3a4d]" />
         </ReactFlow>
 
         {/* Toolbar */}
         <div className="absolute top-4 left-4 z-10 flex gap-2 items-center">
           {isComposite && (
-            <Link to="/moduli" className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 flex items-center gap-1.5 shadow-sm">
+            <Link to="/moduli" className="bg-[#2a2a3d] border border-[#3a3a4d] rounded-lg px-3 py-2 text-sm text-white/70 hover:bg-[#3a3a4d] flex items-center gap-1.5 shadow-sm">
               <ArrowLeft className="w-4 h-4" />
               Indietro
             </Link>
           )}
           <button
             onClick={() => { setShowPicker(!showPicker); setSelectedId(null) }}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm flex items-center gap-1.5"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
             Aggiungi step
           </button>
-          <div className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs text-zinc-500 shadow-sm">
+          <div className="bg-[#2a2a3d] border border-[#3a3a4d] rounded-lg px-3 py-2 text-xs text-white/50 shadow-sm">
             {isComposite && graphData?.composite
               ? graphData.composite.label
               : 'Flusso principale'
@@ -496,10 +486,11 @@ export function Flusso() {
                 </button>
               </div>
               {Object.entries(modulesData.grouped).map(([cat, mods]) => {
-                const s = cardStyle(cat)
                 return (
                   <div key={cat} className="mb-4">
-                    <div className={`text-xs font-semibold uppercase tracking-wide mb-2 ${s.color}`}>{s.header.replace('...', '')}</div>
+                    <div className="text-xs font-semibold uppercase tracking-wide mb-2 text-zinc-500 flex items-center gap-1.5">
+                      <span>{catEmoji(cat)}</span>{cat}
+                    </div>
                     <div className="space-y-1">
                       {mods.map(m => (
                         <button key={m.key} onClick={() => addNode(m.key)}
@@ -541,7 +532,6 @@ function NodeEditor({
   node: GraphNode; meta: ModuleMeta; onSave: (p: Partial<GraphNode>) => void
   onDelete: () => void; onClose: () => void; saving: boolean; isComposite: boolean
 }) {
-  const s = cardStyle(meta.category)
   const [label, setLabel] = useState(node.label ?? '')
   const [config, setConfig] = useState<Record<string, unknown>>(node.config ?? {})
   const [isEntry, setIsEntry] = useState(node.is_entry)
@@ -564,7 +554,7 @@ function NodeEditor({
     <div className="p-4">
       <div className="flex justify-between items-start mb-3">
         <div>
-          <div className={`text-[11px] font-medium ${s.color}`}>{s.header}</div>
+          <div className="text-[11px] font-medium text-zinc-500">{catEmoji(meta.category)} {meta.category}</div>
           <h2 className="text-lg font-semibold text-zinc-900">{meta.label}</h2>
         </div>
         <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600"><X className="w-5 h-5" /></button>
