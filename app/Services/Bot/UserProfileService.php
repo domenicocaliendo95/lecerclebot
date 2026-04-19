@@ -47,16 +47,31 @@ class UserProfileService
             $name = $profile['name'] ?? 'Giocatore';
             $elo  = $this->estimateElo($profile);
 
+            // Email: usa quella fornita dall'utente, oppure genera placeholder
+            $email = !empty($profile['email'])
+                ? $profile['email']
+                : $this->generatePlaceholderEmail($phone);
+
+            // Età: calcola da birthdate se presente
+            $age = $profile['age'] ?? null;
+            $birthdate = $profile['birthdate'] ?? null;
+            if ($birthdate && !$age) {
+                try {
+                    $age = \Carbon\Carbon::parse($birthdate)->age;
+                } catch (\Throwable) {}
+            }
+
             return User::updateOrCreate(
                 ['phone' => $phone],
                 [
                     'name'            => $name,
-                    'email'           => $this->generatePlaceholderEmail($phone),
+                    'email'           => $email,
                     'password'        => bcrypt(Str::random(32)),
                     'is_fit'          => $this->toBool($profile['is_fit'] ?? false),
                     'fit_rating'      => $profile['fit_rating'] ?? null,
                     'self_level'      => $profile['self_level'] ?? null,
-                    'age'             => $profile['age'] ?? null,
+                    'age'             => $age,
+                    'birthdate'       => $birthdate,
                     'elo_rating'      => $elo,
                     'preferred_slots' => isset($profile['slot']) ? [$profile['slot']] : [],
                 ]

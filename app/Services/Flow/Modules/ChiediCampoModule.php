@@ -47,6 +47,8 @@ class ChiediCampoModule extends Module
                         ['value' => 'any',     'label' => 'Qualunque testo'],
                         ['value' => 'name',    'label' => 'Nome di persona'],
                         ['value' => 'integer', 'label' => 'Numero intero'],
+                        ['value' => 'date',    'label' => 'Data (gg/mm/aaaa)'],
+                        ['value' => 'email',   'label' => 'Email'],
                         ['value' => 'regex',   'label' => 'Espressione regolare'],
                     ],
                 ],
@@ -123,6 +125,8 @@ class ChiediCampoModule extends Module
         return match ($type) {
             'name'    => $this->validateName($input),
             'integer' => $this->validateInteger($input),
+            'date'    => $this->validateDate($input),
+            'email'   => $this->validateEmail($input),
             'regex'   => $this->validateRegex($input),
             default   => $input,
         };
@@ -147,6 +151,33 @@ class ChiediCampoModule extends Module
         if ($min !== null && $n < (int) $min) return null;
         if ($max !== null && $n > (int) $max) return null;
         return $n;
+    }
+
+    private function validateDate(string $input): ?string
+    {
+        // Accetta: dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy, yyyy-mm-dd
+        if (preg_match('/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/', trim($input), $m)) {
+            $day = (int) $m[1]; $month = (int) $m[2]; $year = (int) $m[3];
+            if (checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+        }
+        if (preg_match('/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/', trim($input), $m)) {
+            $year = (int) $m[1]; $month = (int) $m[2]; $day = (int) $m[3];
+            if (checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+        }
+        return null;
+    }
+
+    private function validateEmail(string $input): ?string
+    {
+        $email = mb_strtolower(trim($input));
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) !== false) {
+            return $email;
+        }
+        return null;
     }
 
     private function validateRegex(string $input): ?string
