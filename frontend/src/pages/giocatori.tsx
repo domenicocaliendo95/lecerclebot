@@ -15,8 +15,8 @@ const levelColors: Record<string, string> = {
   avanzato: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800',
 }
 
-interface UserForm { name: string; phone: string; is_fit: boolean; fit_rating: string; self_level: string; age: string; elo_rating: string }
-const emptyForm: UserForm = { name: '', phone: '', is_fit: false, fit_rating: '', self_level: '', age: '', elo_rating: '1200' }
+interface UserForm { name: string; email: string; phone: string; birthdate: string; is_fit: boolean; fit_rating: string; self_level: string; age: string; elo_rating: string }
+const emptyForm: UserForm = { name: '', email: '', phone: '', birthdate: '', is_fit: false, fit_rating: '', self_level: '', age: '', elo_rating: '1200' }
 
 export function Giocatori() {
   const [page, setPage] = useState(1)
@@ -47,7 +47,8 @@ export function Giocatori() {
 
   const openEdit = (u: User) => {
     setForm({
-      name: u.name, phone: u.phone, is_fit: u.is_fit,
+      name: u.name, email: u.email ?? '', phone: u.phone,
+      birthdate: u.birthdate ?? '', is_fit: u.is_fit,
       fit_rating: u.fit_rating ?? '', self_level: u.self_level ?? '',
       age: u.age ? String(u.age) : '', elo_rating: String(u.elo_rating),
     })
@@ -63,6 +64,7 @@ export function Giocatori() {
         body: JSON.stringify({
           ...form, age: form.age ? Number(form.age) : null,
           elo_rating: Number(form.elo_rating),
+          email: form.email || null, birthdate: form.birthdate || null,
           fit_rating: form.fit_rating || null, self_level: form.self_level || null,
         }),
       })
@@ -111,6 +113,7 @@ export function Giocatori() {
                 <thead><tr className="border-b bg-muted/40">
                   <SortHeader label="Nome" field="name" sort={sort} onSort={toggleSort} />
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Telefono</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Email</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">FIT</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Livello</th>
                   <SortHeader label="ELO" field="elo_rating" sort={sort} onSort={toggleSort} />
@@ -125,6 +128,7 @@ export function Giocatori() {
                       onClick={() => setSelected(selected?.id === u.id ? null : u)}>
                       <td className="px-4 py-3 font-medium">{u.name}</td>
                       <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{u.phone}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs truncate max-w-[160px]">{u.email && !u.email.includes('@lecercleclub.bot') ? u.email : '—'}</td>
                       <td className="px-4 py-3">
                         {u.is_fit ? <Badge variant="default" className="text-xs">{u.fit_rating ?? 'FIT'}</Badge>
                           : <span className="text-muted-foreground text-xs">No</span>}
@@ -171,7 +175,9 @@ export function Giocatori() {
       <FormDialog open={!!editing} onClose={() => setEditing(null)} title={`Modifica ${editing?.name ?? ''}`} onSubmit={handleSave} submitting={submitting}>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField label="Nome"><input value={form.name} onChange={e => set('name', e.target.value)} className={inputClass} /></FormField>
+          <FormField label="Email"><input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputClass} placeholder="email@esempio.it" /></FormField>
           <FormField label="Telefono"><input value={form.phone} onChange={e => set('phone', e.target.value)} className={inputClass} /></FormField>
+          <FormField label="Data di nascita"><input type="date" value={form.birthdate} onChange={e => set('birthdate', e.target.value)} className={inputClass} /></FormField>
           <FormField label="Tesserato FIT">
             <select value={form.is_fit ? 'true' : 'false'} onChange={e => set('is_fit', e.target.value === 'true')} className={selectClass}>
               <option value="false">No</option><option value="true">Sì</option>
@@ -219,7 +225,9 @@ function PlayerDetail({ user: u, onClose }: { user: User; onClose: () => void })
       <CardContent>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <InfoItem label="Telefono" value={u.phone} mono />
-          <InfoItem label="Età" value={u.age ? String(u.age) : '—'} />
+          <InfoItem label="Email" value={u.email && !u.email.includes('@lecercleclub.bot') ? u.email : '—'} />
+          <InfoItem label="Data di nascita" value={u.birthdate ? new Date(u.birthdate).toLocaleDateString('it-IT') : '—'} />
+          <InfoItem label="Età" value={u.age ? `${u.age} anni` : '—'} />
           <InfoItem label="FIT" value={u.is_fit ? `Sì — ${u.fit_rating ?? 'N/C'}` : 'No'} />
           <InfoItem label="Livello" value={u.self_level ?? '—'} capitalize />
           <div>

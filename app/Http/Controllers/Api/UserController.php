@@ -52,7 +52,9 @@ class UserController extends Controller
     {
         $validated = $request->validate([
             'name'             => 'sometimes|string|max:60',
+            'email'            => 'nullable|email|max:255',
             'phone'            => 'sometimes|string|max:20',
+            'birthdate'        => 'nullable|date',
             'is_fit'           => 'sometimes|boolean',
             'fit_rating'       => 'nullable|string|max:10',
             'self_level'       => 'nullable|in:neofita,dilettante,avanzato',

@@ -1,11 +1,13 @@
 export interface User {
   id: number
   name: string
+  email: string | null
   phone: string
+  birthdate: string | null
+  age: number | null
   is_fit: boolean
   fit_rating: string | null
   self_level: string | null
-  age: number | null
   elo_rating: number
   matches_played: number
   matches_won: number
