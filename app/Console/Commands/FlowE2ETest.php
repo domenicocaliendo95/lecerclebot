@@ -39,6 +39,7 @@ class FlowE2ETest extends Command
         $this->testParserDate($textGen);
         $this->testParserRisultati($registry);
         $this->testKeyword($runner);
+        $this->testMatchmakingModules($registry);
 
         $this->line("\n══════════════════════════════════════");
         $this->line("  RISULTATI: {$this->passed} ✅  {$this->failed} ❌");
@@ -230,5 +231,28 @@ class FlowE2ETest extends Command
 
         $q = $this->sim($runner, 'menu');
         $this->assertAny(['cosa vuoi fare', 'Prenota', 'menu'], $q, '5.1 Keyword "menu"');
+    }
+
+    private function testMatchmakingModules(ModuleRegistry $registry): void
+    {
+        $this->info("\n── 6. Moduli matchmaking ──");
+
+        $hasAccept = $registry->has('accetta_match');
+        $hasRefuse = $registry->has('rifiuta_match');
+        $hasSearch = $registry->has('cerca_matchmaking');
+
+        if ($hasAccept) { $this->passed++; $this->line("  ✅ 6.1 Modulo accetta_match registrato"); }
+        else { $this->failed++; $this->errors[] = "6.1: accetta_match non trovato"; $this->line("  ❌ 6.1 accetta_match mancante"); }
+
+        if ($hasRefuse) { $this->passed++; $this->line("  ✅ 6.2 Modulo rifiuta_match registrato"); }
+        else { $this->failed++; $this->errors[] = "6.2: rifiuta_match non trovato"; $this->line("  ❌ 6.2 rifiuta_match mancante"); }
+
+        if ($hasSearch) { $this->passed++; $this->line("  ✅ 6.3 Modulo cerca_matchmaking registrato"); }
+        else { $this->failed++; $this->errors[] = "6.3: cerca_matchmaking non trovato"; $this->line("  ❌ 6.3 cerca_matchmaking mancante"); }
+
+        // Verifica che il flusso risposta esista
+        $responseNode = \App\Models\FlowNode::where('entry_trigger', 'scheduler:matchmaking_response')->first();
+        if ($responseNode) { $this->passed++; $this->line("  ✅ 6.4 Flusso risposta matchmaking presente"); }
+        else { $this->failed++; $this->errors[] = "6.4: nodo scheduler:matchmaking_response non trovato"; $this->line("  ❌ 6.4 Flusso risposta mancante"); }
     }
 }

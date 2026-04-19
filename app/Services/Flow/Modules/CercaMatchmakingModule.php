@@ -115,16 +115,37 @@ class CercaMatchmakingModule extends Module
                 'status'      => 'pending',
             ]);
 
-            // Invia messaggio all'avversario
+            // Trova il nodo entry del flusso risposta matchmaking
+            $responseNode = \App\Models\FlowNode::where('entry_trigger', 'scheduler:matchmaking_response')
+                ->value('id');
+
+            // Invia messaggio all'avversario + setta cursore per gestire risposta
             $adapter = app(ChannelRegistry::class)->get('whatsapp');
             if ($adapter && $opponent->phone) {
-                $msg = "Ciao {$opponent->name}! {$user->name} ti sfida per una partita {$friendly} 🎾\nELO: {$user->elo_rating} (gap: {$eloGap})";
+                $slot = $startDT->locale('it')->isoFormat('dddd D MMMM') . ' alle ' . $startDT->format('H:i');
+                $msg = "Ciao {$opponent->name}! {$user->name} ti sfida per una partita {$slot} 🎾\nELO: {$user->elo_rating} (gap: {$eloGap})";
                 $adapter->sendButtons($opponent->phone, $msg, ['Accetta', 'Rifiuta']);
 
-                // Logga nella history dell'avversario
-                $oppSession = \App\Models\BotSession::where('channel', 'whatsapp')
-                    ->where('external_id', $opponent->phone)->first();
-                $oppSession?->appendHistory('bot', $msg);
+                // Crea/trova sessione avversario e setta cursore
+                $oppSession = \App\Models\BotSession::firstOrCreate(
+                    ['channel' => 'whatsapp', 'external_id' => $opponent->phone],
+                    ['phone' => $opponent->phone, 'state' => 'NEW', 'data' => [
+                        'persona' => \App\Services\Bot\BotPersona::pickRandom(),
+                        'history' => [],
+                    ]],
+                );
+
+                $oppSession->appendHistory('bot', $msg);
+
+                // Setta cursore sul nodo di risposta (solo se sessione idle)
+                if ($responseNode && !$oppSession->current_node_id && empty($oppSession->getData('__cursor'))) {
+                    $oppSession->update(['current_node_id' => $responseNode]);
+                    $oppSession->mergeData([
+                        'matchmaking_booking_id'     => $booking->id,
+                        'matchmaking_challenger_name' => $user->name,
+                        'matchmaking_slot'           => $slot,
+                    ]);
+                }
             }
 
             return ModuleResult::next('trovato')->withData([
