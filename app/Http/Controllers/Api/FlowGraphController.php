@@ -36,16 +36,7 @@ class FlowGraphController extends Controller
 
     public function graph(): JsonResponse
     {
-        // Filtra i nodi scheduler:* (reminder, risultati, feedback) dal grafo
-        // principale — sono gestiti nella sezione Impostazioni, non nell'editor.
-        $schedulerNodeIds = FlowNode::where('entry_trigger', 'like', 'scheduler:%')
-            ->pluck('id')->all();
-
-        // Trova anche tutti i nodi raggiungibili SOLO da scheduler entries
-        // (i loro sotto-flussi) così non inquinano la vista principale.
-        $excludeIds = $this->collectReachable($schedulerNodeIds);
-
-        $nodes = FlowNode::whereNotIn('id', $excludeIds)->get()->map(function (FlowNode $n) {
+        $nodes = FlowNode::all()->map(function (FlowNode $n) {
             $module = $this->registry->instantiate($n->module_key, $n->config ?? []);
             return [
                 'id'            => $n->id,
@@ -62,8 +53,7 @@ class FlowGraphController extends Controller
             ];
         });
 
-        $edges = FlowEdge::whereNotIn('from_node_id', $excludeIds)
-            ->whereNotIn('to_node_id', $excludeIds)->get()->map(fn(FlowEdge $e) => [
+        $edges = FlowEdge::all()->map(fn(FlowEdge $e) => [
             'id'           => $e->id,
             'from_node_id' => $e->from_node_id,
             'from_port'    => $e->from_port,

@@ -30,10 +30,14 @@ class SendMatchResultRequests extends Command
         $isDry   = $this->option('dry-run');
         $adapter = $channels->get('whatsapp');
 
-        // Trova il nodo entry del flusso risultati
-        $resultNode = FlowNode::where('entry_trigger', 'scheduler:result_request')->first();
+        // Trova il nodo entry del flusso post-partita (unificato risultato+feedback)
+        $resultNode = FlowNode::where('entry_trigger', 'scheduler:post_match')->first();
         if (!$resultNode) {
-            $this->warn('Nodo flusso risultati non trovato (entry_trigger=scheduler:result_request). Esegui la migrazione.');
+            // Fallback al vecchio trigger
+            $resultNode = FlowNode::where('entry_trigger', 'scheduler:result_request')->first();
+        }
+        if (!$resultNode) {
+            $this->warn('Nodo flusso post-partita non trovato. Esegui la migrazione.');
             return self::FAILURE;
         }
 

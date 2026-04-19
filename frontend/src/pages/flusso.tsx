@@ -132,25 +132,104 @@ const nodeTypes = { shopify: ShopifyCard }
 
 /* ────────── Dagre auto-layout (Left → Right) ────────── */
 
+/**
+ * Trova le componenti connesse del grafo e le dispone con dagre
+ * in tre colonne: PRE-PARTITA | PRINCIPALE | POST-PARTITA.
+ *
+ * La classificazione avviene in base all'entry_trigger dei nodi entry:
+ *  - scheduler:reminder_* → pre-partita (sinistra)
+ *  - scheduler:post_match → post-partita (destra)
+ *  - tutto il resto → principale (centro)
+ */
 function layoutGraph(
   graphNodes: GraphNode[],
   graphEdges: GraphEdge[],
 ): { nodes: Node[]; edges: Edge[] } {
-  const g = new dagre.graphlib.Graph()
-  g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'TB', nodesep: 80, ranksep: 100, marginx: 40, marginy: 40 })
 
-  for (const n of graphNodes) {
-    g.setNode(String(n.id), { width: 240, height: 90 })
-  }
+  // 1. Trova componenti connesse
+  const adjMap = new Map<number, Set<number>>()
+  for (const n of graphNodes) adjMap.set(n.id, new Set())
   for (const e of graphEdges) {
-    g.setEdge(String(e.from_node_id), String(e.to_node_id))
+    adjMap.get(e.from_node_id)?.add(e.to_node_id)
+    adjMap.get(e.to_node_id)?.add(e.from_node_id)
   }
 
-  dagre.layout(g)
+  const visited = new Set<number>()
+  const components: number[][] = []
+  for (const n of graphNodes) {
+    if (visited.has(n.id)) continue
+    const comp: number[] = []
+    const stack = [n.id]
+    while (stack.length > 0) {
+      const cur = stack.pop()!
+      if (visited.has(cur)) continue
+      visited.add(cur)
+      comp.push(cur)
+      for (const nb of adjMap.get(cur) ?? []) {
+        if (!visited.has(nb)) stack.push(nb)
+      }
+    }
+    components.push(comp)
+  }
+
+  // 2. Classifica ogni componente
+  const nodeMap = new Map(graphNodes.map(n => [n.id, n]))
+
+  type CompGroup = 'pre' | 'main' | 'post'
+  const classified: { group: CompGroup; ids: number[] }[] = components.map(ids => {
+    const entries = ids.map(id => nodeMap.get(id)).filter(n => n?.is_entry)
+    const trigger = entries[0]?.entry_trigger ?? ''
+
+    if (trigger.startsWith('scheduler:reminder')) return { group: 'pre', ids }
+    if (trigger.startsWith('scheduler:post_match') || trigger.startsWith('scheduler:result') || trigger.startsWith('scheduler:feedback')) return { group: 'post', ids }
+    return { group: 'main', ids }
+  })
+
+  // 3. Layout ogni gruppo con dagre, poi offset orizzontale
+  const allPositioned: { id: number; x: number; y: number }[] = []
+  const groupOffsetX: Record<CompGroup, number> = { pre: -600, main: 0, post: 600 }
+  const groupWidths: Record<CompGroup, number> = { pre: 0, main: 0, post: 0 }
+
+  // Raggruppa componenti per gruppo
+  const byGroup: Record<CompGroup, number[][]> = { pre: [], main: [], post: [] }
+  for (const c of classified) byGroup[c.group].push(c.ids)
+
+  for (const group of ['pre', 'main', 'post'] as CompGroup[]) {
+    let yOffset = 0
+    for (const compIds of byGroup[group]) {
+      const compNodes = compIds.map(id => nodeMap.get(id)!).filter(Boolean)
+      const compEdges = graphEdges.filter(e => compIds.includes(e.from_node_id) && compIds.includes(e.to_node_id))
+
+      const g = new dagre.graphlib.Graph()
+      g.setDefaultEdgeLabel(() => ({}))
+      g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 80, marginx: 20, marginy: 20 })
+
+      for (const n of compNodes) g.setNode(String(n.id), { width: 240, height: 90 })
+      for (const e of compEdges) g.setEdge(String(e.from_node_id), String(e.to_node_id))
+
+      dagre.layout(g)
+
+      let maxY = 0
+      for (const n of compNodes) {
+        const pos = g.node(String(n.id))
+        if (!pos) continue
+        allPositioned.push({
+          id: n.id,
+          x: (pos.x ?? 0) + groupOffsetX[group],
+          y: (pos.y ?? 0) + yOffset,
+        })
+        maxY = Math.max(maxY, (pos.y ?? 0) + 100)
+        groupWidths[group] = Math.max(groupWidths[group], (pos.x ?? 0) + 250)
+      }
+
+      yOffset += maxY + 60 // spazio tra componenti dello stesso gruppo
+    }
+  }
+
+  const posMap = new Map(allPositioned.map(p => [p.id, p]))
 
   const nodes: Node[] = graphNodes.map(n => {
-    const pos = g.node(String(n.id))
+    const pos = posMap.get(n.id)
     return {
       id: String(n.id),
       type: 'shopify',
@@ -159,9 +238,6 @@ function layoutGraph(
       selected: false,
     }
   })
-
-  // Build a lookup for node outputs to create edge labels
-  const nodeMap = new Map(graphNodes.map(n => [n.id, n]))
 
   const edges: Edge[] = graphEdges.map(e => {
     const sourceNode = nodeMap.get(e.from_node_id)
