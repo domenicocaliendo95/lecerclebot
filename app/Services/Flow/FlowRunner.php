@@ -72,6 +72,9 @@ class FlowRunner
                     $session->appendHistory('user', $input);
                 }
 
+                // Timeout: se la sessione è ferma da troppo, reset al menu
+                $this->checkSessionTimeout($session);
+
                 [$startNode, $startGraph, $resuming] = $this->resolveStart($session, $input);
                 if ($startNode === null) {
                     Log::warning('FlowRunner: no matching entry node', [
@@ -298,6 +301,31 @@ class FlowRunner
      * Cerca tra i trigger keyword:* se l'input matcha. Restituisce il nodo
      * trigger se trovato, null altrimenti. I trigger scheduler:* sono esclusi.
      */
+    /**
+     * Se la sessione ha un cursore attivo e non riceve messaggi da più di
+     * X minuti, resetta il cursore così l'utente riparte dal trigger.
+     * Il timeout è configurabile in bot_settings['session_timeout_minutes'].
+     */
+    private function checkSessionTimeout(BotSession $session): void
+    {
+        if (!$session->current_node_id && empty($session->getData('__cursor'))) {
+            return; // nessun flusso attivo
+        }
+
+        $timeout = (int) (\App\Models\BotSetting::get('session_timeout_minutes', 30));
+        if ($timeout <= 0) return;
+
+        $lastUpdate = $session->updated_at;
+        if ($lastUpdate && $lastUpdate->diffInMinutes(now()) >= $timeout) {
+            Log::info('FlowRunner: session timeout, clearing cursor', [
+                'channel'     => $session->channel,
+                'external_id' => $session->external_id,
+                'minutes'     => $lastUpdate->diffInMinutes(now()),
+            ]);
+            $this->clearCursor($session);
+        }
+    }
+
     private function findKeywordTrigger(string $input): ?FlowNode
     {
         if (trim($input) === '') return null;
