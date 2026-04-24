@@ -71,14 +71,18 @@ class SendBookingReminders extends Command
                 ->values()
                 ->all();
 
-            $windowStart = $now->copy()->addHours($hoursBefore)->subMinutes(8);
-            $windowEnd   = $now->copy()->addHours($hoursBefore)->addMinutes(8);
+            // Query robusta: manda il reminder se la partita è entro
+            // hours_before ore da adesso E non è ancora stato inviato.
+            // Non usa finestre strette — se il cron manca un ciclo, recupera.
+            $deadlineMax = $now->copy()->addHours($hoursBefore)->addMinutes(10);
+            // Non mandare se mancano meno di (hours_before - 1)h (evita reminder tardivi)
+            $deadlineMin = $now->copy()->addHours(max($hoursBefore - 1, 0));
 
             $bookings = Booking::whereIn('status', ['confirmed', 'pending_match'])
                 ->whereNotNull('player1_id')
                 ->whereRaw(
                     "CONCAT(booking_date, ' ', start_time) BETWEEN ? AND ?",
-                    [$windowStart->format('Y-m-d H:i:s'), $windowEnd->format('Y-m-d H:i:s')]
+                    [$deadlineMin->format('Y-m-d H:i:s'), $deadlineMax->format('Y-m-d H:i:s')]
                 )
                 ->with(['player1', 'player2'])
                 ->get();
