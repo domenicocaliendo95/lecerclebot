@@ -106,17 +106,21 @@ class SendBookingReminders extends Command
 
                 if (empty($players)) continue;
 
+                if ($isDry) {
+                    foreach ($players as $player) {
+                        $msg = str_replace(['{name}', '{slot}', '{hours}'], [$player->name, $slotLabel, (string) $hoursBefore], $text);
+                        $this->line("  [DRY] {$slotKey}h · {$player->phone}: {$msg}");
+                    }
+                    $sent++;
+                    continue; // DRY: NON marcare come inviato!
+                }
+
                 foreach ($players as $player) {
                     $msg = str_replace(
                         ['{name}', '{slot}', '{hours}'],
                         [$player->name, $slotLabel, (string) $hoursBefore],
                         $text
                     );
-
-                    if ($isDry) {
-                        $this->line("  [DRY] {$slotKey}h · {$player->phone}: {$msg}");
-                        continue;
-                    }
 
                     try {
                         if ($adapter && !empty($buttons)) {
@@ -129,7 +133,6 @@ class SendBookingReminders extends Command
                             $this->setCursorForResponse($player->phone, $booking->id, $nodeId);
                         }
 
-                        // Log nella history della sessione
                         $this->logToHistory($player->phone, $msg);
 
                         Log::info('Reminder inviato', [
@@ -145,7 +148,7 @@ class SendBookingReminders extends Command
                     }
                 }
 
-                // Marca come inviato su DB (persistente, sopravvive a cache clear)
+                // Marca come inviato su DB SOLO se non dry-run
                 $existing = $booking->reminders_sent ?? [];
                 $existing[$slotKey] = now()->toIso8601String();
                 $booking->update(['reminders_sent' => $existing]);
