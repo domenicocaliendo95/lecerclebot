@@ -10,29 +10,16 @@ Artisan::command('inspire', function () {
 
 /*
  * Ogni 5 minuti: invia promemoria per prenotazioni imminenti.
- * Dedup su DB (bookings.reminders_sent), no cache.
- * Configurazione: Impostazioni → Promemoria.
- * Flusso risposta (es. disdetta): editabile da /panel/flusso.
+ * Dedup su DB (bookings.reminders_sent) — no lock necessario.
  */
 Schedule::command('bot:send-reminders')
-    ->everyFiveMinutes()
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->everyFiveMinutes();
 
 /*
- * Ogni 15 minuti: invia richiesta risultato ai giocatori
- * la cui partita è terminata da almeno 1 ora.
+ * Ogni 15 minuti: invia richiesta risultato + feedback post-partita.
  */
 Schedule::command('bot:send-result-requests')
-    ->everyFifteenMinutes()
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->everyFifteenMinutes();
 
-/*
- * Ogni 15 minuti: invia richiesta feedback ai giocatori
- * X ore dopo la richiesta risultato. Configurabile in Impostazioni.
- */
 Schedule::command('bot:send-feedback-requests')
-    ->everyFifteenMinutes()
-    ->withoutOverlapping()
-    ->runInBackground();
+    ->everyFifteenMinutes();
