@@ -7,6 +7,8 @@ import {
   Position,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   type Node,
   type Edge,
   type Connection,
@@ -347,6 +349,15 @@ function layoutGraph(
 /* ────────── Pagina principale ────────── */
 
 export function Flusso() {
+  return (
+    <ReactFlowProvider>
+      <FlussoInner />
+    </ReactFlowProvider>
+  )
+}
+
+function FlussoInner() {
+  const reactFlowInstance = useReactFlow()
   const [searchParams] = useSearchParams()
   const compositeId = searchParams.get('composite')
   const isComposite = compositeId !== null
@@ -362,17 +373,24 @@ export function Flusso() {
   const [saving, setSaving] = useState(false)
   const [positionsDirty, setPositionsDirty] = useState(false)
   const [savingPositions, setSavingPositions] = useState(false)
+  const [initialFitDone, setInitialFitDone] = useState(false)
 
   // Layout: usa posizioni salvate se disponibili, altrimenti dagre auto-layout
+  // Preserva la viewport corrente sui refetch (non salta più in alto)
   useEffect(() => {
     if (!graphData) return
+
+    // Salva viewport corrente prima di aggiornare
+    let savedViewport: { x: number; y: number; zoom: number } | null = null
+    if (initialFitDone) {
+      try { savedViewport = reactFlowInstance.getViewport() } catch {}
+    }
 
     const hasSavedPositions = graphData.nodes.some(n =>
       n.position && (n.position.x !== 0 || n.position.y !== 0)
     )
 
     if (hasSavedPositions) {
-      // Usa le posizioni dal DB
       setNodes(graphData.nodes.map(n => ({
         id: String(n.id),
         type: 'n8n',
@@ -381,12 +399,10 @@ export function Flusso() {
         selected: false,
       })))
     } else {
-      // Primo caricamento: calcola con dagre
       const { nodes: ln } = layoutGraph(graphData.nodes, graphData.edges)
       setNodes(ln)
     }
 
-    // Edges sempre calcolati dal grafo
     const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]))
     setEdges(graphData.edges.map(e => {
       const sourceNode = nodeMap.get(e.from_node_id)
@@ -409,7 +425,16 @@ export function Flusso() {
       }
     }))
     setPositionsDirty(false)
-  }, [graphData, setNodes, setEdges])
+
+    // Ripristina viewport dopo il refetch (non salta più)
+    if (savedViewport) {
+      requestAnimationFrame(() => {
+        reactFlowInstance.setViewport(savedViewport!)
+      })
+    } else if (!initialFitDone) {
+      setInitialFitDone(true)
+    }
+  }, [graphData, setNodes, setEdges]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Traccia modifiche posizione (drag)
   const handleNodesChange = (changes: Parameters<typeof onNodesChange>[0]) => {
@@ -486,12 +511,21 @@ export function Flusso() {
 
   const addNode = async (moduleKey: string) => {
     try {
-      await apiFetch(`${apiBase}/nodes`, {
+      // Calcola il centro della viewport attuale così il nodo appare dove stai guardando
+      const viewport = reactFlowInstance.getViewport()
+      const container = document.querySelector('.react-flow')
+      const w = container?.clientWidth ?? 800
+      const h = container?.clientHeight ?? 600
+      const centerX = Math.round((-viewport.x + w / 2) / viewport.zoom)
+      const centerY = Math.round((-viewport.y + h / 2) / viewport.zoom)
+
+      const created = await apiFetch<{ id: number }>(`${apiBase}/nodes`, {
         method: 'POST',
-        body: JSON.stringify({ module_key: moduleKey, position: { x: 0, y: 0 }, config: {} }),
+        body: JSON.stringify({ module_key: moduleKey, position: { x: centerX, y: centerY }, config: {} }),
       })
       refetch()
       setShowPicker(false)
+      setSelectedId(created.id)
     } catch (e) {
       console.error('addNode failed', e)
     }
