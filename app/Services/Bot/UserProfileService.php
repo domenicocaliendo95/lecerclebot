@@ -54,7 +54,7 @@ class UserProfileService
 
             // Età: calcola da birthdate se presente
             $age = $profile['age'] ?? null;
-            $birthdate = $profile['birthdate'] ?? null;
+            $birthdate = $this->parseBirthdate($profile['birthdate'] ?? null);
             if ($birthdate && !$age) {
                 try {
                     $age = \Carbon\Carbon::parse($birthdate)->age;
@@ -84,6 +84,44 @@ class UserProfileService
 
             return null;
         }
+    }
+
+    /**
+     * Parsa una data di nascita in vari formati e restituisce Y-m-d o null.
+     * Accetta: dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy, yyyy-mm-dd, "salta"
+     */
+    private function parseBirthdate(mixed $raw): ?string
+    {
+        if (empty($raw) || !is_string($raw)) return null;
+
+        $clean = trim($raw);
+        if (in_array(mb_strtolower($clean), ['salta', 'skip', 'no', '-', ''], true)) {
+            return null;
+        }
+
+        // dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy
+        if (preg_match('/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/', $clean, $m)) {
+            $day = (int) $m[1]; $month = (int) $m[2]; $year = (int) $m[3];
+            if (checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-%02d', $year, $month, $day);
+            }
+        }
+
+        // yyyy-mm-dd (già formato ISO)
+        if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})$/', $clean, $m)) {
+            return $clean;
+        }
+
+        // Fallback: prova Carbon
+        try {
+            return \Carbon\Carbon::createFromFormat('d/m/Y', $clean)?->format('Y-m-d');
+        } catch (\Throwable) {}
+
+        try {
+            return \Carbon\Carbon::parse($clean)->format('Y-m-d');
+        } catch (\Throwable) {}
+
+        return null;
     }
 
     /**
