@@ -12,7 +12,7 @@ class Booking extends Model
         'status', 'gcal_event_id',
         'stripe_payment_link_p1', 'stripe_payment_link_p2',
         'payment_status_p1', 'payment_status_p2',
-        'reminders_sent',
+        'reminders_sent', 'result_requested_at',
     ];
 
     protected $casts = [

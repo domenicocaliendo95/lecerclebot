@@ -35,6 +35,7 @@ interface EnvConfig {
   google_calendar_id: string
   app_timezone: string
   session_timeout_minutes: string
+  admin_phone: string
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -293,7 +294,7 @@ function EnvConfigSection() {
   const [calSaving, setCalSaving] = useState(false)
   const [calSaved, setCalSaved] = useState(false)
 
-  const [botForm, setBotForm] = useState({ session_timeout: '30', timezone: 'Europe/Rome' })
+  const [botForm, setBotForm] = useState({ session_timeout: '30', timezone: 'Europe/Rome', admin_phone: '' })
   const [botSaving, setBotSaving] = useState(false)
   const [botSaved, setBotSaved] = useState(false)
 
@@ -316,6 +317,7 @@ function EnvConfigSection() {
         setBotForm({
           session_timeout: data.session_timeout_minutes ?? '30',
           timezone: data.app_timezone ?? 'Europe/Rome',
+          admin_phone: data.admin_phone ?? '',
         })
       })
       .catch(() => {})
@@ -520,6 +522,16 @@ function EnvConfigSection() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
+              <label className="text-sm font-medium">Telefono admin (notifiche)</label>
+              <input
+                value={botForm.admin_phone}
+                onChange={e => setBotForm(f => ({ ...f, admin_phone: e.target.value }))}
+                className={inputClass}
+                placeholder="393331234567"
+              />
+              <p className="text-xs text-muted-foreground">Riceve un messaggio ad ogni prenotazione creata o cancellata. Formato: 39XXXXXXXXXX</p>
+            </div>
+            <div className="space-y-1.5">
               <label className="text-sm font-medium">Timeout sessione (minuti)</label>
               <input
                 type="number"
@@ -530,7 +542,7 @@ function EnvConfigSection() {
                 className={inputClass}
                 placeholder="30"
               />
-              <p className="text-xs text-muted-foreground">Minuti di inattivita prima che la sessione torni al menu</p>
+              <p className="text-xs text-muted-foreground">Minuti di inattività prima che la sessione torni al menu</p>
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Timezone</label>
@@ -546,6 +558,7 @@ function EnvConfigSection() {
               saving={botSaving}
               saved={botSaved}
               onClick={() => saveSection('bot', {
+                admin_phone: botForm.admin_phone,
                 session_timeout_minutes: botForm.session_timeout,
                 app_timezone: botForm.timezone,
               }, setBotSaving, setBotSaved)}

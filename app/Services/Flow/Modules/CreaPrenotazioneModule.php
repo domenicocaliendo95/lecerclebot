@@ -138,6 +138,12 @@ class CreaPrenotazioneModule extends Module
                 'gcal_event_id'     => $gcalEvent->getId(),
             ]);
 
+            // Notifica admin
+            $this->notifyAdmin("📋 Nuova prenotazione!\n{$user->name}" .
+                ($opponentName ? " vs {$opponentName}" : '') .
+                "\n{$startDT->locale('it')->isoFormat('ddd D MMM')} {$startDT->format('H:i')}-{$endDT->format('H:i')}" .
+                "\n€{$price} ({$payment})");
+
             return ModuleResult::next('ok')->withData([
                 'last_booking_id'         => $booking->id,
                 'last_booking_price'      => $price,
@@ -154,5 +160,15 @@ class CreaPrenotazioneModule extends Module
             ]);
             return ModuleResult::next('errore');
         }
+    }
+
+    private function notifyAdmin(string $message): void
+    {
+        try {
+            $adminPhone = \App\Models\BotSetting::get('admin_phone');
+            if (!$adminPhone) return;
+            $adapter = app(\App\Services\Channel\ChannelRegistry::class)->get('whatsapp');
+            $adapter?->sendText((string) $adminPhone, $message);
+        } catch (\Throwable) {}
     }
 }

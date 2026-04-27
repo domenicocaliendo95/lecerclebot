@@ -26,6 +26,7 @@ class SettingsController extends Controller
             'google_calendar_id'       => $this->getConfig('google_calendar_id', 'services.google_calendar.calendar_id'),
             'app_timezone'             => $this->getConfig('app_timezone', 'app.timezone', 'Europe/Rome'),
             'session_timeout_minutes'  => BotSetting::get('session_timeout_minutes', 120),
+            'admin_phone'              => BotSetting::get('admin_phone', ''),
         ]);
     }
 
@@ -45,17 +46,21 @@ class SettingsController extends Controller
             'google_calendar_id'       => 'nullable|string|max:200',
             'app_timezone'             => 'nullable|string|max:100',
             'session_timeout_minutes'  => 'nullable|integer|min:0|max:10080',
+            'admin_phone'              => 'nullable|string|max:20',
         ]);
 
         foreach ($validated as $key => $value) {
-            if ($value !== null && $value !== '') {
+            if ($value !== null && $value !== '' && !in_array($key, ['session_timeout_minutes', 'admin_phone'])) {
                 BotSetting::set("env_{$key}", $value);
             }
         }
 
-        // session_timeout_minutes è diretto (non prefissato env_)
+        // Campi diretti (non prefissati env_)
         if (array_key_exists('session_timeout_minutes', $validated) && $validated['session_timeout_minutes'] !== null) {
             BotSetting::set('session_timeout_minutes', (int) $validated['session_timeout_minutes']);
+        }
+        if (array_key_exists('admin_phone', $validated)) {
+            BotSetting::set('admin_phone', $validated['admin_phone'] ?: null);
         }
 
         // Pulisci la cache config di Laravel per applicare subito

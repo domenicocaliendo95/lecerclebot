@@ -53,6 +53,18 @@ class CancellaPrenotazioneModule extends Module
             }
             $booking->update(['status' => 'cancelled']);
 
+            // Notifica admin
+            try {
+                $adminPhone = \App\Models\BotSetting::get('admin_phone');
+                if ($adminPhone) {
+                    $player = $booking->player1?->name ?? 'Giocatore';
+                    $slot = $booking->booking_date->locale('it')->isoFormat('ddd D MMM')
+                        . ' ' . substr($booking->start_time, 0, 5);
+                    $adapter = app(\App\Services\Channel\ChannelRegistry::class)->get('whatsapp');
+                    $adapter?->sendText((string) $adminPhone, "❌ Prenotazione cancellata\n{$player}\n{$slot}");
+                }
+            } catch (\Throwable) {}
+
             return ModuleResult::next('ok')->withData(['selected_booking_id' => null]);
         } catch (\Throwable $e) {
             Log::error('cancella_prenotazione failed', ['error' => $e->getMessage()]);
