@@ -21,6 +21,18 @@ use App\Http\Controllers\Api\ModuleCatalogController;
 Route::get('/webhook', [WhatsAppController::class, 'verify']);
 Route::post('/webhook', [WhatsAppController::class, 'handle']);
 
+// Cron via HTTP: per Plesk che non riesce a eseguire comandi artisan
+// Protetto da token segreto per evitare esecuzioni non autorizzate
+Route::get('/cron/{token}', function (string $token) {
+    if ($token !== config('app.cron_token', 'lecercle_cron_2026')) {
+        return response('Forbidden', 403);
+    }
+    \Illuminate\Support\Facades\Artisan::call('bot:send-reminders');
+    \Illuminate\Support\Facades\Artisan::call('bot:send-result-requests');
+    \Illuminate\Support\Facades\Artisan::call('bot:send-feedback-requests');
+    return response('OK: reminders + results + feedback', 200);
+});
+
 // Webchat: inbound via POST, outbound via polling
 Route::post('/webchat/message', [WebchatController::class, 'inbound']);
 Route::get('/webchat/poll',     [WebchatController::class, 'poll']);
