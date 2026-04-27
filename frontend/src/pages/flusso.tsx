@@ -454,6 +454,18 @@ export function Flusso() {
     return Object.values(modulesData.grouped).flat().find(m => m.key === selectedNode.module_key) ?? null
   }, [selectedNode, modulesData])
 
+  // Cancella archi: click su arco per selezionarlo, poi Delete/Backspace
+  const onEdgesDelete = async (edgesToDelete: Edge[]) => {
+    for (const edge of edgesToDelete) {
+      try {
+        await apiFetch(`${apiBase}/edges/${edge.id}`, { method: 'DELETE' })
+      } catch (e) {
+        console.error('deleteEdge failed', e)
+      }
+    }
+    refetch()
+  }
+
   const onConnect = async (conn: Connection) => {
     if (!conn.source || !conn.target) return
     try {
@@ -513,10 +525,12 @@ export function Flusso() {
           edges={edges}
           onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
+          onEdgesDelete={onEdgesDelete}
           onConnect={onConnect}
           onNodeClick={(_, node) => { setSelectedId(Number(node.id)); setShowPicker(false) }}
           onPaneClick={() => { setSelectedId(null); setShowPicker(false) }}
           nodeTypes={nodeTypes}
+          deleteKeyCode={['Backspace', 'Delete']}
           fitView
           fitViewOptions={{ padding: 0.15 }}
           proOptions={{ hideAttribution: true }}
