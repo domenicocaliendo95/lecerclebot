@@ -11,33 +11,23 @@ use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Invia richiesta di inserimento risultato 1h dopo la fine della partita.
- *
- * Usa il flusso "Chiedi risultato" (entry_trigger=scheduler:result_request)
- * per mandare il messaggio e gestire la risposta dell'utente — stessa
- * meccanica dei reminder: legge testo+bottoni dal nodo, manda via adapter,
- * setta il cursore sulla sessione.
- */
 class SendMatchResultRequests extends Command
 {
-    protected $signature   = 'bot:send-result-requests
-                              {--dry-run : Mostra senza inviare}';
+    protected $signature = 'bot:send-result-requests {--dry-run}';
     protected $description = 'Invia richiesta risultato ai giocatori 1h dopo la fine della partita';
 
     public function handle(ChannelRegistry $channels): int
     {
-        $isDry   = $this->option('dry-run');
-        $adapter = $channels->get('whatsapp');
+        $isDry = $this->option('dry-run');
 
-        // Trova il nodo entry del flusso post-partita (unificato risultato+feedback)
-        $resultNode = FlowNode::where('entry_trigger', 'scheduler:post_match')->first();
+        Log::info('🏆 bot:send-result-requests START', ['dry' => $isDry]);
+
+        $resultNode = FlowNode::where('entry_trigger', 'scheduler:post_match')->first()
+            ?? FlowNode::where('entry_trigger', 'scheduler:result_request')->first();
+
         if (!$resultNode) {
-            // Fallback al vecchio trigger
-            $resultNode = FlowNode::where('entry_trigger', 'scheduler:result_request')->first();
-        }
-        if (!$resultNode) {
-            $this->warn('Nodo flusso post-partita non trovato. Esegui la migrazione.');
+            Log::error('🏆 Nodo post_match NON TROVATO');
+            $this->warn('Nodo flusso post-partita non trovato.');
             return self::FAILURE;
         }
 
@@ -47,6 +37,12 @@ class SendMatchResultRequests extends Command
             ->map(fn($b) => is_array($b) ? (string) ($b['label'] ?? '') : (string) $b)
             ->filter(fn($l) => $l !== '')
             ->values()->all();
+
+        $adapter = $channels->get('whatsapp');
+        if (!$adapter) {
+            Log::error('🏆 WhatsApp adapter NON TROVATO');
+            return self::FAILURE;
+        }
 
         $bookings = Booking::where('status', 'confirmed')
             ->where(function ($q) {
@@ -58,22 +54,23 @@ class SendMatchResultRequests extends Command
             ->with(['player1', 'player2'])
             ->get();
 
+        Log::info("🏆 Trovate {$bookings->count()} partite da processare");
+
         if ($bookings->isEmpty()) {
             $this->info('Nessuna partita da processare.');
             return self::SUCCESS;
         }
 
-        $this->info("Trovate {$bookings->count()} partita/e.");
-
         foreach ($bookings as $booking) {
             $player1 = $booking->player1;
-            $player2 = $booking->player2;
             if (!$player1) continue;
 
             $dateStr = Carbon::parse($booking->booking_date)->format('d/m');
             $timeStr = mb_substr($booking->start_time, 0, 5);
             $slot    = "{$dateStr} alle {$timeStr}";
-            $isTracked = $player2 !== null && $booking->player2_confirmed_at !== null;
+            $isTracked = $booking->player2_id !== null && $booking->player2_confirmed_at !== null;
+
+            Log::info("🏆 Booking #{$booking->id} — {$slot} — tracked: " . ($isTracked ? 'sì' : 'no'));
 
             if ($isDry) {
                 $this->line("  [DRY] Booking #{$booking->id} — {$slot}");
@@ -90,50 +87,47 @@ class SendMatchResultRequests extends Command
 
                 $players = array_filter([
                     $player1->phone ? $player1 : null,
-                    $player2 && $player2->phone ? $player2 : null,
+                    $booking->player2 && $booking->player2->phone ? $booking->player2 : null,
                 ]);
 
                 foreach ($players as $player) {
                     $msg = str_replace('{slot}', $slot, $text);
 
-                    if ($adapter && !empty($buttons)) {
+                    if (!empty($buttons)) {
                         $adapter->sendButtons($player->phone, $msg, $buttons);
-                    } elseif ($adapter) {
+                    } else {
                         $adapter->sendText($player->phone, $msg);
                     }
 
-                    // Setta cursore per gestire la risposta via FlowRunner
                     $this->setCursor($player->phone, $booking->id, $resultNode->id);
 
-                    // Log nella history della sessione
                     $session = BotSession::where('channel', 'whatsapp')
                         ->where('external_id', $player->phone)->first();
                     $session?->appendHistory('bot', $msg);
+
+                    Log::info("🏆 ✅ Result request INVIATA", [
+                        'booking' => $booking->id,
+                        'phone'   => $player->phone,
+                    ]);
                 }
 
                 $booking->update(['result_requested_at' => now()]);
-
-                Log::info('SendMatchResultRequests: inviata', [
-                    'booking_id' => $booking->id,
-                    'tracked'    => $isTracked,
-                ]);
             } catch (\Throwable $e) {
-                $this->error("    ✗ Booking #{$booking->id}: {$e->getMessage()}");
-                Log::error('SendMatchResultRequests: errore', [
-                    'booking_id' => $booking->id,
-                    'error'      => $e->getMessage(),
+                Log::error("🏆 ❌ Result request FALLITA", [
+                    'booking' => $booking->id,
+                    'error'   => $e->getMessage(),
                 ]);
             }
         }
 
+        Log::info('🏆 bot:send-result-requests END');
         return self::SUCCESS;
     }
 
     private function setCursor(string $phone, int $bookingId, int $nodeId): void
     {
         $session = BotSession::where('channel', 'whatsapp')
-            ->where('external_id', $phone)
-            ->first();
+            ->where('external_id', $phone)->first();
 
         if (!$session) {
             $session = BotSession::create([
@@ -148,7 +142,7 @@ class SendMatchResultRequests extends Command
 
         $session->update(['current_node_id' => $nodeId]);
         $session->mergeData([
-            'result_booking_id' => $bookingId,
+            'result_booking_id'   => $bookingId,
             'selected_booking_id' => $bookingId,
         ]);
     }

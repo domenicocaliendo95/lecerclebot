@@ -11,29 +11,22 @@ use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-/**
- * Cron unico per i promemoria prenotazioni — gira ogni 5 minuti.
- *
- * Per ogni slot attivo in bot_settings.reminders:
- *   1. Trova le prenotazioni nella finestra temporale (±8 min)
- *   2. Controlla se il reminder per quello slot è già stato inviato
- *      (campo bookings.reminders_sent JSON, persistente e affidabile)
- *   3. Se non inviato: legge testo + bottoni dal nodo del flusso,
- *      manda via ChannelAdapter, setta il cursore del FlowRunner
- *      sulla sessione, marca come inviato su DB
- */
 class SendBookingReminders extends Command
 {
-    protected $signature = 'bot:send-reminders
-                           {--dry-run : Mostra senza inviare}';
-
+    protected $signature = 'bot:send-reminders {--dry-run}';
     protected $description = 'Invia promemoria prenotazioni (dedup su DB, gira ogni 5 min)';
 
     public function handle(ChannelRegistry $channels): int
     {
+        $now   = Carbon::now('Europe/Rome');
+        $isDry = $this->option('dry-run');
+
+        Log::info('🔔 bot:send-reminders START', ['now' => $now->toIso8601String(), 'dry' => $isDry]);
+
         $settings = BotSetting::get('reminders', ['enabled' => true, 'slots' => []]);
 
         if (!($settings['enabled'] ?? true)) {
+            Log::info('🔔 Reminders DISABILITATI');
             $this->info('Reminders disabilitati.');
             return self::SUCCESS;
         }
@@ -43,14 +36,23 @@ class SendBookingReminders extends Command
             ->values();
 
         if ($slots->isEmpty()) {
+            Log::info('🔔 Nessuno slot attivo');
             $this->info('Nessuno slot reminder attivo.');
             return self::SUCCESS;
         }
 
-        $now     = Carbon::now('Europe/Rome');
-        $sent    = 0;
-        $isDry   = $this->option('dry-run');
+        Log::info('🔔 Slot attivi: ' . $slots->count(), [
+            'slots' => $slots->map(fn($s) => $s['hours_before'] . 'h')->all(),
+        ]);
+
         $adapter = $channels->get('whatsapp');
+        if (!$adapter) {
+            Log::error('🔔 WhatsApp adapter NON TROVATO!');
+            $this->error('WhatsApp adapter non trovato.');
+            return self::FAILURE;
+        }
+
+        $sent = 0;
 
         foreach ($slots as $slot) {
             $hoursBefore = (int) ($slot['hours_before'] ?? 0);
@@ -59,7 +61,7 @@ class SendBookingReminders extends Command
 
             $flowNode = FlowNode::find($nodeId);
             if (!$flowNode) {
-                $this->warn("Slot {$hoursBefore}h: nodo {$nodeId} non trovato.");
+                Log::warning("🔔 Slot {$hoursBefore}h: nodo {$nodeId} non trovato");
                 continue;
             }
 
@@ -68,18 +70,13 @@ class SendBookingReminders extends Command
             $buttons = collect($config['buttons'] ?? [])
                 ->map(fn($b) => is_array($b) ? (string) ($b['label'] ?? '') : (string) $b)
                 ->filter(fn($l) => $l !== '')
-                ->values()
-                ->all();
+                ->values()->all();
 
-            // Query robusta: manda se la partita è entro hours_before
-            // E il reminder non è ancora stato inviato.
-            // Finestra larga per non perdere MAI un reminder:
-            //   - Max: partita entro hours_before + 10min da ora
-            //   - Min: per slot >=6h → catch-up fino a hours_before/2
-            //         per slot <6h → manda finché la partita non è iniziata
             $deadlineMax = $now->copy()->addHours($hoursBefore)->addMinutes(10);
             $minHours = $hoursBefore >= 6 ? (int) ($hoursBefore / 2) : 0;
             $deadlineMin = $now->copy()->addHours($minHours);
+
+            Log::info("🔔 Slot {$hoursBefore}h: cerco prenotazioni tra {$deadlineMin->format('d/m H:i')} e {$deadlineMax->format('d/m H:i')}");
 
             $bookings = Booking::whereIn('status', ['confirmed', 'pending_match'])
                 ->whereNotNull('player1_id')
@@ -90,10 +87,14 @@ class SendBookingReminders extends Command
                 ->with(['player1', 'player2'])
                 ->get();
 
+            Log::info("🔔 Slot {$hoursBefore}h: trovate {$bookings->count()} prenotazioni");
+
             foreach ($bookings as $booking) {
-                // Dedup su DB: controlla se già inviato per questo slot
                 $alreadySent = $booking->reminders_sent[$slotKey] ?? false;
-                if ($alreadySent) continue;
+                if ($alreadySent) {
+                    Log::info("🔔 Booking #{$booking->id}: già inviato per slot {$slotKey}h, skip");
+                    continue;
+                }
 
                 $slotLabel = Carbon::parse($booking->booking_date)
                     ->locale('it')->isoFormat('dddd D MMMM')
@@ -104,7 +105,10 @@ class SendBookingReminders extends Command
                     $booking->player2 && $booking->player2->phone ? $booking->player2 : null,
                 ]);
 
-                if (empty($players)) continue;
+                if (empty($players)) {
+                    Log::info("🔔 Booking #{$booking->id}: nessun giocatore con telefono, skip");
+                    continue;
+                }
 
                 if ($isDry) {
                     foreach ($players as $player) {
@@ -112,7 +116,7 @@ class SendBookingReminders extends Command
                         $this->line("  [DRY] {$slotKey}h · {$player->phone}: {$msg}");
                     }
                     $sent++;
-                    continue; // DRY: NON marcare come inviato!
+                    continue;
                 }
 
                 foreach ($players as $player) {
@@ -123,9 +127,9 @@ class SendBookingReminders extends Command
                     );
 
                     try {
-                        if ($adapter && !empty($buttons)) {
+                        if (!empty($buttons)) {
                             $adapter->sendButtons($player->phone, $msg, $buttons);
-                        } elseif ($adapter) {
+                        } else {
                             $adapter->sendText($player->phone, $msg);
                         }
 
@@ -135,20 +139,20 @@ class SendBookingReminders extends Command
 
                         $this->logToHistory($player->phone, $msg);
 
-                        Log::info('Reminder inviato', [
-                            'booking'      => $booking->id,
-                            'phone'        => $player->phone,
-                            'hours_before' => $hoursBefore,
+                        Log::info("🔔 ✅ Reminder INVIATO", [
+                            'booking' => $booking->id,
+                            'phone'   => $player->phone,
+                            'slot'    => $slotKey . 'h',
                         ]);
                     } catch (\Throwable $e) {
-                        Log::warning('Reminder send failed', [
-                            'phone' => $player->phone,
-                            'error' => $e->getMessage(),
+                        Log::error("🔔 ❌ Reminder FALLITO", [
+                            'booking' => $booking->id,
+                            'phone'   => $player->phone,
+                            'error'   => $e->getMessage(),
                         ]);
                     }
                 }
 
-                // Marca come inviato su DB SOLO se non dry-run
                 $existing = $booking->reminders_sent ?? [];
                 $existing[$slotKey] = now()->toIso8601String();
                 $booking->update(['reminders_sent' => $existing]);
@@ -156,6 +160,7 @@ class SendBookingReminders extends Command
             }
         }
 
+        Log::info("🔔 bot:send-reminders END — notificate: {$sent}");
         $this->info(($isDry ? '[DRY] ' : '') . "Prenotazioni notificate: {$sent}");
         return self::SUCCESS;
     }
@@ -163,24 +168,19 @@ class SendBookingReminders extends Command
     private function logToHistory(string $phone, string $message): void
     {
         $session = BotSession::where('channel', 'whatsapp')
-            ->where('external_id', $phone)
-            ->first();
+            ->where('external_id', $phone)->first();
         $session?->appendHistory('bot', $message);
     }
 
     private function setCursorForResponse(string $phone, int $bookingId, int $nodeId): void
     {
         $session = BotSession::where('channel', 'whatsapp')
-            ->where('external_id', $phone)
-            ->first();
+            ->where('external_id', $phone)->first();
 
         if (!$session) {
             $session = BotSession::create([
-                'phone'       => $phone,
-                'channel'     => 'whatsapp',
-                'external_id' => $phone,
-                'state'       => 'NEW',
-                'data'        => [],
+                'phone' => $phone, 'channel' => 'whatsapp', 'external_id' => $phone,
+                'state' => 'NEW', 'data' => [],
             ]);
         }
 

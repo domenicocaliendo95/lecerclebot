@@ -28,10 +28,17 @@ class SendFeedbackRequests extends Command
 
     public function handle(ChannelRegistry $channels): int
     {
+        Log::info('⭐ bot:send-feedback-requests START');
+
+        // Con il flusso post-partita unificato, il feedback è incluso
+        // nella stessa conversazione del risultato. Questo comando è
+        // mantenuto per backward compat ma potrebbe non essere necessario.
         $config = BotSetting::get('post_match', []);
-        $fbConfig = $config['feedback_request'] ?? ['enabled' => false];
+        // Supporta sia formato vecchio {feedback_request:{...}} che nuovo flat
+        $fbConfig = $config['feedback_request'] ?? $config;
 
         if (!($fbConfig['enabled'] ?? false) || empty($fbConfig['flow_node_id'])) {
+            Log::info('⭐ Feedback disabilitato o flow_node_id mancante', ['config' => $config]);
             $this->info('Feedback request disabilitato.');
             return self::SUCCESS;
         }
