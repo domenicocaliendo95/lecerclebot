@@ -166,9 +166,15 @@ class CreaPrenotazioneModule extends Module
     {
         try {
             $adminPhone = \App\Models\BotSetting::get('admin_phone');
-            if (!$adminPhone) return;
+            if (!$adminPhone) {
+                \Illuminate\Support\Facades\Log::info('📢 Admin notify: admin_phone non configurato');
+                return;
+            }
             $adapter = app(\App\Services\Channel\ChannelRegistry::class)->get('whatsapp');
             $adapter?->sendText((string) $adminPhone, $message);
-        } catch (\Throwable) {}
+            \Illuminate\Support\Facades\Log::info('📢 Admin notificato', ['phone' => $adminPhone]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('📢 Admin notify fallito', ['error' => $e->getMessage()]);
+        }
     }
 }
