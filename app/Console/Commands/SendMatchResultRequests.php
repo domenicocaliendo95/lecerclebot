@@ -136,12 +136,13 @@ class SendMatchResultRequests extends Command
             ]);
         }
 
-        if ($session->current_node_id !== null || !empty($session->getData('__cursor'))) {
-            return;
-        }
-
+        // Forza il cursore: lo scheduler è autoritativo. Se c'è un cursore
+        // vecchio (flusso precedente), lo sovrascriviamo. L'utente ha appena
+        // ricevuto la richiesta risultato — la risposta DEVE andare lì.
         $session->update(['current_node_id' => $nodeId]);
         $session->mergeData([
+            '__cursor'            => null,
+            '__flow_stack'        => null,
             'result_booking_id'   => $bookingId,
             'selected_booking_id' => $bookingId,
         ]);

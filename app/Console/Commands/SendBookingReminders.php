@@ -184,11 +184,12 @@ class SendBookingReminders extends Command
             ]);
         }
 
-        if ($session->current_node_id !== null || !empty($session->getData('__cursor'))) {
-            return;
-        }
-
+        // Forza il cursore: lo scheduler è autoritativo
         $session->update(['current_node_id' => $nodeId]);
-        $session->mergeData(['selected_booking_id' => $bookingId]);
+        $session->mergeData([
+            '__cursor'            => null,
+            '__flow_stack'        => null,
+            'selected_booking_id' => $bookingId,
+        ]);
     }
 }
