@@ -127,11 +127,11 @@ class SendBookingReminders extends Command
                     );
 
                     try {
-                        if (!empty($buttons)) {
-                            $adapter->sendButtons($player->phone, $msg, $buttons);
-                        } else {
-                            $adapter->sendText($player->phone, $msg);
-                        }
+                        // Usa template per funzionare fuori dalla finestra 24h
+                        $adapter->sendTemplate($player->phone, 'reminder_partita', [
+                            $player->name,
+                            $slotLabel,
+                        ]);
 
                         if (!empty($buttons)) {
                             $this->setCursorForResponse($player->phone, $booking->id, $nodeId);

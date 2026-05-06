@@ -37,4 +37,12 @@ interface ChannelAdapter
      * @param string[] $items
      */
     public function sendList(string $externalId, string $text, string $buttonLabel, array $items): void;
+
+    /**
+     * Template message (per WhatsApp: approvati da Meta, funzionano fuori 24h).
+     * I canali che non supportano template inviano come testo semplice.
+     *
+     * @param string[] $params Parametri in ordine ({{1}}, {{2}}, ...)
+     */
+    public function sendTemplate(string $externalId, string $template, array $params = []): void;
 }

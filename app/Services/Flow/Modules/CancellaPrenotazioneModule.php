@@ -53,7 +53,7 @@ class CancellaPrenotazioneModule extends Module
             }
             $booking->update(['status' => 'cancelled']);
 
-            // Notifica admin
+            // Notifica admin via template
             try {
                 $adminPhone = \App\Models\BotSetting::get('admin_phone');
                 if ($adminPhone) {
@@ -61,7 +61,7 @@ class CancellaPrenotazioneModule extends Module
                     $slot = $booking->booking_date->locale('it')->isoFormat('ddd D MMM')
                         . ' ' . substr($booking->start_time, 0, 5);
                     $adapter = app(\App\Services\Channel\ChannelRegistry::class)->get('whatsapp');
-                    $adapter?->sendText((string) $adminPhone, "❌ Prenotazione cancellata\n{$player}\n{$slot}");
+                    $adapter?->sendTemplate((string) $adminPhone, 'admin_cancellazione', [$player, $slot]);
                 }
             } catch (\Throwable) {}
 

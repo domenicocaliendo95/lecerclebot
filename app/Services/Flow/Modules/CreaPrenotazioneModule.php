@@ -138,11 +138,28 @@ class CreaPrenotazioneModule extends Module
                 'gcal_event_id'     => $gcalEvent->getId(),
             ]);
 
-            // Notifica admin
-            $this->notifyAdmin("📋 Nuova prenotazione!\n{$user->name}" .
-                ($opponentName ? " vs {$opponentName}" : '') .
-                "\n{$startDT->locale('it')->isoFormat('ddd D MMM')} {$startDT->format('H:i')}-{$endDT->format('H:i')}" .
-                "\n€{$price} ({$payment})");
+            // Notifica admin via template
+            $players = $opponentName ? "{$user->name} vs {$opponentName}" : $user->name;
+            $dateStr = $startDT->locale('it')->isoFormat('ddd D MMM');
+            $timeStr = "{$startDT->format('H:i')}-{$endDT->format('H:i')}";
+            $this->notifyAdmin('admin_prenotazione', [$players, $dateStr, $timeStr]);
+
+            // Notifica avversario via template (se è del circolo con telefono)
+            $opponentPhone = $ctx->get('opponent_phone');
+            if ($opponentId && $opponentPhone) {
+                try {
+                    $slotFriendly = $startDT->locale('it')->isoFormat('dddd D MMMM') . ' alle ' . $startDT->format('H:i');
+                    $wa = app(\App\Services\Channel\ChannelRegistry::class)->get('whatsapp');
+                    $wa?->sendTemplate((string) $opponentPhone, 'invito_avversario', [
+                        $opponentName ?? 'Giocatore',
+                        $user->name,
+                        $slotFriendly,
+                    ]);
+                    Log::info('📩 Invito avversario inviato', ['phone' => $opponentPhone, 'booking' => $booking->id]);
+                } catch (\Throwable $e) {
+                    Log::warning('📩 Invito avversario fallito', ['error' => $e->getMessage()]);
+                }
+            }
 
             return ModuleResult::next('ok')->withData([
                 'last_booking_id'         => $booking->id,
@@ -162,19 +179,19 @@ class CreaPrenotazioneModule extends Module
         }
     }
 
-    private function notifyAdmin(string $message): void
+    private function notifyAdmin(string $template, array $params): void
     {
         try {
             $adminPhone = \App\Models\BotSetting::get('admin_phone');
             if (!$adminPhone) {
-                \Illuminate\Support\Facades\Log::info('📢 Admin notify: admin_phone non configurato');
+                Log::info('📢 Admin notify: admin_phone non configurato');
                 return;
             }
             $adapter = app(\App\Services\Channel\ChannelRegistry::class)->get('whatsapp');
-            $adapter?->sendText((string) $adminPhone, $message);
-            \Illuminate\Support\Facades\Log::info('📢 Admin notificato', ['phone' => $adminPhone]);
+            $adapter?->sendTemplate((string) $adminPhone, $template, $params);
+            Log::info("📢 Admin notificato [{$template}]", ['phone' => $adminPhone]);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('📢 Admin notify fallito', ['error' => $e->getMessage()]);
+            Log::warning("📢 Admin notify fallito [{$template}]", ['error' => $e->getMessage()]);
         }
     }
 }

@@ -80,6 +80,35 @@ class WhatsAppService
     }
 
     /**
+     * Invia un template message approvato da Meta.
+     * Funziona anche fuori dalla finestra 24h.
+     *
+     * @param string   $to         Numero destinatario
+     * @param string   $template   Nome del template (es. 'admin_prenotazione')
+     * @param string[] $params     Parametri in ordine ({{1}}, {{2}}, ...)
+     * @param string   $lang       Codice lingua
+     */
+    public function sendTemplate(string $to, string $template, array $params = [], string $lang = 'it'): void
+    {
+        $components = [];
+        if (!empty($params)) {
+            $components[] = [
+                'type'       => 'body',
+                'parameters' => array_map(fn($p) => ['type' => 'text', 'text' => (string) $p], array_values($params)),
+            ];
+        }
+
+        $this->send($to, [
+            'type'     => 'template',
+            'template' => [
+                'name'       => $template,
+                'language'   => ['code' => $lang],
+                'components' => $components,
+            ],
+        ]);
+    }
+
+    /**
      * Metodo base — chiamato da tutti gli altri
      */
     private function send(string $to, array $payload): void

@@ -38,6 +38,13 @@ class WebchatAdapter implements ChannelAdapter
         $this->enqueue($externalId, ['type' => 'list', 'text' => $text, 'button' => $buttonLabel, 'items' => array_values($items)]);
     }
 
+    public function sendTemplate(string $externalId, string $template, array $params = []): void
+    {
+        // Webchat non ha template — manda come testo con i parametri inline
+        $text = "[{$template}] " . implode(' | ', $params);
+        $this->sendText($externalId, $text);
+    }
+
     private function enqueue(string $externalId, array $payload): void
     {
         DB::table('webchat_outbox')->insert([

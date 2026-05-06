@@ -93,11 +93,11 @@ class SendMatchResultRequests extends Command
                 foreach ($players as $player) {
                     $msg = str_replace('{slot}', $slot, $text);
 
-                    if (!empty($buttons)) {
-                        $adapter->sendButtons($player->phone, $msg, $buttons);
-                    } else {
-                        $adapter->sendText($player->phone, $msg);
-                    }
+                    // Template per funzionare fuori dalla finestra 24h
+                    $adapter->sendTemplate($player->phone, 'richiesta_risultato', [
+                        $player->name,
+                        $slot,
+                    ]);
 
                     $this->setCursor($player->phone, $booking->id, $resultNode->id);
 

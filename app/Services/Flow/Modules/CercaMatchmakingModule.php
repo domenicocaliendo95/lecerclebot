@@ -123,8 +123,14 @@ class CercaMatchmakingModule extends Module
             $adapter = app(ChannelRegistry::class)->get('whatsapp');
             if ($adapter && $opponent->phone) {
                 $slot = $startDT->locale('it')->isoFormat('dddd D MMMM') . ' alle ' . $startDT->format('H:i');
-                $msg = "Ciao {$opponent->name}! {$user->name} ti sfida per una partita {$slot} 🎾\nELO: {$user->elo_rating} (gap: {$eloGap})";
-                $adapter->sendButtons($opponent->phone, $msg, ['Accetta', 'Rifiuta']);
+                $msg = "Ciao {$opponent->name}! {$user->name} ti sfida per una partita {$slot} 🎾 ELO: {$user->elo_rating}";
+                // Template per funzionare fuori dalla finestra 24h
+                $adapter->sendTemplate($opponent->phone, 'invito_matchmaking', [
+                    $opponent->name,
+                    $user->name,
+                    $slot,
+                    (string) $user->elo_rating,
+                ]);
 
                 // Crea/trova sessione avversario e setta cursore
                 $oppSession = \App\Models\BotSession::firstOrCreate(

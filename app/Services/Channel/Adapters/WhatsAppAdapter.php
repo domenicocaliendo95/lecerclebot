@@ -34,4 +34,9 @@ class WhatsAppAdapter implements ChannelAdapter
     {
         $this->whatsApp->sendList($externalId, $text, $buttonLabel, $items);
     }
+
+    public function sendTemplate(string $externalId, string $template, array $params = []): void
+    {
+        $this->whatsApp->sendTemplate($externalId, $template, $params);
+    }
 }
