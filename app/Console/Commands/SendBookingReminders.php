@@ -21,12 +21,9 @@ class SendBookingReminders extends Command
         $now   = Carbon::now('Europe/Rome');
         $isDry = $this->option('dry-run');
 
-        Log::info('🔔 bot:send-reminders START', ['now' => $now->toIso8601String(), 'dry' => $isDry]);
-
         $settings = BotSetting::get('reminders', ['enabled' => true, 'slots' => []]);
 
         if (!($settings['enabled'] ?? true)) {
-            Log::info('🔔 Reminders DISABILITATI');
             $this->info('Reminders disabilitati.');
             return self::SUCCESS;
         }
@@ -36,14 +33,9 @@ class SendBookingReminders extends Command
             ->values();
 
         if ($slots->isEmpty()) {
-            Log::info('🔔 Nessuno slot attivo');
             $this->info('Nessuno slot reminder attivo.');
             return self::SUCCESS;
         }
-
-        Log::info('🔔 Slot attivi: ' . $slots->count(), [
-            'slots' => $slots->map(fn($s) => $s['hours_before'] . 'h')->all(),
-        ]);
 
         $adapter = $channels->get('whatsapp');
         if (!$adapter) {
@@ -76,8 +68,6 @@ class SendBookingReminders extends Command
             $minHours = $hoursBefore >= 6 ? (int) ($hoursBefore / 2) : 0;
             $deadlineMin = $now->copy()->addHours($minHours);
 
-            Log::info("🔔 Slot {$hoursBefore}h: cerco prenotazioni tra {$deadlineMin->format('d/m H:i')} e {$deadlineMax->format('d/m H:i')}");
-
             $bookings = Booking::whereIn('status', ['confirmed', 'pending_match'])
                 ->whereNotNull('player1_id')
                 ->whereRaw(
@@ -87,12 +77,13 @@ class SendBookingReminders extends Command
                 ->with(['player1', 'player2'])
                 ->get();
 
-            Log::info("🔔 Slot {$hoursBefore}h: trovate {$bookings->count()} prenotazioni");
+            if ($bookings->isEmpty()) {
+                continue;
+            }
 
             foreach ($bookings as $booking) {
                 $alreadySent = $booking->reminders_sent[$slotKey] ?? false;
                 if ($alreadySent) {
-                    Log::info("🔔 Booking #{$booking->id}: già inviato per slot {$slotKey}h, skip");
                     continue;
                 }
 
@@ -106,7 +97,6 @@ class SendBookingReminders extends Command
                 ]);
 
                 if (empty($players)) {
-                    Log::info("🔔 Booking #{$booking->id}: nessun giocatore con telefono, skip");
                     continue;
                 }
 
@@ -160,7 +150,9 @@ class SendBookingReminders extends Command
             }
         }
 
-        Log::info("🔔 bot:send-reminders END — notificate: {$sent}");
+        if ($sent > 0) {
+            Log::info("🔔 Reminders inviati: {$sent}");
+        }
         $this->info(($isDry ? '[DRY] ' : '') . "Prenotazioni notificate: {$sent}");
         return self::SUCCESS;
     }

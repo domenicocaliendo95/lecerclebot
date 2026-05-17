@@ -20,8 +20,6 @@ class SendMatchResultRequests extends Command
     {
         $isDry = $this->option('dry-run');
 
-        Log::info('🏆 bot:send-result-requests START', ['dry' => $isDry]);
-
         $resultNode = FlowNode::where('entry_trigger', 'scheduler:post_match')->first()
             ?? FlowNode::where('entry_trigger', 'scheduler:result_request')->first();
 
@@ -54,12 +52,12 @@ class SendMatchResultRequests extends Command
             ->with(['player1', 'player2'])
             ->get();
 
-        Log::info("🏆 Trovate {$bookings->count()} partite da processare");
-
         if ($bookings->isEmpty()) {
             $this->info('Nessuna partita da processare.');
             return self::SUCCESS;
         }
+
+        Log::info("🏆 Trovate {$bookings->count()} partite da processare");
 
         foreach ($bookings as $booking) {
             $player1 = $booking->player1;
@@ -69,8 +67,6 @@ class SendMatchResultRequests extends Command
             $timeStr = mb_substr($booking->start_time, 0, 5);
             $slot    = "{$dateStr} alle {$timeStr}";
             $isTracked = $booking->player2_id !== null && $booking->player2_confirmed_at !== null;
-
-            Log::info("🏆 Booking #{$booking->id} — {$slot} — tracked: " . ($isTracked ? 'sì' : 'no'));
 
             if ($isDry) {
                 $this->line("  [DRY] Booking #{$booking->id} — {$slot}");
@@ -120,7 +116,6 @@ class SendMatchResultRequests extends Command
             }
         }
 
-        Log::info('🏆 bot:send-result-requests END');
         return self::SUCCESS;
     }
 

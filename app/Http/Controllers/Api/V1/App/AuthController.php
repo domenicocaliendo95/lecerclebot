@@ -107,6 +107,7 @@ class AuthController extends Controller
                 'email'    => 'app_' . substr(md5($normalizedPhone), 0, 12) . '@lecercleclub.bot',
                 'password' => bcrypt(\Illuminate\Support\Str::random(32)),
             ]);
+            $user->refresh(); // rilegge i default DB (elo_rating, privacy_profile, ecc.)
             $isNew = true;
         }
 
