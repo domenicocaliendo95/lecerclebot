@@ -42,10 +42,9 @@ export default function Verify() {
       const res = await auth.verifyOtp(phone, c);
       await setAuth(res.token, res.user);
       if (res.needs_app_onboarding) {
-        // TODO: route a mini-onboarding
-        router.replace('/');
+        router.replace('/onboarding');
       } else {
-        router.replace('/');
+        router.replace('/(tabs)');
       }
     } catch (err) {
       const message = axios.isAxiosError(err)

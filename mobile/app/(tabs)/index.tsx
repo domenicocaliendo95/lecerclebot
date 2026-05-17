@@ -1,75 +1,257 @@
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router, useFocusEffect } from 'expo-router';
+import { Bell, Calendar, Sparkles, Trophy, Wine } from 'lucide-react-native';
+import Svg, { Circle } from 'react-native-svg';
 
+import { AppBooking, bookings } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
+import { dateRelative, firstName, greeting, timeUntil } from '@/lib/format';
+import { Avatar } from '@/components/Avatar';
 
 export default function Home() {
   const user = useAuthStore((s) => s.user);
-  const signOut = useAuthStore((s) => s.signOut);
+  const [nextBooking, setNextBooking] = useState<AppBooking | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const firstName = user?.name?.split(' ')[0] ?? '👋';
+  const load = useCallback(async () => {
+    try {
+      const b = await bookings.next();
+      setNextBooking(b);
+    } catch {
+      // silent
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg" edges={['top']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6B8068" />}
+      >
         {/* Header */}
         <View className="flex-row justify-between items-center px-6 pt-3 pb-1">
           <Text className="font-display-semi text-[17px] tracking-wider text-ink dark:text-cream">
             Le Cercle
           </Text>
-          <Pressable onPress={signOut}>
-            <Text className="font-body-medium text-[12px] text-ink-muted">Esci</Text>
-          </Pressable>
+          <View className="flex-row items-center gap-2">
+            <Pressable className="w-10 h-10 rounded-full items-center justify-center">
+              <Bell size={22} color="#1F2419" strokeWidth={1.5} />
+            </Pressable>
+            <Avatar url={user?.avatar_url} name={user?.name} size={38} />
+          </View>
         </View>
 
         {/* Greeting */}
         <View className="px-6 pt-2 pb-6">
           <View className="flex-row items-baseline gap-2">
             <Text className="text-[18px]">☼</Text>
-            <Text className="font-body-medium text-[13px] text-ink-muted">Benvenuto,</Text>
+            <Text className="font-body-medium text-[13px] text-ink-muted">{greeting()},</Text>
           </View>
           <Text className="font-script text-[60px] -mt-1 text-sage-dark dark:text-sage leading-[58px]">
-            {firstName}
+            {firstName(user?.name)}
           </Text>
         </View>
 
-        {/* Placeholder */}
-        <View className="mx-5 mb-4 rounded-[32px] p-6 bg-sage shadow-lg">
-          <Text className="font-body-bold text-cream text-[11px] tracking-widest uppercase opacity-80">
-            In arrivo
-          </Text>
-          <Text className="font-display text-cream text-[26px] mt-1 leading-tight">
-            Prenotazioni, matchmaking, classifica, tornei, eventi
-          </Text>
-          <Text className="text-cream/80 text-[13px] mt-3 leading-relaxed">
-            Sei dentro 🎾. Da qui costruiamo tutta la parità col bot WhatsApp e poi le feature app-only.
-          </Text>
+        {/* Hero — prossima partita */}
+        <View className="px-5 mb-5">
+          {nextBooking ? (
+            <NextBookingCard b={nextBooking} />
+          ) : (
+            <EmptyNextCard onTap={() => router.push('/booking/new')} />
+          )}
         </View>
 
-        {user && (
-          <View className="mx-5 rounded-3xl bg-white dark:bg-dark-surface p-5">
-            <Text className="font-body-bold text-[10px] tracking-widest uppercase text-ink-muted">
-              Profilo
-            </Text>
-            <Text className="font-display-semi text-[20px] text-ink dark:text-cream mt-2">
-              {user.name}
-            </Text>
-            <Text className="text-[13px] text-ink-muted font-body-medium mt-1">
-              {user.phone}
-            </Text>
-            <View className="flex-row gap-3 mt-3">
-              <View>
-                <Text className="font-display-semi text-[20px] text-ink dark:text-cream">{user.elo_rating}</Text>
-                <Text className="text-[10px] uppercase tracking-widest text-ink-muted font-body-bold">ELO</Text>
-              </View>
-              <View>
-                <Text className="font-display-semi text-[20px] text-ink dark:text-cream">{user.matches_played}</Text>
-                <Text className="text-[10px] uppercase tracking-widest text-ink-muted font-body-bold">Partite</Text>
-              </View>
-            </View>
+        {/* Quick actions */}
+        <View className="px-6">
+          <Text className="font-display-italic text-[19px] text-ink dark:text-cream mb-3">
+            Cosa facciamo oggi?
+          </Text>
+          <View className="flex-row flex-wrap gap-3">
+            <QuickAction
+              icon={<Calendar size={22} color="#4F6450" strokeWidth={1.5} />}
+              label="Prenota campo"
+              sub="Calendario"
+              onPress={() => router.push('/booking/new')}
+              tone="sage"
+            />
+            <QuickAction
+              icon={<Sparkles size={22} color="#A47A3F" strokeWidth={1.5} />}
+              label="Trova match"
+              sub="Avversario simile"
+              onPress={() => router.push('/booking/new?mode=matchmaking')}
+              tone="ocra"
+            />
+            <QuickAction
+              icon={<Trophy size={22} color="#4F6450" strokeWidth={1.5} />}
+              label="Tornei"
+              sub="In arrivo"
+              onPress={() => {}}
+              tone="sage"
+            />
+            <QuickAction
+              icon={<Wine size={22} color="#A47A3F" strokeWidth={1.5} />}
+              label="Eventi"
+              sub="In arrivo"
+              onPress={() => {}}
+              tone="ocra"
+            />
           </View>
-        )}
+        </View>
+
+        {/* Footer */}
+        <View className="px-6 mt-7">
+          <Text className="font-display-italic text-[19px] text-ink dark:text-cream mb-2">
+            Dal circolo
+          </Text>
+          <View className="bg-white dark:bg-dark-surface rounded-2xl p-4">
+            <Text className="text-[13px] text-ink-muted font-body-medium leading-relaxed">
+              Le partite dei tuoi amici e gli aggiornamenti dal circolo appariranno qui.{'\n'}Stiamo costruendo.
+            </Text>
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// ── Components ────────────────────────────────────────────────────────
+
+function NextBookingCard({ b }: { b: AppBooking }) {
+  const startsAt = new Date(b.starts_at_iso);
+  const time = timeUntil(startsAt);
+  const opponentName = b.opponent?.name ?? b.opponent_name_text ?? 'Avversario libero';
+
+  return (
+    <Pressable onPress={() => router.push(`/booking/${b.id}`)}>
+      <LinearGradient
+        colors={['#6B8068', '#8AA086']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          borderRadius: 32,
+          padding: 22,
+          shadowColor: '#6B8068',
+          shadowOpacity: 0.32,
+          shadowRadius: 28,
+          shadowOffset: { width: 0, height: 14 },
+        }}
+      >
+        {/* Decorative circles */}
+        <View style={{ position: 'absolute', right: -50, top: -50, opacity: 0.18 }}>
+          <Svg width={200} height={200} viewBox="0 0 200 200">
+            <Circle cx="100" cy="100" r="85" stroke="#ECE3CE" strokeWidth="2" fill="none" />
+            <Circle cx="100" cy="100" r="55" stroke="#ECE3CE" strokeWidth="1.5" fill="none" />
+            <Circle cx="100" cy="100" r="25" stroke="#ECE3CE" strokeWidth="1" fill="none" />
+          </Svg>
+        </View>
+
+        <View className="flex-row items-center gap-2 mb-1">
+          <View className="bg-ocra px-2.5 py-1 rounded-full">
+            <Text className="font-body-bold text-[10px] text-white tracking-wide">
+              {dateRelative(startsAt).toUpperCase()}
+            </Text>
+          </View>
+          {time && (
+            <Text className="font-body-semi text-[11px] text-cream/90">{time}</Text>
+          )}
+        </View>
+
+        <Text className="font-display text-[32px] text-cream leading-[36px] mt-1">
+          Giochi alle <Text className="italic">{b.start_time}</Text>
+        </Text>
+        <Text className="font-body-medium text-[13px] text-cream/85 mt-1.5">
+          Singolo · {b.duration_minutes} min
+        </Text>
+
+        <View className="mt-5 pt-4 border-t border-cream/20 flex-row items-center gap-3">
+          <Avatar url={b.opponent?.avatar_url} name={opponentName} size={42} bordered />
+          <View className="flex-1">
+            <Text className="font-display-semi text-[17px] text-cream">{opponentName}</Text>
+            {b.opponent?.elo_rating != null && (
+              <Text className="font-body-medium text-[11px] text-cream/85 mt-0.5">
+                ELO {b.opponent.elo_rating}
+              </Text>
+            )}
+          </View>
+          <View className="bg-cream rounded-full px-4 py-2.5">
+            <Text className="font-body-bold text-[12px] text-sage-dark">Dettagli ›</Text>
+          </View>
+        </View>
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
+function EmptyNextCard({ onTap }: { onTap: () => void }) {
+  return (
+    <Pressable onPress={onTap}>
+      <View
+        className="bg-white dark:bg-dark-surface rounded-[32px] p-6 items-center"
+        style={{
+          shadowColor: '#6B8068',
+          shadowOpacity: 0.1,
+          shadowRadius: 20,
+          shadowOffset: { width: 0, height: 6 },
+        }}
+      >
+        <View className="w-14 h-14 rounded-full bg-cream items-center justify-center mb-3">
+          <Calendar size={26} color="#6B8068" strokeWidth={1.5} />
+        </View>
+        <Text className="font-display-italic text-[22px] text-ink dark:text-cream text-center">
+          Nessuna partita in vista
+        </Text>
+        <Text className="font-body-medium text-[13px] text-ink-muted text-center mt-1.5 leading-relaxed">
+          Prenota un campo o trova un avversario{'\n'}per la tua prossima partita.
+        </Text>
+        <View className="mt-4 bg-sage px-5 py-2.5 rounded-full">
+          <Text className="font-body-bold text-[13px] text-cream">Prenota →</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+function QuickAction({
+  icon, label, sub, onPress, tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+  onPress: () => void;
+  tone: 'sage' | 'ocra';
+}) {
+  const bg = tone === 'sage' ? 'bg-sage/10' : 'bg-ocra/15';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="bg-white dark:bg-dark-surface rounded-3xl p-4"
+      style={{
+        flexBasis: '47.5%',
+        flexGrow: 1,
+        shadowColor: '#6B8068',
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 4 },
+      }}
+    >
+      <View className={`w-11 h-11 rounded-full items-center justify-center mb-3 ${bg}`}>
+        {icon}
+      </View>
+      <Text className="font-display-semi text-[15px] text-ink dark:text-cream">{label}</Text>
+      <Text className="font-body-medium text-[11px] text-ink-muted mt-0.5">{sub}</Text>
+    </Pressable>
   );
 }

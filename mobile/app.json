@@ -12,12 +12,18 @@
       "bundleIdentifier": "club.lecercle.app",
       "infoPlist": {
         "NSFaceIDUsageDescription": "Usiamo Face ID per aprire l'app in modo sicuro.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
       "package": "club.lecercle.app",
-      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT", "POST_NOTIFICATIONS"]
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "bundler": "metro"
@@ -25,14 +31,18 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-asset",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
       "apiBaseUrl": "https://bot.lecercleclub.it/api/v1/app",
-      "router": { "origin": false }
+      "router": {
+        "origin": false
+      }
     }
   }
 }

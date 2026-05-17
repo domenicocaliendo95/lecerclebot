@@ -16,8 +16,11 @@ use App\Http\Controllers\Api\FlowGraphController;
 use App\Http\Controllers\Api\FlowCompositeController;
 use App\Http\Controllers\Api\ModuleCatalogController;
 use App\Http\Controllers\Api\V1\App\AuthController as AppAuthController;
+use App\Http\Controllers\Api\V1\App\BookingController as AppBookingController;
 use App\Http\Controllers\Api\V1\App\ClubController as AppClubController;
+use App\Http\Controllers\Api\V1\App\LeaderboardController as AppLeaderboardController;
 use App\Http\Controllers\Api\V1\App\MeController as AppMeController;
+use App\Http\Controllers\Api\V1\App\PricingRuleController as AppPricingRuleController;
 
 // ── Canali (inbound/outbound, nessuna auth) ──────────────────────────
 // WhatsApp (Meta Cloud API webhook)
@@ -150,5 +153,17 @@ Route::prefix('v1/app')->group(function () {
         // Devices (push)
         Route::post('/me/devices',                           [AppMeController::class, 'registerDevice']);
         Route::delete('/me/devices/{token}',                 [AppMeController::class, 'unregisterDevice']);
+
+        // Bookings
+        Route::get('/bookings/next',                         [AppBookingController::class, 'next']);
+        Route::get('/bookings',                              [AppBookingController::class, 'index']);
+        Route::get('/bookings/{id}',                         [AppBookingController::class, 'show']);
+        Route::delete('/bookings/{id}',                      [AppBookingController::class, 'destroy']);
+
+        // Leaderboard
+        Route::get('/leaderboard',                           [AppLeaderboardController::class, 'index']);
+
+        // Pricing (read-only)
+        Route::get('/pricing-rules',                         [AppPricingRuleController::class, 'index']);
     });
 });

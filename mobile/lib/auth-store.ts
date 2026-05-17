@@ -1,7 +1,6 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
 
-import { AppUser, auth, clearAuthToken, getAuthToken, setAuthToken } from './api';
+import { AppUser, auth, clearAuthToken, getAuthToken, me, setAuthToken } from './api';
 
 type AuthState = {
   user: AppUser | null;
@@ -11,6 +10,7 @@ type AuthState = {
   hydrate: () => Promise<void>;
   setAuth: (token: string, user: AppUser) => Promise<void>;
   setUser: (user: AppUser) => void;
+  refreshUser: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -21,8 +21,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hydrate: async () => {
     const token = await getAuthToken();
-    set({ token, isHydrated: true });
-    // TODO: optional: fetch /me to refresh user
+    if (!token) {
+      set({ token: null, user: null, isHydrated: true });
+      return;
+    }
+    set({ token });
+    // Fetch /me per rinfrescare i dati utente. Se fallisce (401 token invalido)
+    // facciamo logout silenzioso.
+    try {
+      const user = await me.get();
+      set({ user, isHydrated: true });
+    } catch {
+      await clearAuthToken();
+      set({ token: null, user: null, isHydrated: true });
+    }
   },
 
   setAuth: async (token, user) => {
@@ -32,12 +44,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setUser: (user) => set({ user }),
 
-  signOut: async () => {
+  refreshUser: async () => {
     try {
-      await auth.logout();
+      const user = await me.get();
+      set({ user });
     } catch {
-      // ignora errori di rete: forziamo logout locale comunque
+      // ignora errori temporanei di rete
     }
+  },
+
+  signOut: async () => {
+    try { await auth.logout(); } catch { /* ignora errori di rete */ }
     await clearAuthToken();
     set({ token: null, user: null });
   },

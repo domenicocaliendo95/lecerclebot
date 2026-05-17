@@ -14,7 +14,6 @@ export const api: AxiosInstance = axios.create({
   headers: { Accept: 'application/json' },
 });
 
-// Iniettiamo il token Sanctum a ogni request
 api.interceptors.request.use(async (config) => {
   const token = await SecureStore.getItemAsync(TOKEN_KEY);
   if (token) {
@@ -37,7 +36,7 @@ export async function clearAuthToken() {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
-// ── Endpoint helpers ──────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────
 
 export type RequestOtpResponse = {
   otp_id: number;
@@ -61,29 +60,17 @@ export type AppUser = {
   avatar_url: string | null;
   bio: string | null;
   birthdate: string | null;
-  is_fit: boolean;
+  is_fit: boolean | null;
   fit_rating: string | null;
   self_level: number | null;
-  elo_rating: number;
-  matches_played: number;
-  matches_won: number;
+  elo_rating: number | null;
+  matches_played: number | null;
+  matches_won: number | null;
   preferred_slots: string[] | null;
   notification_preferences: Record<string, boolean> | null;
-  privacy_profile: 'public' | 'club_only' | 'friends_only';
-  show_in_matchmaking: boolean;
+  privacy_profile: 'public' | 'club_only' | 'friends_only' | null;
+  show_in_matchmaking: boolean | null;
   app_onboarded_at: string | null;
-};
-
-export const auth = {
-  requestOtp: (phone: string) =>
-    api.post<RequestOtpResponse>('/auth/request-otp', { phone }).then((r) => r.data),
-  verifyOtp: (phone: string, code: string, deviceName?: string) =>
-    api
-      .post<VerifyOtpResponse>('/auth/verify-otp', { phone, code, device_name: deviceName })
-      .then((r) => r.data),
-  requestOtpEmail: (phone: string, email: string) =>
-    api.post('/auth/request-otp-email', { phone, email }).then((r) => r.data),
-  logout: () => api.post('/auth/logout').then((r) => r.data),
 };
 
 export type Club = {
@@ -101,6 +88,101 @@ export type Club = {
   timezone: string;
 };
 
+export type BookingOpponent = {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  elo_rating: number | null;
+};
+
+export type AppBooking = {
+  id: number;
+  date: string;             // YYYY-MM-DD
+  start_time: string;       // HH:mm
+  end_time: string;         // HH:mm
+  duration_minutes: number;
+  price: number;
+  is_peak: boolean;
+  status: 'confirmed' | 'pending_match' | 'cancelled';
+  created_via: 'bot_whatsapp' | 'app' | 'admin_panel';
+  notes: string | null;
+  me_role: 'player1' | 'player2';
+  opponent: BookingOpponent | null;
+  opponent_name_text: string | null;
+  opponent_confirmed: boolean;
+  starts_at_iso: string;
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  elo_rating: number;
+  matches_played: number;
+  matches_won: number;
+  fit_rating: string | null;
+  is_me: boolean;
+};
+
+export type LeaderboardResponse = {
+  data: LeaderboardEntry[];
+  me: {
+    rank: number;
+    elo_rating: number | null;
+    matches_played: number | null;
+    matches_won: number | null;
+  };
+};
+
+// ── Endpoint helpers ───────────────────────────────────────────────────
+
+export const auth = {
+  requestOtp: (phone: string) =>
+    api.post<RequestOtpResponse>('/auth/request-otp', { phone }).then((r) => r.data),
+  verifyOtp: (phone: string, code: string, deviceName?: string) =>
+    api.post<VerifyOtpResponse>('/auth/verify-otp', { phone, code, device_name: deviceName })
+      .then((r) => r.data),
+  requestOtpEmail: (phone: string, email: string) =>
+    api.post('/auth/request-otp-email', { phone, email }).then((r) => r.data),
+  logout: () => api.post('/auth/logout').then((r) => r.data),
+};
+
 export const club = {
   get: () => api.get<Club>('/club').then((r) => r.data),
+};
+
+export const me = {
+  get: () => api.get<AppUser>('/me').then((r) => r.data),
+  update: (data: Partial<Pick<AppUser,
+    'name' | 'bio' | 'birthdate' | 'is_fit' | 'fit_rating' | 'self_level' |
+    'preferred_slots' | 'privacy_profile' | 'show_in_matchmaking'>>) =>
+    api.patch<AppUser>('/me', data).then((r) => r.data),
+  updateNotificationPreferences: (prefs: Record<string, boolean>) =>
+    api.patch<{ notification_preferences: Record<string, boolean> }>('/me/notification-preferences', prefs)
+      .then((r) => r.data),
+  completeOnboarding: () =>
+    api.post<{ ok: true }>('/me/complete-onboarding').then((r) => r.data),
+  registerDevice: (data: { expo_push_token: string; platform: 'ios' | 'android'; device_name?: string; app_version?: string }) =>
+    api.post('/me/devices', data).then((r) => r.data),
+  delete: () => api.delete('/me').then((r) => r.data),
+};
+
+export const bookings = {
+  list: (params?: { status?: 'upcoming' | 'past' | 'all'; from?: string; to?: string; page?: number }) =>
+    api.get<{ data: AppBooking[]; meta: any }>('/bookings', { params }).then((r) => r.data),
+  next: () =>
+    api.get<{ data: AppBooking | null }>('/bookings/next').then((r) => r.data.data),
+  show: (id: number) =>
+    api.get<{ data: AppBooking }>(`/bookings/${id}`).then((r) => r.data.data),
+  cancel: (id: number) =>
+    api.delete<{ ok: true }>(`/bookings/${id}`).then((r) => r.data),
+};
+
+export const leaderboard = {
+  get: () => api.get<LeaderboardResponse>('/leaderboard').then((r) => r.data),
+};
+
+export const pricingRules = {
+  list: () => api.get<{ data: any[] }>('/pricing-rules').then((r) => r.data.data),
 };
