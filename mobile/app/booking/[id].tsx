@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, CreditCard, MapPin, MessageCircle, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, CreditCard, MapPin, MessageCircle, Trash2, Trophy } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { AppBooking, bookings } from '@/lib/api';
@@ -165,7 +165,31 @@ export default function BookingDetail() {
           </View>
         </View>
 
-        {/* Actions */}
+        {/* Register result CTA (past + has opponent + not cancelled) */}
+        {isPast && !isCancelled && (booking.opponent || booking.opponent_name_text) && (
+          <View className="px-5 mt-5">
+            <Pressable
+              onPress={() => router.push({
+                pathname: `/match-result/${booking.id}`,
+                params: { opponent: opponentName },
+              })}
+              className="bg-sage rounded-3xl p-4 flex-row items-center gap-3"
+              style={{ shadowColor: '#6B8068', shadowOpacity: 0.32, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } }}
+            >
+              <View className="w-10 h-10 rounded-full bg-cream/20 items-center justify-center">
+                <Trophy size={20} color="#ECE3CE" strokeWidth={1.5} />
+              </View>
+              <View className="flex-1">
+                <Text className="font-display-semi text-[15px] text-cream">Inserisci risultato</Text>
+                <Text className="font-body-medium text-[12px] text-cream/85 mt-0.5">
+                  Aggiorna ELO e statistiche
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Cancel */}
         {canCancel && (
           <View className="px-5 mt-5">
             <Pressable

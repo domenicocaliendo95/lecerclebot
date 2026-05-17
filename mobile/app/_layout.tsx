@@ -42,6 +42,7 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="booking" options={{ presentation: 'card' }} />
+          <Stack.Screen name="match-result" options={{ presentation: 'card' }} />
           <Stack.Screen name="settings" options={{ presentation: 'card' }} />
         </Stack>
       </SafeAreaProvider>

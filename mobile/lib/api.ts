@@ -225,6 +225,38 @@ export const players = {
     api.get<{ data: PlayerSearchResult[] }>('/players/search', { params: { q } }).then((r) => r.data.data),
 };
 
+export type PendingResult = {
+  booking_id: number;
+  date: string;
+  start_time: string;
+  end_time: string;
+  opponent: { id: number; name: string; avatar_url: string | null } | null;
+  opponent_name_text: string | null;
+  is_tracked: boolean;
+};
+
+export type SubmittedResult = {
+  booking_id: number;
+  date: string;
+  opponent_name: string | null;
+  winner_id: number | null;
+  i_won: boolean;
+  score: string | null;
+  my_confirmed: boolean;
+  opponent_confirmed: boolean;
+  finalized: boolean;
+  elo_delta: number | null;
+};
+
+export const matchResults = {
+  pending: () =>
+    api.get<{ data: PendingResult[] }>('/match-results/pending').then((r) => r.data.data),
+  list: () =>
+    api.get<{ data: SubmittedResult[]; meta: any }>('/match-results').then((r) => r.data),
+  submit: (bookingId: number, payload: { outcome: 'won' | 'lost' | 'not_played'; score?: string }) =>
+    api.post<{ data: SubmittedResult; warning?: string }>(`/match-results/${bookingId}`, payload).then((r) => r.data),
+};
+
 export const leaderboard = {
   get: () => api.get<LeaderboardResponse>('/leaderboard').then((r) => r.data),
 };

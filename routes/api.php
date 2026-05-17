@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\App\AuthController as AppAuthController;
 use App\Http\Controllers\Api\V1\App\BookingController as AppBookingController;
 use App\Http\Controllers\Api\V1\App\ClubController as AppClubController;
 use App\Http\Controllers\Api\V1\App\LeaderboardController as AppLeaderboardController;
+use App\Http\Controllers\Api\V1\App\MatchResultController as AppMatchResultController;
 use App\Http\Controllers\Api\V1\App\MeController as AppMeController;
 use App\Http\Controllers\Api\V1\App\PricingRuleController as AppPricingRuleController;
 
@@ -164,6 +165,11 @@ Route::prefix('v1/app')->group(function () {
 
         // Players search (per scelta avversario)
         Route::get('/players/search',                        [AppBookingController::class, 'searchPlayers']);
+
+        // Match results
+        Route::get('/match-results/pending',                 [AppMatchResultController::class, 'pending']);
+        Route::get('/match-results',                         [AppMatchResultController::class, 'index']);
+        Route::post('/match-results/{bookingId}',            [AppMatchResultController::class, 'submit']);
 
         // Leaderboard
         Route::get('/leaderboard',                           [AppLeaderboardController::class, 'index']);

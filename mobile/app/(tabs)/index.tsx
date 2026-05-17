@@ -6,7 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Bell, Calendar, Sparkles, Trophy, Wine } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { AppBooking, bookings } from '@/lib/api';
+import { AppBooking, PendingResult, bookings, matchResults } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
 import { dateRelative, firstName, greeting, timeUntil } from '@/lib/format';
 import { Avatar } from '@/components/Avatar';
@@ -14,12 +14,14 @@ import { Avatar } from '@/components/Avatar';
 export default function Home() {
   const user = useAuthStore((s) => s.user);
   const [nextBooking, setNextBooking] = useState<AppBooking | null>(null);
+  const [pending, setPending] = useState<PendingResult[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const b = await bookings.next();
+      const [b, p] = await Promise.all([bookings.next(), matchResults.pending()]);
       setNextBooking(b);
+      setPending(p);
     } catch {
       // silent
     }
@@ -63,6 +65,33 @@ export default function Home() {
             {firstName(user?.name)}
           </Text>
         </View>
+
+        {/* Pending results banner */}
+        {pending.length > 0 && (
+          <View className="px-5 mb-3">
+            <Pressable
+              onPress={() => router.push({
+                pathname: `/match-result/${pending[0].booking_id}`,
+                params: { opponent: pending[0].opponent?.name ?? pending[0].opponent_name_text ?? '' },
+              })}
+              className="bg-ocra rounded-2xl p-3 flex-row items-center gap-3"
+              style={{ shadowColor: '#C89B5A', shadowOpacity: 0.28, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }}
+            >
+              <View className="w-9 h-9 rounded-full bg-white/25 items-center justify-center">
+                <Trophy size={18} color="#fff" strokeWidth={1.5} />
+              </View>
+              <View className="flex-1">
+                <Text className="font-display-semi text-[14px] text-white">
+                  {pending.length === 1 ? "Hai un risultato da registrare" : `${pending.length} risultati da registrare`}
+                </Text>
+                <Text className="font-body-medium text-[11px] text-white/85" numberOfLines={1}>
+                  vs {pending[0].opponent?.name ?? pending[0].opponent_name_text ?? 'avversario'} · tocca per inserire
+                </Text>
+              </View>
+              <Text className="font-display-semi text-[18px] text-white">›</Text>
+            </Pressable>
+          </View>
+        )}
 
         {/* Hero — prossima partita */}
         <View className="px-5 mb-5">
