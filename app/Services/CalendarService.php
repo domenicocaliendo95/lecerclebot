@@ -228,6 +228,64 @@ class CalendarService
         Log::info('CalendarService: event deleted', ['event_id' => $eventId]);
     }
 
+    /**
+     * Lista TUTTI gli slot del giorno con status (libero/occupato) e prezzo.
+     * Usato dall'app mobile per disegnare il calendar/slot picker.
+     *
+     * @return array<array{time: string, end_time: string, price: float, available: bool, is_past: bool}>
+     */
+    public function listDaySlots(Carbon $date, int $durationMinutes = 60, int $stepMinutes = 30): array
+    {
+        $operatingStart = $date->copy()->setTime(8, 0);
+        $operatingEnd   = $date->copy()->setTime(22, 0);
+
+        $events = $this->service->events->listEvents($this->calendarId, [
+            'timeMin'      => $operatingStart->toRfc3339String(),
+            'timeMax'      => $operatingEnd->toRfc3339String(),
+            'singleEvents' => true,
+            'orderBy'      => 'startTime',
+            'maxResults'   => 250,
+        ]);
+
+        $busy = [];
+        foreach ($events->getItems() as $event) {
+            $busy[] = [
+                'start' => Carbon::parse($event->getStart()->getDateTime(), $this->timezone),
+                'end'   => Carbon::parse($event->getEnd()->getDateTime(), $this->timezone),
+            ];
+        }
+
+        $slots = [];
+        $cursor = $operatingStart->copy();
+        $now    = Carbon::now($this->timezone);
+
+        while ($cursor->copy()->addMinutes($durationMinutes)->lte($operatingEnd)) {
+            $slotStart = $cursor->copy();
+            $slotEnd   = $cursor->copy()->addMinutes($durationMinutes);
+
+            $isPast = $slotStart->lt($now);
+            $isFree = true;
+            foreach ($busy as $b) {
+                if ($slotStart->lt($b['end']) && $slotEnd->gt($b['start'])) {
+                    $isFree = false;
+                    break;
+                }
+            }
+
+            $slots[] = [
+                'time'      => $slotStart->format('H:i'),
+                'end_time'  => $slotEnd->format('H:i'),
+                'price'     => \App\Models\PricingRule::getPriceForSlot($slotStart, $durationMinutes),
+                'available' => $isFree && !$isPast,
+                'is_past'   => $isPast,
+            ];
+
+            $cursor->addMinutes($stepMinutes);
+        }
+
+        return $slots;
+    }
+
     /* ═══════════════════════════════════════════════════════════════
      *  HELPER
      * ═══════════════════════════════════════════════════════════════ */

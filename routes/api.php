@@ -156,9 +156,14 @@ Route::prefix('v1/app')->group(function () {
 
         // Bookings
         Route::get('/bookings/next',                         [AppBookingController::class, 'next']);
+        Route::get('/bookings/availability',                 [AppBookingController::class, 'availability']);
         Route::get('/bookings',                              [AppBookingController::class, 'index']);
+        Route::post('/bookings',                             [AppBookingController::class, 'store']);
         Route::get('/bookings/{id}',                         [AppBookingController::class, 'show']);
         Route::delete('/bookings/{id}',                      [AppBookingController::class, 'destroy']);
+
+        // Players search (per scelta avversario)
+        Route::get('/players/search',                        [AppBookingController::class, 'searchPlayers']);
 
         // Leaderboard
         Route::get('/leaderboard',                           [AppLeaderboardController::class, 'index']);

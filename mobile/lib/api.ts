@@ -168,6 +168,41 @@ export const me = {
   delete: () => api.delete('/me').then((r) => r.data),
 };
 
+export type AvailabilitySlot = {
+  time: string;       // HH:mm
+  end_time: string;   // HH:mm
+  price: number;
+  available: boolean;
+  is_past: boolean;
+};
+
+export type AvailabilityResponse = {
+  date: string;
+  duration_minutes: number;
+  slots: AvailabilitySlot[];
+};
+
+export type BookingType = 'con_avversario' | 'matchmaking' | 'sparapalline';
+
+export type CreateBookingPayload = {
+  date: string;
+  start_time: string;
+  duration_minutes: 60 | 90 | 120;
+  type: BookingType;
+  opponent_user_id?: number | null;
+  opponent_name_text?: string | null;
+  payment_method?: 'online' | 'in_loco';
+  notes?: string | null;
+};
+
+export type PlayerSearchResult = {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  elo_rating: number | null;
+  fit_rating: string | null;
+};
+
 export const bookings = {
   list: (params?: { status?: 'upcoming' | 'past' | 'all'; from?: string; to?: string; page?: number }) =>
     api.get<{ data: AppBooking[]; meta: any }>('/bookings', { params }).then((r) => r.data),
@@ -177,6 +212,17 @@ export const bookings = {
     api.get<{ data: AppBooking }>(`/bookings/${id}`).then((r) => r.data.data),
   cancel: (id: number) =>
     api.delete<{ ok: true }>(`/bookings/${id}`).then((r) => r.data),
+  availability: (date: string, durationMinutes: 60 | 90 | 120 = 60) =>
+    api.get<AvailabilityResponse>('/bookings/availability', {
+      params: { date, duration_minutes: durationMinutes },
+    }).then((r) => r.data),
+  create: (payload: CreateBookingPayload) =>
+    api.post<{ data: AppBooking }>('/bookings', payload).then((r) => r.data.data),
+};
+
+export const players = {
+  search: (q: string) =>
+    api.get<{ data: PlayerSearchResult[] }>('/players/search', { params: { q } }).then((r) => r.data.data),
 };
 
 export const leaderboard = {

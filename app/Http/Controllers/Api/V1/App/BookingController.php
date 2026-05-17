@@ -4,12 +4,22 @@ namespace App\Http\Controllers\Api\V1\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\User;
+use App\Services\CalendarService;
+use App\Services\UserSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class BookingController extends Controller
 {
+    public function __construct(
+        private CalendarService $calendar,
+        private UserSearchService $userSearch,
+    ) {}
+
     /**
      * GET /v1/app/bookings?status=upcoming|past|all&from=&to=
      * Solo bookings dell'utente loggato (come player1 o player2).
@@ -97,6 +107,146 @@ class BookingController extends Controller
     }
 
     /**
+     * GET /v1/app/bookings/availability?date=YYYY-MM-DD&duration_minutes=60
+     * Ritorna tutti gli slot del giorno con status e prezzo.
+     */
+    public function availability(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'date'             => 'required|date_format:Y-m-d',
+            'duration_minutes' => 'sometimes|integer|in:60,90,120',
+        ]);
+
+        $date     = Carbon::parse($validated['date'], 'Europe/Rome')->startOfDay();
+        $duration = (int) ($validated['duration_minutes'] ?? 60);
+
+        try {
+            $slots = $this->calendar->listDaySlots($date, $duration);
+        } catch (\Throwable $e) {
+            Log::error('App availability failed', ['error' => $e->getMessage()]);
+            return response()->json(['error' => ['code' => 'calendar_unavailable']], 503);
+        }
+
+        return response()->json([
+            'date'             => $validated['date'],
+            'duration_minutes' => $duration,
+            'slots'            => $slots,
+        ]);
+    }
+
+    /**
+     * POST /v1/app/bookings
+     * Body: {
+     *   date, start_time, duration_minutes,
+     *   type: 'con_avversario'|'matchmaking'|'sparapalline',
+     *   opponent_user_id?, opponent_name_text?,
+     *   payment_method?: 'online'|'in_loco',
+     *   notes?
+     * }
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'date'               => 'required|date_format:Y-m-d',
+            'start_time'         => 'required|date_format:H:i',
+            'duration_minutes'   => 'required|integer|in:60,90,120',
+            'type'               => 'required|in:con_avversario,matchmaking,sparapalline',
+            'opponent_user_id'   => 'nullable|integer|exists:users,id',
+            'opponent_name_text' => 'nullable|string|max:100',
+            'payment_method'     => 'sometimes|in:online,in_loco',
+            'notes'              => 'nullable|string|max:500',
+        ]);
+
+        // Verifica slot ancora libero
+        $startCarbon = Carbon::parse("{$data['date']} {$data['start_time']}", 'Europe/Rome');
+        $endCarbon   = $startCarbon->copy()->addMinutes($data['duration_minutes']);
+
+        try {
+            $check = $this->calendar->checkUserRequest(
+                $startCarbon->format('Y-m-d H:i'),
+                $data['duration_minutes']
+            );
+        } catch (\Throwable $e) {
+            return response()->json(['error' => ['code' => 'calendar_unavailable']], 503);
+        }
+
+        if (!($check['available'] ?? false)) {
+            return response()->json([
+                'error' => [
+                    'code' => 'slot_unavailable',
+                    'message' => 'Slot non più disponibile.',
+                    'alternatives' => $check['alternatives'] ?? [],
+                ],
+            ], 409);
+        }
+
+        $price = \App\Models\PricingRule::getPriceForSlot($startCarbon, $data['duration_minutes']);
+        $isPeak = $startCarbon->hour >= 18 || in_array($startCarbon->dayOfWeek, [0, 6]);
+
+        $booking = DB::transaction(function () use ($user, $data, $startCarbon, $endCarbon, $price, $isPeak) {
+            $b = Booking::create([
+                'player1_id'         => $user->id,
+                'player2_id'         => $data['opponent_user_id'] ?? null,
+                'player2_name_text'  => empty($data['opponent_user_id']) ? ($data['opponent_name_text'] ?? null) : null,
+                'booking_date'       => $data['date'],
+                'start_time'         => $data['start_time'],
+                'end_time'           => $endCarbon->format('H:i'),
+                'price'              => $price,
+                'is_peak'            => $isPeak,
+                'status'             => $data['type'] === 'matchmaking' ? 'pending_match' : 'confirmed',
+                'created_via'        => 'app',
+                'notes'              => $data['notes'] ?? null,
+            ]);
+
+            // Crea evento gcal
+            try {
+                $type = match ($data['type']) {
+                    'con_avversario' => 'Singolo',
+                    'matchmaking'    => 'Matchmaking',
+                    'sparapalline'   => 'Sparapalline',
+                };
+                $summary = "{$type} - {$user->name}";
+                $description = "Giocatore 1: {$user->name} ({$user->phone})\nTipo: {$type}\nPrenotato via App";
+                $event = $this->calendar->createEvent($summary, $description, $startCarbon, $endCarbon);
+                $b->update(['gcal_event_id' => $event->getId()]);
+            } catch (\Throwable $e) {
+                Log::warning('gcal event create failed', ['booking_id' => $b->id, 'error' => $e->getMessage()]);
+            }
+
+            return $b->fresh(['player1', 'player2']);
+        });
+
+        return response()->json([
+            'data' => $this->serialize($booking, $user->id),
+        ], 201);
+    }
+
+    /**
+     * GET /v1/app/players/search?q=...
+     * Per cercare l'avversario quando type=con_avversario.
+     */
+    public function searchPlayers(Request $request): JsonResponse
+    {
+        $request->validate(['q' => 'required|string|min:2|max:40']);
+
+        $me = $request->user();
+        $results = $this->userSearch->search($request->query('q'), 8, true)
+            ->reject(fn($u) => $u->id === $me->id)
+            ->map(fn($u) => [
+                'id'         => $u->id,
+                'name'       => $u->name,
+                'avatar_url' => $u->avatar_path ? asset('storage/' . $u->avatar_path) : null,
+                'elo_rating' => $u->elo_rating,
+                'fit_rating' => $u->fit_rating,
+            ])
+            ->values();
+
+        return response()->json(['data' => $results]);
+    }
+
+    /**
      * DELETE /v1/app/bookings/{id}  — cancella prenotazione
      */
     public function destroy(Request $request, int $id): JsonResponse
@@ -111,7 +261,13 @@ class BookingController extends Controller
             return response()->json(['error' => ['code' => 'not_found_or_not_owned']], 404);
         }
 
-        // TODO: cancellazione Google Calendar — riusare CalendarService::deleteEvent($booking->gcal_event_id)
+        if ($booking->gcal_event_id) {
+            try {
+                $this->calendar->deleteEvent($booking->gcal_event_id);
+            } catch (\Throwable $e) {
+                Log::warning('gcal event delete failed', ['booking_id' => $booking->id, 'error' => $e->getMessage()]);
+            }
+        }
         $booking->update(['status' => 'cancelled']);
 
         return response()->json(['ok' => true]);
