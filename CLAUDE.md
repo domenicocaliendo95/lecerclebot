@@ -1,5 +1,13 @@
 # Le Cercle Tennis Club — Bot WhatsApp
-Bibbia progetto — agg. 2026-04-15 (refactor Flow Runner)
+Bibbia progetto — agg. 2026-05-17 (app mobile in setup)
+
+> 📱 **NUOVO PROGETTO PARALLELO (mag 2026)**: app mobile player iOS+Android in
+> `mobile/` (Expo SDK 52 + Expo Router + NativeWind + TypeScript). Design
+> system **Riviera** (Fraunces + Manrope + Italianno, sage + cream + ocra).
+> Auth via OTP WhatsApp, admin bloccati. API namespace `/api/v1/app/*`
+> (separato da `/api/admin/*` esistente). Vedi `mobile/README.md` per stato.
+> Mock visivi in `mocks/riviera.html`. Multitenant-ready (Courtly rewrite
+> futuro) ma single-tenant per ora. Bot WhatsApp convive intoccato.
 
 > ⚠️ **REFACTOR IN CORSO (aprile 2026)** ⚠️
 > Il sistema vecchio "macchina a stati + `BotFlowState` + `StateHandler`" è

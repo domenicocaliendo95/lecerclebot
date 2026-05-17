@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Le Cercle Club — Riviera Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=Manrope:wght@400;500;600;700;800&family=Italianno&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="riviera.css">
+</head>
+<body>
+
+<div class="gallery">
+  <h1>Riviera</h1>
+  <div class="tagline">Le Cercle Tennis Club</div>
+  <p class="intro">
+    Design system finale — villa mediterranea. Fraunces per i titoli (serif morbido, curvilineo),
+    Manrope per UI (sans rotondo), Italianno per momenti caldi (saluti, score, accenti).
+    Sage gradient + accento ocra <code>#C89B5A</code>. Curve, ombre morbide, niente bordi rigidi.
+    Light a sinistra, dark a destra.
+  </p>
+
+  <!-- ============================================================ -->
+  <!-- 1. LOGIN -->
+  <!-- ============================================================ -->
+  <div class="screen-label">Login — il tuo numero</div>
+  <div class="row">
+
+    <div class="pair">
+      <div class="pair-label">Light</div>
+      <div class="phone" data-theme="light">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen" style="padding: 24px 28px 0;">
+          <div style="text-align: center; margin-top: 48px; margin-bottom: 56px;">
+            <div style="font-family: var(--font-display); font-weight: 600; font-size: 36px; letter-spacing: 0.1em; color: var(--text-primary);">LE CERCLE</div>
+            <div style="font-family: var(--font-script); font-size: 36px; color: var(--accent-dark); margin-top: -6px;">Tennis Club</div>
+          </div>
+
+          <div style="margin-bottom: 36px;">
+            <div style="font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 32px; color: var(--text-primary); letter-spacing: -0.02em; line-height: 1.1;">Bentornato.</div>
+            <p style="color: var(--text-muted); font-size: 14px; margin-top: 10px; font-weight: 500; line-height: 1.6;">Ti mandiamo un codice via WhatsApp.<br>Niente password.</p>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 24px;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 18px 16px; background: var(--surface); border-radius: var(--radius-lg); font-weight: 600; box-shadow: var(--shadow-sm);">
+              <span>🇮🇹</span>
+              <span style="color: var(--text-primary);">+39</span>
+            </div>
+            <div style="flex: 1; padding: 18px 20px; background: var(--surface); border-radius: var(--radius-lg); color: var(--text-primary); font-weight: 600; font-size: 16px; box-shadow: var(--shadow-sm);">333 1234 567</div>
+          </div>
+
+          <button class="btn-primary">Continua</button>
+
+          <p style="color: var(--text-muted); font-size: 11px; margin-top: 24px; text-align: center; line-height: 1.6; font-weight: 500;">
+            Continuando accetti i nostri <span style="color: var(--brand-primary-dark); text-decoration: underline;">Termini</span> e la <span style="color: var(--brand-primary-dark); text-decoration: underline;">Privacy</span>
+          </p>
+
+          <div style="text-align: center; margin-top: 48px;">
+            <span style="color: var(--text-muted); font-size: 12px;">Problemi? </span>
+            <span style="color: var(--accent-dark); font-size: 12px; font-weight: 700;">Contatta il circolo</span>
+          </div>
+        </div>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Dark</div>
+      <div class="phone" data-theme="dark">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen" style="padding: 24px 28px 0;">
+          <div style="text-align: center; margin-top: 48px; margin-bottom: 56px;">
+            <div style="font-family: var(--font-display); font-weight: 600; font-size: 36px; letter-spacing: 0.1em; color: var(--text-primary);">LE CERCLE</div>
+            <div style="font-family: var(--font-script); font-size: 36px; color: var(--accent); margin-top: -6px;">Tennis Club</div>
+          </div>
+
+          <div style="margin-bottom: 36px;">
+            <div style="font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 32px; color: var(--text-primary); letter-spacing: -0.02em; line-height: 1.1;">Bentornato.</div>
+            <p style="color: var(--text-muted); font-size: 14px; margin-top: 10px; font-weight: 500; line-height: 1.6;">Ti mandiamo un codice via WhatsApp.<br>Niente password.</p>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 24px;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 18px 16px; background: var(--surface); border-radius: var(--radius-lg); font-weight: 600; border: 1px solid var(--border);">
+              <span>🇮🇹</span>
+              <span style="color: var(--text-primary);">+39</span>
+            </div>
+            <div style="flex: 1; padding: 18px 20px; background: var(--surface); border-radius: var(--radius-lg); color: var(--text-primary); font-weight: 600; font-size: 16px; border: 1px solid var(--brand-primary);">333 1234 567</div>
+          </div>
+
+          <button class="btn-primary">Continua</button>
+
+          <p style="color: var(--text-muted); font-size: 11px; margin-top: 24px; text-align: center; line-height: 1.6; font-weight: 500;">
+            Continuando accetti i nostri <span style="color: var(--brand-primary); text-decoration: underline;">Termini</span> e la <span style="color: var(--brand-primary); text-decoration: underline;">Privacy</span>
+          </p>
+
+          <div style="text-align: center; margin-top: 48px;">
+            <span style="color: var(--text-muted); font-size: 12px;">Problemi? </span>
+            <span style="color: var(--accent); font-size: 12px; font-weight: 700;">Contatta il circolo</span>
+          </div>
+        </div>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 2. HOME -->
+  <!-- ============================================================ -->
+  <div class="screen-label">Home — dashboard</div>
+  <div class="row">
+
+    <div class="pair">
+      <div class="pair-label">Light</div>
+      <div class="phone" data-theme="light">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header class="app-header">
+            <div class="wordmark">Le Cercle</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="icon-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                <span class="badge">3</span>
+              </button>
+              <div class="avatar">M</div>
+            </div>
+          </header>
+
+          <div style="padding: 8px 24px 24px;">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-size: 18px;">☼</span>
+              <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Buon pomeriggio,</span>
+            </div>
+            <div style="font-family: var(--font-script); font-weight: 400; font-size: 60px; color: var(--brand-primary-dark); line-height: 0.95; margin-top: -2px;">Marco</div>
+          </div>
+
+          <div style="padding: 0 20px 20px;">
+            <div style="position: relative; background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-light) 100%); border-radius: 32px; padding: 24px; color: var(--brand-cream); overflow: hidden; box-shadow: var(--shadow-brand);">
+              <svg style="position: absolute; right: -50px; top: -50px; opacity: 0.18;" width="200" height="200" viewBox="0 0 200 200">
+                <circle cx="100" cy="100" r="85" stroke="#ECE3CE" stroke-width="2" fill="none"/>
+                <circle cx="100" cy="100" r="55" stroke="#ECE3CE" stroke-width="1.5" fill="none"/>
+                <circle cx="100" cy="100" r="25" stroke="#ECE3CE" stroke-width="1" fill="none"/>
+              </svg>
+
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; position: relative;">
+                <span style="background: var(--accent); color: #fff; padding: 4px 11px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em;">Stasera</span>
+                <span style="font-size: 11px; opacity: 0.9; font-weight: 600;">in 2 ore</span>
+              </div>
+              <div style="font-family: var(--font-display); font-weight: 500; font-size: 32px; line-height: 1.15; letter-spacing: -0.01em; margin-top: 6px; position: relative;">Giochi alle <span style="font-style: italic;">18:00</span></div>
+              <div style="font-size: 13px; opacity: 0.9; margin-top: 6px; font-weight: 500; position: relative;">Campo 2 · Singolo · 1 ora</div>
+
+              <div style="display: flex; align-items: center; gap: 12px; margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(236, 227, 206, 0.22); position: relative;">
+                <div class="avatar md" style="background: var(--brand-cream); color: var(--brand-primary-dark); box-shadow: none; border: 2px solid var(--brand-cream-dark);">G</div>
+                <div style="flex: 1;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px;">Giulia Rossi</div>
+                  <div style="font-size: 11px; opacity: 0.9; font-weight: 500;">ELO 1340</div>
+                </div>
+                <button style="background: var(--brand-cream); color: var(--brand-primary-dark); padding: 11px 18px; border-radius: 999px; font-weight: 700; font-size: 12px;">Dettagli ›</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 0 24px;">
+            <div class="section-title-italic" style="margin-bottom: 14px;">Cosa facciamo oggi?</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(107, 128, 104, 0.12); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary-dark)" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Prenota campo</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">Calendario</div>
+              </div>
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(200, 155, 90, 0.18); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dark)" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Trova match</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">Avversario simile</div>
+              </div>
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(107, 128, 104, 0.12); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary-dark)" stroke-width="1.5"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6m12 5h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22m10 0c0-1.76-.85-3.25-2.03-3.79C14.47 17.98 14 17.55 14 17v-2.34M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Tornei</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">2 attivi</div>
+              </div>
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(200, 155, 90, 0.18); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dark)" stroke-width="1.5"><path d="M8 2v6.5L4 13v8h16v-8l-4-4.5V2"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Eventi</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">Aperitivo sab</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 28px 24px 20px;">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px;">
+              <span class="section-title-italic">Dal circolo</span>
+              <span style="color: var(--brand-primary-dark); font-size: 12px; font-weight: 700;">tutto →</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, #B8C6B6, #98AA94); color: var(--brand-primary-dark);">C</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 13px; color: var(--text-primary);"><strong style="font-family: var(--font-display); font-weight: 600;">Carlo</strong> ha vinto contro <strong style="font-family: var(--font-display); font-weight: 600;">Luca</strong></div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;"><span style="font-family: var(--font-script); font-size: 19px; color: var(--brand-primary-dark);">6-4 7-5</span> · 2h fa</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, var(--brand-cream-dark), #B8AC8E); color: var(--brand-primary-dark);">A</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 13px; color: var(--text-primary);"><strong style="font-family: var(--font-display); font-weight: 600;">Anna</strong> si è iscritta al <strong style="font-family: var(--font-display); font-weight: 600;">Torneo di Primavera</strong></div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">5h fa</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, var(--accent), var(--accent-light)); color: #fff;">+</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 13px; color: var(--text-primary);">Nuovo evento: <strong style="font-family: var(--font-display); font-weight: 600;">Aperitivo di sabato</strong></div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">7h fa</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <nav class="tab-bar">
+          <div class="tab-item active">
+            <div class="icon-pill"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5z"/></svg></div>
+            <span>Home</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span>Agenda</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Club</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>Io</span>
+            <span class="badge">2</span>
+          </div>
+        </nav>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Dark</div>
+      <div class="phone" data-theme="dark">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header class="app-header">
+            <div class="wordmark">Le Cercle</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="icon-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                <span class="badge">3</span>
+              </button>
+              <div class="avatar">M</div>
+            </div>
+          </header>
+
+          <div style="padding: 8px 24px 24px;">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="font-size: 18px;">☼</span>
+              <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Buon pomeriggio,</span>
+            </div>
+            <div style="font-family: var(--font-script); font-weight: 400; font-size: 60px; color: var(--brand-primary); line-height: 0.95; margin-top: -2px;">Marco</div>
+          </div>
+
+          <div style="padding: 0 20px 20px;">
+            <div style="position: relative; background: linear-gradient(135deg, var(--brand-primary-dark) 0%, var(--brand-primary) 100%); border-radius: 32px; padding: 24px; color: var(--brand-cream); overflow: hidden; box-shadow: var(--shadow-lg);">
+              <svg style="position: absolute; right: -50px; top: -50px; opacity: 0.18;" width="200" height="200" viewBox="0 0 200 200">
+                <circle cx="100" cy="100" r="85" stroke="#ECE3CE" stroke-width="2" fill="none"/>
+                <circle cx="100" cy="100" r="55" stroke="#ECE3CE" stroke-width="1.5" fill="none"/>
+                <circle cx="100" cy="100" r="25" stroke="#ECE3CE" stroke-width="1" fill="none"/>
+              </svg>
+
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; position: relative;">
+                <span style="background: var(--accent); color: var(--text-on-brand); padding: 4px 11px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em;">Stasera</span>
+                <span style="font-size: 11px; opacity: 0.9; font-weight: 600;">in 2 ore</span>
+              </div>
+              <div style="font-family: var(--font-display); font-weight: 500; font-size: 32px; line-height: 1.15; letter-spacing: -0.01em; margin-top: 6px; position: relative;">Giochi alle <span style="font-style: italic;">18:00</span></div>
+              <div style="font-size: 13px; opacity: 0.9; margin-top: 6px; font-weight: 500; position: relative;">Campo 2 · Singolo · 1 ora</div>
+
+              <div style="display: flex; align-items: center; gap: 12px; margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(236, 227, 206, 0.22); position: relative;">
+                <div class="avatar md" style="background: var(--brand-cream); color: var(--brand-primary-dark); box-shadow: none; border: 2px solid var(--brand-cream-dark);">G</div>
+                <div style="flex: 1;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px;">Giulia Rossi</div>
+                  <div style="font-size: 11px; opacity: 0.9; font-weight: 500;">ELO 1340</div>
+                </div>
+                <button style="background: var(--bg); color: var(--text-primary); padding: 11px 18px; border-radius: 999px; font-weight: 700; font-size: 12px;">Dettagli ›</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 0 24px;">
+            <div class="section-title-italic" style="margin-bottom: 14px;">Cosa facciamo oggi?</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(138, 160, 134, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Prenota campo</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">Calendario</div>
+              </div>
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(221, 180, 122, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Trova match</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">Avversario simile</div>
+              </div>
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(138, 160, 134, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" stroke-width="1.5"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6m12 5h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22m10 0c0-1.76-.85-3.25-2.03-3.79C14.47 17.98 14 17.55 14 17v-2.34M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Tornei</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">2 attivi</div>
+              </div>
+              <div class="card" style="padding: 18px;">
+                <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(221, 180, 122, 0.15); display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M8 2v6.5L4 13v8h16v-8l-4-4.5V2"/></svg>
+                </div>
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Eventi</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">Aperitivo sab</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 28px 24px 20px;">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px;">
+              <span class="section-title-italic">Dal circolo</span>
+              <span style="color: var(--brand-primary); font-size: 12px; font-weight: 700;">tutto →</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, #4a5848, #607254); color: var(--brand-cream);">C</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 13px; color: var(--text-primary);"><strong style="font-family: var(--font-display); font-weight: 600;">Carlo</strong> ha vinto contro <strong style="font-family: var(--font-display); font-weight: 600;">Luca</strong></div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;"><span style="font-family: var(--font-script); font-size: 19px; color: var(--brand-primary-light);">6-4 7-5</span> · 2h fa</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, #5a6f56, #7a9070); color: var(--brand-cream);">A</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 13px; color: var(--text-primary);"><strong style="font-family: var(--font-display); font-weight: 600;">Anna</strong> si è iscritta al <strong style="font-family: var(--font-display); font-weight: 600;">Torneo di Primavera</strong></div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">5h fa</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, var(--accent), var(--accent-dark)); color: var(--text-on-brand);">+</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 13px; color: var(--text-primary);">Nuovo evento: <strong style="font-family: var(--font-display); font-weight: 600;">Aperitivo di sabato</strong></div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; font-weight: 500;">7h fa</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <nav class="tab-bar">
+          <div class="tab-item active">
+            <div class="icon-pill"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5z"/></svg></div>
+            <span>Home</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span>Agenda</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Club</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>Io</span>
+            <span class="badge">2</span>
+          </div>
+        </nav>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 3. BOOKING - Slot picker -->
+  <!-- ============================================================ -->
+  <div class="screen-label">Prenotazione — scelta orario</div>
+  <div class="row">
+
+    <div class="pair">
+      <div class="pair-label">Light</div>
+      <div class="phone" data-theme="light">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header class="app-header" style="padding: 12px 20px 4px;">
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <span style="font-family: var(--font-display); font-weight: 500; font-size: 17px;">Prenota</span>
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></button>
+          </header>
+
+          <div style="padding: 16px 24px 20px;">
+            <div class="section-eyebrow">Quando vuoi giocare?</div>
+            <div style="font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 26px; color: var(--text-primary); margin-top: 4px;">Maggio 2026</div>
+          </div>
+
+          <!-- Date strip -->
+          <div style="padding: 0 24px 24px;">
+            <div style="display: flex; gap: 8px; overflow-x: auto;">
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; box-shadow: var(--shadow-sm);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Lun</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">17</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); text-align: center; box-shadow: 0 8px 20px rgba(107,128,104,0.32);">
+                <div style="font-size: 10px; color: var(--brand-cream); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Mar</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--brand-cream); margin-top: 2px;">18</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; box-shadow: var(--shadow-sm);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Mer</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">19</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; box-shadow: var(--shadow-sm);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Gio</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">20</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; box-shadow: var(--shadow-sm);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Ven</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">21</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Duration -->
+          <div style="padding: 0 24px 20px;">
+            <div class="section-eyebrow" style="margin-bottom: 10px;">Durata</div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-pill">1 ora</button>
+              <button class="btn-pill active">1h 30</button>
+              <button class="btn-pill">2 ore</button>
+            </div>
+          </div>
+
+          <!-- Slot grid -->
+          <div style="padding: 8px 24px 20px;">
+            <div class="section-eyebrow" style="margin-bottom: 14px;">Orari disponibili · martedì 18</div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div class="card" style="padding: 14px; opacity: 0.45;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">15:00</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Occupato</div>
+              </div>
+              <div class="card" style="padding: 14px;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">16:30</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">€25</div>
+              </div>
+              <div style="padding: 14px; border-radius: var(--radius-xl); background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); color: var(--brand-cream); box-shadow: 0 8px 20px rgba(107,128,104,0.32); position: relative;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px;">18:00</div>
+                <div style="font-size: 11px; opacity: 0.9; font-weight: 600; margin-top: 2px;">€30 · peak</div>
+                <svg style="position: absolute; top: 12px; right: 12px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
+              <div class="card" style="padding: 14px;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">19:30</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">€30</div>
+              </div>
+              <div class="card" style="padding: 14px;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">21:00</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">€30</div>
+              </div>
+              <div class="card" style="padding: 14px; opacity: 0.45;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">22:30</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Occupato</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom action -->
+          <div style="padding: 16px 24px 24px; margin-top: auto; background: linear-gradient(180deg, transparent, var(--bg) 30%);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <div>
+                <div class="section-eyebrow">Hai scelto</div>
+                <div style="font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 18px; color: var(--text-primary); margin-top: 2px;">Mar 18 · 18:00 — 19:30</div>
+              </div>
+              <div style="font-family: var(--font-display); font-weight: 600; font-size: 24px; color: var(--text-primary);">€30</div>
+            </div>
+            <button class="btn-primary">Avanti</button>
+          </div>
+        </div>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Dark</div>
+      <div class="phone" data-theme="dark">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header class="app-header" style="padding: 12px 20px 4px;">
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <span style="font-family: var(--font-display); font-weight: 500; font-size: 17px;">Prenota</span>
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></button>
+          </header>
+
+          <div style="padding: 16px 24px 20px;">
+            <div class="section-eyebrow">Quando vuoi giocare?</div>
+            <div style="font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 26px; color: var(--text-primary); margin-top: 4px;">Maggio 2026</div>
+          </div>
+
+          <div style="padding: 0 24px 24px;">
+            <div style="display: flex; gap: 8px; overflow-x: auto;">
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; border: 1px solid var(--border);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Lun</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">17</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); text-align: center; box-shadow: 0 8px 20px rgba(138,160,134,0.4);">
+                <div style="font-size: 10px; color: var(--text-on-brand); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Mar</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-on-brand); margin-top: 2px;">18</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; border: 1px solid var(--border);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Mer</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">19</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; border: 1px solid var(--border);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Gio</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">20</div>
+              </div>
+              <div style="flex-shrink: 0; width: 56px; padding: 12px 0; border-radius: var(--radius-lg); background: var(--surface); text-align: center; border: 1px solid var(--border);">
+                <div style="font-size: 10px; color: var(--text-muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">Ven</div>
+                <div style="font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--text-primary); margin-top: 2px;">21</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 0 24px 20px;">
+            <div class="section-eyebrow" style="margin-bottom: 10px;">Durata</div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-pill">1 ora</button>
+              <button class="btn-pill active">1h 30</button>
+              <button class="btn-pill">2 ore</button>
+            </div>
+          </div>
+
+          <div style="padding: 8px 24px 20px;">
+            <div class="section-eyebrow" style="margin-bottom: 14px;">Orari disponibili · martedì 18</div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div class="card" style="padding: 14px; opacity: 0.45;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">15:00</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Occupato</div>
+              </div>
+              <div class="card" style="padding: 14px;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">16:30</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">€25</div>
+              </div>
+              <div style="padding: 14px; border-radius: var(--radius-xl); background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); color: var(--brand-cream); box-shadow: 0 8px 20px rgba(138,160,134,0.4); position: relative;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px;">18:00</div>
+                <div style="font-size: 11px; opacity: 0.9; font-weight: 600; margin-top: 2px;">€30 · peak</div>
+                <svg style="position: absolute; top: 12px; right: 12px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
+              <div class="card" style="padding: 14px;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">19:30</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">€30</div>
+              </div>
+              <div class="card" style="padding: 14px;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">21:00</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">€30</div>
+              </div>
+              <div class="card" style="padding: 14px; opacity: 0.45;">
+                <div style="font-family: var(--font-display); font-weight: 500; font-size: 18px; color: var(--text-primary);">22:30</div>
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 2px;">Occupato</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 16px 24px 24px; margin-top: auto; background: linear-gradient(180deg, transparent, var(--bg) 30%);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <div>
+                <div class="section-eyebrow">Hai scelto</div>
+                <div style="font-family: var(--font-display); font-style: italic; font-weight: 500; font-size: 18px; color: var(--text-primary); margin-top: 2px;">Mar 18 · 18:00 — 19:30</div>
+              </div>
+              <div style="font-family: var(--font-display); font-weight: 600; font-size: 24px; color: var(--text-primary);">€30</div>
+            </div>
+            <button class="btn-primary">Avanti</button>
+          </div>
+        </div>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 4. PROFILE -->
+  <!-- ============================================================ -->
+  <div class="screen-label">Profilo — il tuo gioco</div>
+  <div class="row">
+
+    <div class="pair">
+      <div class="pair-label">Light</div>
+      <div class="phone" data-theme="light">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header class="app-header">
+            <div></div>
+            <button class="icon-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </header>
+
+          <div style="display: flex; flex-direction: column; align-items: center; padding: 0 24px 24px; text-align: center;">
+            <div class="avatar lg" style="background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); color: var(--brand-cream);">M</div>
+            <h1 style="font-family: var(--font-display); font-weight: 500; font-size: 30px; color: var(--text-primary); margin-top: 16px; letter-spacing: -0.01em;">Marco Rossi</h1>
+            <p style="font-family: var(--font-display); font-style: italic; color: var(--text-muted); font-size: 14px; margin-top: 4px;">"Adoro il dritto lungolinea"</p>
+
+            <div style="display: flex; gap: 8px; margin-top: 14px;">
+              <span class="chip">FIT 4.1</span>
+              <span class="chip ocra">Avanzato</span>
+            </div>
+          </div>
+
+          <div style="padding: 0 24px;">
+            <div class="card">
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; gap: 12px;">
+                <div style="text-align: center;">
+                  <div style="font-family: var(--font-display); font-weight: 600; font-size: 30px; color: var(--text-primary); line-height: 1;">1320</div>
+                  <div class="section-eyebrow" style="margin-top: 6px;">ELO</div>
+                  <div style="font-size: 11px; color: var(--success); margin-top: 4px; font-weight: 700;">▲ +12</div>
+                </div>
+                <div style="text-align: center; border-left: 1px solid var(--divider); border-right: 1px solid var(--divider); padding: 0 4px;">
+                  <div style="font-family: var(--font-display); font-weight: 600; font-size: 30px; color: var(--text-primary); line-height: 1;">42</div>
+                  <div class="section-eyebrow" style="margin-top: 6px;">Partite</div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 500;">28W · 14L</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="font-family: var(--font-display); font-weight: 600; font-size: 30px; color: var(--text-primary); line-height: 1;">67%</div>
+                  <div class="section-eyebrow" style="margin-top: 6px;">Win rate</div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 500;">Mese</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 20px 24px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+              <span class="section-title-italic">Storico ELO</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">90 giorni</span>
+            </div>
+            <div class="card">
+              <svg viewBox="0 0 320 90" style="width: 100%; height: 90px; display: block;">
+                <defs>
+                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#6B8068" stop-opacity="0.32"/>
+                    <stop offset="100%" stop-color="#6B8068" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path d="M0,70 C30,62 50,68 80,55 C110,42 140,52 180,40 C220,28 260,32 320,18 L320,90 L0,90 Z" fill="url(#g1)"/>
+                <path d="M0,70 C30,62 50,68 80,55 C110,42 140,52 180,40 C220,28 260,32 320,18" stroke="#6B8068" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                <circle cx="320" cy="18" r="5" fill="#6B8068"/>
+                <circle cx="320" cy="18" r="2.5" fill="#FFFFFF"/>
+              </svg>
+            </div>
+          </div>
+
+          <div style="padding: 4px 24px 20px;">
+            <span class="section-title-italic">Head-to-head</span>
+            <div class="card" style="padding: 0; margin-top: 12px;">
+              <div style="display: flex; padding: 14px 18px; align-items: center; border-bottom: 1px solid var(--divider);">
+                <div class="avatar sm" style="background: linear-gradient(135deg, var(--brand-cream-dark), #B8AC8E); color: var(--brand-primary-dark);">G</div>
+                <div style="flex: 1; margin-left: 12px;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Giulia Rossi</div>
+                </div>
+                <div style="font-size: 13px; font-weight: 700;"><span style="color: var(--success);">3W</span> · <span style="color: var(--text-muted);">2L</span></div>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, #B8C6B6, #98AA94); color: var(--brand-primary-dark);">L</div>
+                <div style="flex: 1; margin-left: 12px;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Luca Bianchi</div>
+                </div>
+                <div style="font-size: 13px; font-weight: 700;"><span style="color: var(--success);">1W</span> · <span style="color: var(--text-muted);">1L</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 4px 24px 24px;">
+            <span class="section-title-italic">Account</span>
+            <div class="card" style="padding: 4px 0; margin-top: 12px;">
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary-dark)" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Modifica profilo</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px; border-top: 1px solid var(--divider);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary-dark)" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Amici</span>
+                <span style="color: var(--text-muted); font-size: 13px; font-weight: 600;">12</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px; border-top: 1px solid var(--divider);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dark)" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Notifiche</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px; border-top: 1px solid var(--divider);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary-dark)" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Tema</span>
+                <span style="color: var(--text-muted); font-size: 13px; font-weight: 600;">Auto</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <nav class="tab-bar">
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5z"/></svg>
+            <span>Home</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span>Agenda</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Club</span>
+          </div>
+          <div class="tab-item active">
+            <div class="icon-pill"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <span>Io</span>
+          </div>
+        </nav>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Dark</div>
+      <div class="phone" data-theme="dark">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header class="app-header">
+            <div></div>
+            <button class="icon-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </header>
+
+          <div style="display: flex; flex-direction: column; align-items: center; padding: 0 24px 24px; text-align: center;">
+            <div class="avatar lg" style="background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); color: var(--text-on-brand);">M</div>
+            <h1 style="font-family: var(--font-display); font-weight: 500; font-size: 30px; color: var(--text-primary); margin-top: 16px; letter-spacing: -0.01em;">Marco Rossi</h1>
+            <p style="font-family: var(--font-display); font-style: italic; color: var(--text-muted); font-size: 14px; margin-top: 4px;">"Adoro il dritto lungolinea"</p>
+
+            <div style="display: flex; gap: 8px; margin-top: 14px;">
+              <span class="chip">FIT 4.1</span>
+              <span class="chip ocra">Avanzato</span>
+            </div>
+          </div>
+
+          <div style="padding: 0 24px;">
+            <div class="card">
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; gap: 12px;">
+                <div style="text-align: center;">
+                  <div style="font-family: var(--font-display); font-weight: 600; font-size: 30px; color: var(--text-primary); line-height: 1;">1320</div>
+                  <div class="section-eyebrow" style="margin-top: 6px;">ELO</div>
+                  <div style="font-size: 11px; color: var(--success); margin-top: 4px; font-weight: 700;">▲ +12</div>
+                </div>
+                <div style="text-align: center; border-left: 1px solid var(--divider); border-right: 1px solid var(--divider); padding: 0 4px;">
+                  <div style="font-family: var(--font-display); font-weight: 600; font-size: 30px; color: var(--text-primary); line-height: 1;">42</div>
+                  <div class="section-eyebrow" style="margin-top: 6px;">Partite</div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 500;">28W · 14L</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="font-family: var(--font-display); font-weight: 600; font-size: 30px; color: var(--text-primary); line-height: 1;">67%</div>
+                  <div class="section-eyebrow" style="margin-top: 6px;">Win rate</div>
+                  <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 500;">Mese</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 20px 24px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+              <span class="section-title-italic">Storico ELO</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">90 giorni</span>
+            </div>
+            <div class="card">
+              <svg viewBox="0 0 320 90" style="width: 100%; height: 90px; display: block;">
+                <defs>
+                  <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#8AA086" stop-opacity="0.42"/>
+                    <stop offset="100%" stop-color="#8AA086" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path d="M0,70 C30,62 50,68 80,55 C110,42 140,52 180,40 C220,28 260,32 320,18 L320,90 L0,90 Z" fill="url(#g2)"/>
+                <path d="M0,70 C30,62 50,68 80,55 C110,42 140,52 180,40 C220,28 260,32 320,18" stroke="#8AA086" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                <circle cx="320" cy="18" r="5" fill="#8AA086"/>
+                <circle cx="320" cy="18" r="2.5" fill="#1A211D"/>
+              </svg>
+            </div>
+          </div>
+
+          <div style="padding: 4px 24px 20px;">
+            <span class="section-title-italic">Head-to-head</span>
+            <div class="card" style="padding: 0; margin-top: 12px;">
+              <div style="display: flex; padding: 14px 18px; align-items: center; border-bottom: 1px solid var(--divider);">
+                <div class="avatar sm" style="background: linear-gradient(135deg, #5a6f56, #7a9070); color: var(--brand-cream);">G</div>
+                <div style="flex: 1; margin-left: 12px;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Giulia Rossi</div>
+                </div>
+                <div style="font-size: 13px; font-weight: 700;"><span style="color: var(--success);">3W</span> · <span style="color: var(--text-muted);">2L</span></div>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center;">
+                <div class="avatar sm" style="background: linear-gradient(135deg, #4a5848, #607254); color: var(--brand-cream);">L</div>
+                <div style="flex: 1; margin-left: 12px;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 15px; color: var(--text-primary);">Luca Bianchi</div>
+                </div>
+                <div style="font-size: 13px; font-weight: 700;"><span style="color: var(--success);">1W</span> · <span style="color: var(--text-muted);">1L</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 4px 24px 24px;">
+            <span class="section-title-italic">Account</span>
+            <div class="card" style="padding: 4px 0; margin-top: 12px;">
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Modifica profilo</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px; border-top: 1px solid var(--divider);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Amici</span>
+                <span style="color: var(--text-muted); font-size: 13px; font-weight: 600;">12</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px; border-top: 1px solid var(--divider);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Notifiche</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+              <div style="display: flex; padding: 14px 18px; align-items: center; gap: 14px; border-top: 1px solid var(--divider);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <span style="flex: 1; color: var(--text-primary); font-size: 14px; font-weight: 500;">Tema</span>
+                <span style="color: var(--text-muted); font-size: 13px; font-weight: 600;">Auto</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <nav class="tab-bar">
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9.5L12 3l9 6.5V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9.5z"/></svg>
+            <span>Home</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span>Agenda</span>
+          </div>
+          <div class="tab-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Club</span>
+          </div>
+          <div class="tab-item active">
+            <div class="icon-pill"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <span>Io</span>
+          </div>
+        </nav>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 5. CHAT -->
+  <!-- ============================================================ -->
+  <div class="screen-label">Chat — conversazione</div>
+  <div class="row">
+
+    <div class="pair">
+      <div class="pair-label">Light</div>
+      <div class="phone" data-theme="light">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header style="display: flex; align-items: center; gap: 12px; padding: 12px 20px 16px; flex-shrink: 0; border-bottom: 1px solid var(--divider);">
+            <button class="icon-btn" style="width: 32px; height: 32px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <div class="avatar md" style="background: linear-gradient(135deg, var(--brand-cream-dark), #B8AC8E); color: var(--brand-primary-dark);">G</div>
+            <div style="flex: 1;">
+              <div style="font-family: var(--font-display); font-weight: 500; font-size: 17px; color: var(--text-primary);">Giulia Rossi</div>
+              <div style="font-size: 11px; color: var(--success); font-weight: 600;">● Online</div>
+            </div>
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+          </header>
+
+          <div style="flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;">
+
+            <div style="text-align: center;">
+              <span style="font-family: var(--font-display); font-style: italic; font-size: 12px; color: var(--text-muted); background: var(--surface); padding: 6px 14px; border-radius: 999px; box-shadow: var(--shadow-sm);">Oggi</span>
+            </div>
+
+            <!-- Match preview card -->
+            <div style="background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); border-radius: var(--radius-xl); padding: 14px 16px; color: var(--brand-cream); margin: 0 -4px; box-shadow: var(--shadow-brand);">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                <div style="flex: 1;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 14px;">Avete una partita oggi</div>
+                  <div style="font-size: 11px; opacity: 0.9; font-weight: 600;">Martedì 18:00 — Campo 2</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Their message -->
+            <div style="display: flex; gap: 8px; align-items: flex-end;">
+              <div class="avatar xs" style="background: linear-gradient(135deg, var(--brand-cream-dark), #B8AC8E); color: var(--brand-primary-dark);">G</div>
+              <div style="max-width: 75%;">
+                <div style="background: var(--surface); padding: 12px 16px; border-radius: 18px 18px 18px 4px; box-shadow: var(--shadow-sm);">
+                  <div style="font-size: 14px; color: var(--text-primary); line-height: 1.4;">Ciao Marco! Pronto per stasera? 🎾</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-left: 8px; font-weight: 500;">14:22</div>
+              </div>
+            </div>
+
+            <!-- My message -->
+            <div style="display: flex; justify-content: flex-end;">
+              <div style="max-width: 75%;">
+                <div style="background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); padding: 12px 16px; border-radius: 18px 18px 4px 18px; color: var(--brand-cream); box-shadow: 0 4px 14px rgba(107,128,104,0.3);">
+                  <div style="font-size: 14px; line-height: 1.4;">Strafelice! Porti tu le palle?</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-right: 8px; text-align: right; font-weight: 500;">14:28 · ✓✓</div>
+              </div>
+            </div>
+
+            <!-- Their message -->
+            <div style="display: flex; gap: 8px; align-items: flex-end;">
+              <div class="avatar xs" style="background: linear-gradient(135deg, var(--brand-cream-dark), #B8AC8E); color: var(--brand-primary-dark);">G</div>
+              <div style="max-width: 75%;">
+                <div style="background: var(--surface); padding: 12px 16px; border-radius: 18px 18px 18px 4px; box-shadow: var(--shadow-sm);">
+                  <div style="font-size: 14px; color: var(--text-primary); line-height: 1.4;">Sì certo, ne ho un tubo nuovo.<br>Ci vediamo direttamente al campo?</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-left: 8px; font-weight: 500;">14:30</div>
+              </div>
+            </div>
+
+            <!-- My message short -->
+            <div style="display: flex; justify-content: flex-end;">
+              <div style="max-width: 75%;">
+                <div style="background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); padding: 12px 16px; border-radius: 18px 18px 4px 18px; color: var(--brand-cream); box-shadow: 0 4px 14px rgba(107,128,104,0.3);">
+                  <div style="font-size: 14px; line-height: 1.4;">Perfetto, a stasera 💪</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-right: 8px; text-align: right; font-weight: 500;">14:32 · ✓</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Input bar -->
+          <div style="padding: 12px 16px 16px; background: var(--bg); border-top: 1px solid var(--divider); flex-shrink: 0;">
+            <div style="display: flex; gap: 8px; align-items: center; background: var(--surface); border-radius: 999px; padding: 4px 4px 4px 18px; box-shadow: var(--shadow-sm);">
+              <button class="icon-btn" style="width: 34px; height: 34px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              </button>
+              <span style="flex: 1; color: var(--text-muted); font-size: 14px; font-weight: 500;">Scrivi un messaggio...</span>
+              <button style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(107,128,104,0.3);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--brand-cream)" stroke="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <div class="pair-label">Dark</div>
+      <div class="phone" data-theme="dark">
+        <div class="status-bar"><span>9:41</span><span class="right">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h20v-2H2v2zm2-4h2v-3H4v3zm4 0h2V9H8v9zm4 0h2V4h-2v14zm4 0h2v-7h-2v7zm4 0h2v-9h-2v9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12.65l3-3.5 4 4 7-8 4 4.5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="20" y="10" width="2" height="4" rx="1" fill="currentColor"/><rect x="4" y="9" width="13" height="6" rx="1" fill="currentColor"/></svg>
+        </span></div>
+
+        <div class="screen">
+          <header style="display: flex; align-items: center; gap: 12px; padding: 12px 20px 16px; flex-shrink: 0; border-bottom: 1px solid var(--divider);">
+            <button class="icon-btn" style="width: 32px; height: 32px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <div class="avatar md" style="background: linear-gradient(135deg, #5a6f56, #7a9070); color: var(--brand-cream);">G</div>
+            <div style="flex: 1;">
+              <div style="font-family: var(--font-display); font-weight: 500; font-size: 17px; color: var(--text-primary);">Giulia Rossi</div>
+              <div style="font-size: 11px; color: var(--success); font-weight: 600;">● Online</div>
+            </div>
+            <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+          </header>
+
+          <div style="flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;">
+
+            <div style="text-align: center;">
+              <span style="font-family: var(--font-display); font-style: italic; font-size: 12px; color: var(--text-muted); background: var(--surface); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border);">Oggi</span>
+            </div>
+
+            <div style="background: linear-gradient(135deg, var(--brand-primary-dark), var(--brand-primary)); border-radius: var(--radius-xl); padding: 14px 16px; color: var(--brand-cream); margin: 0 -4px; box-shadow: var(--shadow-md);">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                <div style="flex: 1;">
+                  <div style="font-family: var(--font-display); font-weight: 500; font-size: 14px;">Avete una partita oggi</div>
+                  <div style="font-size: 11px; opacity: 0.9; font-weight: 600;">Martedì 18:00 — Campo 2</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; align-items: flex-end;">
+              <div class="avatar xs" style="background: linear-gradient(135deg, #5a6f56, #7a9070); color: var(--brand-cream);">G</div>
+              <div style="max-width: 75%;">
+                <div style="background: var(--surface); padding: 12px 16px; border-radius: 18px 18px 18px 4px; border: 1px solid var(--border);">
+                  <div style="font-size: 14px; color: var(--text-primary); line-height: 1.4;">Ciao Marco! Pronto per stasera? 🎾</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-left: 8px; font-weight: 500;">14:22</div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+              <div style="max-width: 75%;">
+                <div style="background: linear-gradient(135deg, var(--brand-primary-dark), var(--brand-primary)); padding: 12px 16px; border-radius: 18px 18px 4px 18px; color: var(--brand-cream); box-shadow: var(--shadow-md);">
+                  <div style="font-size: 14px; line-height: 1.4;">Strafelice! Porti tu le palle?</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-right: 8px; text-align: right; font-weight: 500;">14:28 · ✓✓</div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; align-items: flex-end;">
+              <div class="avatar xs" style="background: linear-gradient(135deg, #5a6f56, #7a9070); color: var(--brand-cream);">G</div>
+              <div style="max-width: 75%;">
+                <div style="background: var(--surface); padding: 12px 16px; border-radius: 18px 18px 18px 4px; border: 1px solid var(--border);">
+                  <div style="font-size: 14px; color: var(--text-primary); line-height: 1.4;">Sì certo, ne ho un tubo nuovo.<br>Ci vediamo direttamente al campo?</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-left: 8px; font-weight: 500;">14:30</div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+              <div style="max-width: 75%;">
+                <div style="background: linear-gradient(135deg, var(--brand-primary-dark), var(--brand-primary)); padding: 12px 16px; border-radius: 18px 18px 4px 18px; color: var(--brand-cream); box-shadow: var(--shadow-md);">
+                  <div style="font-size: 14px; line-height: 1.4;">Perfetto, a stasera 💪</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; padding-right: 8px; text-align: right; font-weight: 500;">14:32 · ✓</div>
+              </div>
+            </div>
+
+          </div>
+
+          <div style="padding: 12px 16px 16px; background: var(--bg); border-top: 1px solid var(--divider); flex-shrink: 0;">
+            <div style="display: flex; gap: 8px; align-items: center; background: var(--surface); border-radius: 999px; padding: 4px 4px 4px 18px; border: 1px solid var(--border);">
+              <button class="icon-btn" style="width: 34px; height: 34px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+              </button>
+              <span style="flex: 1; color: var(--text-muted); font-size: 14px; font-weight: 500;">Scrivi un messaggio...</span>
+              <button style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light)); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(138,160,134,0.3);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--text-on-brand)" stroke="none"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="home-indicator"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="text-align: center; color: #999; font-size: 14px; padding: 0 0 48px; line-height: 1.7; max-width: 700px; margin: 0 auto;">
+    <strong style="color: #fff; font-family: var(--font-display); font-weight: 500; font-size: 18px;">Riviera</strong> — design system Le Cercle.<br>
+    5 schermate critiche, light + dark = 10 mock totali.<br>
+    Mancano: lista chat, dettaglio booking, leaderboard, torneo, evento, matchmaking. Da fare dopo approvazione.
+  </div>
+</div>
+
+</body>
+</html>
