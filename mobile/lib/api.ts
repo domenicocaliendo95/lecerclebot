@@ -163,6 +163,19 @@ export const me = {
       .then((r) => r.data),
   completeOnboarding: () =>
     api.post<{ ok: true }>('/me/complete-onboarding').then((r) => r.data),
+  uploadAvatar: async (uri: string) => {
+    const form = new FormData();
+    const filename = uri.split('/').pop() ?? 'avatar.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `image/${match[1].toLowerCase()}` : 'image/jpeg';
+    form.append('avatar', { uri, name: filename, type } as any);
+    const res = await api.post<{ avatar_url: string }>('/me/avatar', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      transformRequest: (data) => data, // axios di default JSON-ifica
+    });
+    return res.data;
+  },
+  deleteAvatar: () => api.delete('/me/avatar').then((r) => r.data),
   registerDevice: (data: { expo_push_token: string; platform: 'ios' | 'android'; device_name?: string; app_version?: string }) =>
     api.post('/me/devices', data).then((r) => r.data),
   delete: () => api.delete('/me').then((r) => r.data),

@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\DeviceToken;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Intervention\Image\Drivers\Gd\Driver;
+use Intervention\Image\ImageManager;
 
 class MeController extends Controller
 {
@@ -113,6 +116,57 @@ class MeController extends Controller
         DeviceToken::where('user_id', $request->user()->id)
             ->where('expo_push_token', $token)
             ->delete();
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * POST /v1/app/me/avatar  (multipart: avatar=file)
+     * Resize 512x512 square center-cropped, salva in storage/app/public/avatars.
+     */
+    public function uploadAvatar(Request $request): JsonResponse
+    {
+        $request->validate([
+            'avatar' => 'required|image|mimes:jpeg,jpg,png,webp|max:8192',
+        ]);
+
+        $user = $request->user();
+        $file = $request->file('avatar');
+
+        try {
+            $manager = new ImageManager(new Driver());
+            $image = $manager->read($file->getRealPath())
+                ->cover(512, 512); // square center-crop
+
+            $filename = 'avatars/' . $user->id . '_' . time() . '.jpg';
+
+            Storage::disk('public')->put($filename, (string) $image->toJpeg(85));
+
+            // Elimina l'avatar precedente (se esiste e non era già stato sovrascritto)
+            if ($user->avatar_path && $user->avatar_path !== $filename && Storage::disk('public')->exists($user->avatar_path)) {
+                Storage::disk('public')->delete($user->avatar_path);
+            }
+
+            $user->update(['avatar_path' => $filename]);
+
+            return response()->json([
+                'avatar_url' => asset('storage/' . $filename),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Avatar upload failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            return response()->json(['error' => ['code' => 'upload_failed', 'message' => 'Upload fallito']], 500);
+        }
+    }
+
+    /**
+     * DELETE /v1/app/me/avatar — rimuove l'avatar.
+     */
+    public function deleteAvatar(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user->avatar_path && Storage::disk('public')->exists($user->avatar_path)) {
+            Storage::disk('public')->delete($user->avatar_path);
+        }
+        $user->update(['avatar_path' => null]);
         return response()->json(['ok' => true]);
     }
 

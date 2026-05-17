@@ -151,6 +151,10 @@ Route::prefix('v1/app')->group(function () {
         Route::post('/me/complete-onboarding',               [AppMeController::class, 'completeOnboarding']);
         Route::delete('/me',                                 [AppMeController::class, 'destroy']);
 
+        // Avatar
+        Route::post('/me/avatar',                            [AppMeController::class, 'uploadAvatar']);
+        Route::delete('/me/avatar',                          [AppMeController::class, 'deleteAvatar']);
+
         // Devices (push)
         Route::post('/me/devices',                           [AppMeController::class, 'registerDevice']);
         Route::delete('/me/devices/{token}',                 [AppMeController::class, 'unregisterDevice']);

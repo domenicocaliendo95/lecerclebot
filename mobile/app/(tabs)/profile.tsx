@@ -1,8 +1,11 @@
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import {
   Bell,
+  Camera,
   ChevronRight,
   LogOut,
   Moon,
@@ -12,12 +15,15 @@ import {
   Users as UsersIcon,
 } from 'lucide-react-native';
 
+import { me } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
 import { Avatar } from '@/components/Avatar';
 
 export default function Profile() {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const signOut = useAuthStore((s) => s.signOut);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   if (!user) return null;
 
@@ -32,6 +38,57 @@ export default function Profile() {
     ]);
   };
 
+  const pickAvatar = async () => {
+    Alert.alert('Foto profilo', 'Da dove vuoi prendere la foto?', [
+      { text: 'Annulla', style: 'cancel' },
+      { text: 'Fotocamera', onPress: () => pickFromSource('camera') },
+      { text: 'Libreria', onPress: () => pickFromSource('library') },
+      ...(user.avatar_url ? [{ text: 'Rimuovi', style: 'destructive' as const, onPress: removeAvatar }] : []),
+    ]);
+  };
+
+  const pickFromSource = async (source: 'camera' | 'library') => {
+    const perm = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!perm.granted) {
+      Alert.alert('Permesso negato', 'Vai nelle impostazioni del sistema per abilitare.');
+      return;
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.85 })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true, aspect: [1, 1], quality: 0.85,
+        });
+
+    if (result.canceled || !result.assets?.[0]) return;
+
+    setUploadingAvatar(true);
+    try {
+      const { avatar_url } = await me.uploadAvatar(result.assets[0].uri);
+      setUser({ ...user, avatar_url });
+    } catch {
+      Alert.alert('Errore', 'Upload fallito. Riprova.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    setUploadingAvatar(true);
+    try {
+      await me.deleteAvatar();
+      setUser({ ...user, avatar_url: null });
+    } catch {
+      Alert.alert('Errore', 'Operazione fallita.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg" edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
@@ -43,7 +100,18 @@ export default function Profile() {
 
         {/* Avatar + name */}
         <View className="items-center px-6 pb-6">
-          <Avatar url={user.avatar_url} name={user.name} size={104} bordered />
+          <Pressable onPress={pickAvatar} disabled={uploadingAvatar} className="relative">
+            <Avatar url={user.avatar_url} name={user.name} size={104} bordered />
+            {uploadingAvatar ? (
+              <View className="absolute inset-0 items-center justify-center rounded-full bg-black/40">
+                <ActivityIndicator color="#ECE3CE" />
+              </View>
+            ) : (
+              <View className="absolute bottom-0 right-0 w-9 h-9 rounded-full bg-sage items-center justify-center" style={{ shadowColor: '#6B8068', shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }}>
+                <Camera size={16} color="#ECE3CE" strokeWidth={2} />
+              </View>
+            )}
+          </Pressable>
           <Text className="font-display-semi text-[28px] text-ink dark:text-cream mt-4">{user.name}</Text>
           {user.bio ? (
             <Text className="font-display-italic text-[13px] text-ink-muted mt-1">"{user.bio}"</Text>
