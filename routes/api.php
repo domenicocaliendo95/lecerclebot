@@ -15,6 +15,9 @@ use App\Http\Controllers\Api\BotMessageController;
 use App\Http\Controllers\Api\FlowGraphController;
 use App\Http\Controllers\Api\FlowCompositeController;
 use App\Http\Controllers\Api\ModuleCatalogController;
+use App\Http\Controllers\Api\V1\App\AuthController as AppAuthController;
+use App\Http\Controllers\Api\V1\App\ClubController as AppClubController;
+use App\Http\Controllers\Api\V1\App\MeController as AppMeController;
 
 // ── Canali (inbound/outbound, nessuna auth) ──────────────────────────
 // WhatsApp (Meta Cloud API webhook)
@@ -120,4 +123,32 @@ Route::prefix('admin')->middleware(['auth', 'admin'])->group(function () {
     Route::delete('/flow/composites/{composite}/nodes/{node}', [FlowCompositeController::class, 'deleteNode']);
     Route::post('/flow/composites/{composite}/edges',          [FlowCompositeController::class, 'createEdge']);
     Route::delete('/flow/composites/{composite}/edges/{edge}', [FlowCompositeController::class, 'deleteEdge']);
+});
+
+// ── Mobile App API (v1) — Sanctum bearer tokens ──────────────────────
+// Separato dal pannello admin (che usa session auth).
+Route::prefix('v1/app')->group(function () {
+
+    // Pubblico (no auth)
+    Route::get('/club',                       [AppClubController::class, 'show']);
+    Route::get('/health',                     fn() => response()->json(['status' => 'ok', 'server_time' => now()->toIso8601String()]));
+    Route::post('/auth/request-otp',          [AppAuthController::class, 'requestOtp']);
+    Route::post('/auth/verify-otp',           [AppAuthController::class, 'verifyOtp']);
+    Route::post('/auth/request-otp-email',    [AppAuthController::class, 'requestOtpEmail']);
+
+    // Auth required (Sanctum)
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/auth/logout',                          [AppAuthController::class, 'logout']);
+
+        // Me / profile
+        Route::get('/me',                                    [AppMeController::class, 'show']);
+        Route::patch('/me',                                  [AppMeController::class, 'update']);
+        Route::patch('/me/notification-preferences',         [AppMeController::class, 'updateNotificationPreferences']);
+        Route::post('/me/complete-onboarding',               [AppMeController::class, 'completeOnboarding']);
+        Route::delete('/me',                                 [AppMeController::class, 'destroy']);
+
+        // Devices (push)
+        Route::post('/me/devices',                           [AppMeController::class, 'registerDevice']);
+        Route::delete('/me/devices/{token}',                 [AppMeController::class, 'unregisterDevice']);
+    });
 });

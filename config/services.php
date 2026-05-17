@@ -56,4 +56,10 @@ return [
         'calendar_id' => env('GOOGLE_CALENDAR_ID'),
     ],
 
+    'otp' => [
+        'driver'        => env('OTP_DRIVER', 'whatsapp'),              // 'whatsapp' | 'log'
+        'template_name' => env('OTP_TEMPLATE_NAME', 'lecercle_auth_otp'),
+        'template_lang' => env('OTP_TEMPLATE_LANG', 'it'),
+    ],
+
 ];
