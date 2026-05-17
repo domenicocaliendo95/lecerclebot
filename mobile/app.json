@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Le Cercle Club",
+    "slug": "lecercle-club",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "lecercle",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "club.lecercle.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Usiamo Face ID per aprire l'app in modo sicuro.",
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "package": "club.lecercle.app",
+      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT", "POST_NOTIFICATIONS"]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "https://bot.lecercleclub.it/api/v1/app",
+      "router": { "origin": false }
+    }
+  }
+}
