@@ -6,7 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Bell, Calendar, Sparkles, Trophy, Wine } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 
-import { AppBooking, PendingResult, bookings, matchResults } from '@/lib/api';
+import { AppBooking, FeedItem, PendingResult, bookings, feed, matchResults } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
 import { dateRelative, firstName, greeting, timeUntil } from '@/lib/format';
 import { Avatar } from '@/components/Avatar';
@@ -15,13 +15,19 @@ export default function Home() {
   const user = useAuthStore((s) => s.user);
   const [nextBooking, setNextBooking] = useState<AppBooking | null>(null);
   const [pending, setPending] = useState<PendingResult[]>([]);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [b, p] = await Promise.all([bookings.next(), matchResults.pending()]);
+      const [b, p, f] = await Promise.all([
+        bookings.next(),
+        matchResults.pending(),
+        feed.get().catch(() => []),
+      ]);
       setNextBooking(b);
       setPending(p);
+      setFeedItems(f);
     } catch {
       // silent
     }
@@ -139,16 +145,22 @@ export default function Home() {
           </View>
         </View>
 
-        {/* Footer */}
+        {/* Feed dal club */}
         <View className="px-6 mt-7">
-          <Text className="font-display-italic text-[19px] text-ink dark:text-cream mb-2">
+          <Text className="font-display-italic text-[19px] text-ink dark:text-cream mb-3">
             Dal circolo
           </Text>
-          <View className="bg-white dark:bg-dark-surface rounded-2xl p-4">
-            <Text className="text-[13px] text-ink-muted font-body-medium leading-relaxed">
-              Le partite dei tuoi amici e gli aggiornamenti dal circolo appariranno qui.{'\n'}Stiamo costruendo.
-            </Text>
-          </View>
+          {feedItems.length === 0 ? (
+            <View className="bg-white dark:bg-dark-surface rounded-2xl p-4">
+              <Text className="text-[13px] text-ink-muted font-body-medium leading-relaxed">
+                Le partite e le nuove prenotazioni del circolo appariranno qui.
+              </Text>
+            </View>
+          ) : (
+            <View className="flex-col gap-3">
+              {feedItems.slice(0, 5).map((item, i) => <FeedRow key={i} item={item} />)}
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -250,6 +262,71 @@ function EmptyNextCard({ onTap }: { onTap: () => void }) {
       </View>
     </Pressable>
   );
+}
+
+function FeedRow({ item }: { item: FeedItem }) {
+  const when = relativeTimeShort(item.happened_at);
+
+  if (item.type === 'match_won') {
+    const winner = item.winner;
+    const loser = item.loser;
+    return (
+      <Pressable
+        onPress={() => winner && router.push(`/player/${winner.id}`)}
+        className="bg-white dark:bg-dark-surface rounded-2xl p-3 flex-row items-center gap-3"
+        style={{ shadowColor: '#6B8068', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
+      >
+        <Avatar url={item.avatar_url} name={winner?.name} size={36} />
+        <View className="flex-1">
+          <Text className="text-[13px] text-ink dark:text-cream" numberOfLines={2}>
+            <Text className="font-display-semi">{winner?.name ?? 'Qualcuno'}</Text>
+            {' ha vinto contro '}
+            <Text className="font-display-semi">{loser?.name ?? 'avversario'}</Text>
+          </Text>
+          <Text className="text-[11px] text-ink-muted mt-0.5 font-body-medium">
+            {item.score && <Text className="font-script text-[16px] text-sage-dark">{item.score}</Text>}
+            {item.score ? ' · ' : ''}{when}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  }
+
+  if (item.type === 'booking_created') {
+    const player = item.player;
+    return (
+      <Pressable
+        onPress={() => player && router.push(`/player/${player.id}`)}
+        className="bg-white dark:bg-dark-surface rounded-2xl p-3 flex-row items-center gap-3"
+        style={{ shadowColor: '#6B8068', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
+      >
+        <Avatar url={item.avatar_url} name={player?.name} size={36} />
+        <View className="flex-1">
+          <Text className="text-[13px] text-ink dark:text-cream" numberOfLines={2}>
+            <Text className="font-display-semi">{player?.name ?? 'Qualcuno'}</Text>
+            {' ha prenotato'}
+            {item.opponent_name ? <> con <Text className="font-display-semi">{item.opponent_name}</Text></> : ''}
+          </Text>
+          <Text className="text-[11px] text-ink-muted mt-0.5 font-body-medium">
+            {item.date} alle {item.start_time} · {when}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  }
+
+  return null;
+}
+
+function relativeTimeShort(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'ora';
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}m fa`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h fa`;
+  const d = Math.floor(h / 24);
+  return `${d}g fa`;
 }
 
 function QuickAction({

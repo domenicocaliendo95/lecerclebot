@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Trophy, Wine } from 'lucide-react-native';
 
 import { LeaderboardEntry, leaderboard } from '@/lib/api';
@@ -107,7 +107,8 @@ function LeaderRow({ e }: { e: LeaderboardEntry }) {
   const winRate = e.matches_played > 0 ? Math.round((e.matches_won / e.matches_played) * 100) : 0;
 
   return (
-    <View
+    <Pressable
+      onPress={() => router.push(`/player/${e.id}`)}
       className={`flex-row items-center gap-3 px-3 py-3 rounded-2xl ${e.is_me ? 'bg-cream' : 'bg-white dark:bg-dark-surface'}`}
       style={{ shadowColor: '#6B8068', shadowOpacity: e.is_me ? 0.18 : 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } }}
     >
@@ -128,7 +129,7 @@ function LeaderRow({ e }: { e: LeaderboardEntry }) {
         </Text>
       </View>
       <Text className="font-display-bold text-[18px] text-ink dark:text-cream">{e.elo_rating}</Text>
-    </View>
+    </Pressable>
   );
 }
 

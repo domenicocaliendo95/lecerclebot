@@ -270,6 +270,71 @@ export const matchResults = {
     api.post<{ data: SubmittedResult; warning?: string }>(`/match-results/${bookingId}`, payload).then((r) => r.data),
 };
 
+// ── Player public profile ──────────────────────────────────────────────
+
+export type PublicPlayer = {
+  id: number;
+  name: string;
+  bio: string | null;
+  avatar_url: string | null;
+  elo_rating: number | null;
+  matches_played: number | null;
+  matches_won: number | null;
+  fit_rating: string | null;
+  self_level: number | null;
+  is_me: boolean;
+  head_to_head: { played: number; me_wins: number; other_wins: number };
+};
+
+export type RecentMatch = {
+  date: string;
+  opponent_name: string | null;
+  opponent_avatar_url: string | null;
+  won: boolean;
+  score: string | null;
+  elo_delta: number | null;
+};
+
+export const playersProfile = {
+  show: (id: number) =>
+    api.get<{ data: PublicPlayer }>(`/players/${id}`).then((r) => r.data.data),
+  recentMatches: (id: number) =>
+    api.get<{ data: RecentMatch[] }>(`/players/${id}/recent-matches`).then((r) => r.data.data),
+};
+
+// ── Activity feed ───────────────────────────────────────────────────────
+
+export type FeedItem =
+  | {
+      type: 'match_won';
+      happened_at: string;
+      winner: { id: number; name: string } | null;
+      loser: { id: number; name: string } | null;
+      score: string | null;
+      avatar_url: string | null;
+    }
+  | {
+      type: 'booking_created';
+      happened_at: string;
+      player: { id: number; name: string } | null;
+      opponent_name: string | null;
+      date: string;
+      start_time: string;
+      avatar_url: string | null;
+    };
+
+export const feed = {
+  get: () => api.get<{ data: FeedItem[] }>('/feed').then((r) => r.data.data),
+};
+
+// ── Feedback ────────────────────────────────────────────────────────────
+
+export const feedback = {
+  submit: (payload: { rating: number; comment?: string; type?: 'post_match' | 'spontaneous'; booking_id?: number }) =>
+    api.post<{ data: { id: number; rating: number; comment: string | null; created_at: string } }>('/feedback', payload)
+      .then((r) => r.data.data),
+};
+
 export const leaderboard = {
   get: () => api.get<LeaderboardResponse>('/leaderboard').then((r) => r.data),
 };

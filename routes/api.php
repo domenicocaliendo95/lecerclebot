@@ -18,9 +18,12 @@ use App\Http\Controllers\Api\ModuleCatalogController;
 use App\Http\Controllers\Api\V1\App\AuthController as AppAuthController;
 use App\Http\Controllers\Api\V1\App\BookingController as AppBookingController;
 use App\Http\Controllers\Api\V1\App\ClubController as AppClubController;
+use App\Http\Controllers\Api\V1\App\FeedbackController as AppFeedbackController;
+use App\Http\Controllers\Api\V1\App\FeedController as AppFeedController;
 use App\Http\Controllers\Api\V1\App\LeaderboardController as AppLeaderboardController;
 use App\Http\Controllers\Api\V1\App\MatchResultController as AppMatchResultController;
 use App\Http\Controllers\Api\V1\App\MeController as AppMeController;
+use App\Http\Controllers\Api\V1\App\PlayerController as AppPlayerController;
 use App\Http\Controllers\Api\V1\App\PricingRuleController as AppPricingRuleController;
 
 // ── Canali (inbound/outbound, nessuna auth) ──────────────────────────
@@ -174,6 +177,16 @@ Route::prefix('v1/app')->group(function () {
         Route::get('/match-results/pending',                 [AppMatchResultController::class, 'pending']);
         Route::get('/match-results',                         [AppMatchResultController::class, 'index']);
         Route::post('/match-results/{bookingId}',            [AppMatchResultController::class, 'submit']);
+
+        // Player public profile
+        Route::get('/players/{id}',                          [AppPlayerController::class, 'show']);
+        Route::get('/players/{id}/recent-matches',           [AppPlayerController::class, 'recentMatches']);
+
+        // Club activity feed
+        Route::get('/feed',                                  [AppFeedController::class, 'index']);
+
+        // Feedback
+        Route::post('/feedback',                             [AppFeedbackController::class, 'store']);
 
         // Leaderboard
         Route::get('/leaderboard',                           [AppLeaderboardController::class, 'index']);

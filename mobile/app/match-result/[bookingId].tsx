@@ -36,12 +36,18 @@ export default function SubmitResult() {
         const sign = res.data.elo_delta > 0 ? '+' : '';
         Alert.alert(
           'Risultato registrato!',
-          `ELO: ${sign}${res.data.elo_delta}`,
-          [{ text: 'OK', onPress: () => router.back() }],
+          `ELO: ${sign}${res.data.elo_delta}\n\nVuoi anche lasciare un feedback sull'esperienza?`,
+          [
+            { text: 'Magari dopo', onPress: () => router.back() },
+            { text: 'Lascia feedback', onPress: () => router.replace(`/feedback/${bookingId}`) },
+          ],
         );
       } else {
-        Alert.alert('Registrato!', "Ti faremo sapere quando l'avversario conferma.",
-          [{ text: 'OK', onPress: () => router.back() }]);
+        Alert.alert('Registrato!', "Ti faremo sapere quando l'avversario conferma.\n\nVuoi lasciare un feedback?",
+          [
+            { text: 'Magari dopo', onPress: () => router.back() },
+            { text: 'Feedback', onPress: () => router.replace(`/feedback/${bookingId}`) },
+          ]);
       }
     } catch {
       Alert.alert('Errore', 'Salvataggio fallito. Riprova.');

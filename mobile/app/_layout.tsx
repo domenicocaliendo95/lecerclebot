@@ -43,6 +43,8 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="booking" options={{ presentation: 'card' }} />
           <Stack.Screen name="match-result" options={{ presentation: 'card' }} />
+          <Stack.Screen name="player" options={{ presentation: 'card' }} />
+          <Stack.Screen name="feedback" options={{ presentation: 'card' }} />
           <Stack.Screen name="settings" options={{ presentation: 'card' }} />
         </Stack>
       </SafeAreaProvider>
