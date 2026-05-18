@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\V1\App;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\BotSetting;
 use App\Models\User;
 use App\Services\CalendarService;
 use App\Services\UserSearchService;
+use App\Services\WhatsAppService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -18,6 +20,7 @@ class BookingController extends Controller
     public function __construct(
         private CalendarService $calendar,
         private UserSearchService $userSearch,
+        private WhatsAppService $wa,
     ) {}
 
     /**
@@ -200,16 +203,40 @@ class BookingController extends Controller
                 'notes'              => $data['notes'] ?? null,
             ]);
 
-            // Crea evento gcal
+            // Crea evento gcal con stesso pattern del bot
             try {
-                $type = match ($data['type']) {
-                    'con_avversario' => 'Singolo',
-                    'matchmaking'    => 'Matchmaking',
-                    'sparapalline'   => 'Sparapalline',
-                };
-                $summary = "{$type} - {$user->name}";
-                $description = "Giocatore 1: {$user->name} ({$user->phone})\nTipo: {$type}\nPrenotato via App";
-                $event = $this->calendar->createEvent($summary, $description, $startCarbon, $endCarbon);
+                $opponentName = $b->player2_id
+                    ? optional($b->player2()->first())->name
+                    : $b->player2_name_text;
+
+                $typeLabels = [
+                    'con_avversario' => 'Partita singolo',
+                    'matchmaking'    => 'Partita (matchmaking)',
+                    'sparapalline'   => 'Noleggio sparapalline',
+                ];
+                $typeLabel = $typeLabels[$data['type']] ?? 'Prenotazione campo';
+
+                $summary = ($data['type'] === 'con_avversario' && $opponentName)
+                    ? "Partita singolo - {$user->name} vs {$opponentName}"
+                    : "{$typeLabel} - {$user->name}";
+
+                $descLines = [
+                    "Giocatore: {$user->name}",
+                    "Telefono: {$user->phone}",
+                    "Tipo: {$typeLabel}",
+                    "Pagamento: " . ($data['payment_method'] ?? 'in_loco'),
+                ];
+                if ($opponentName) {
+                    $descLines[] = "Avversario: {$opponentName}";
+                }
+                $descLines[] = 'Prenotato via: App';
+
+                $event = $this->calendar->createEvent(
+                    $summary,
+                    implode("\n", $descLines),
+                    $startCarbon,
+                    $endCarbon,
+                );
                 $b->update(['gcal_event_id' => $event->getId()]);
             } catch (\Throwable $e) {
                 Log::warning('gcal event create failed', ['booking_id' => $b->id, 'error' => $e->getMessage()]);
@@ -218,9 +245,66 @@ class BookingController extends Controller
             return $b->fresh(['player1', 'player2']);
         });
 
+        // ── Notifiche WhatsApp post-creazione (fuori dalla transazione) ──
+        $this->notifyAdmin($booking, $user, $startCarbon, $endCarbon);
+        $this->notifyOpponent($booking, $user, $startCarbon);
+
         return response()->json([
             'data' => $this->serialize($booking, $user->id),
         ], 201);
+    }
+
+    /**
+     * Notifica admin via template `admin_prenotazione`.
+     * Stesso pattern di CreaPrenotazioneModule del bot.
+     */
+    private function notifyAdmin(Booking $b, User $challenger, Carbon $start, Carbon $end): void
+    {
+        try {
+            $adminPhone = BotSetting::get('admin_phone');
+            if (!$adminPhone) {
+                Log::info('📢 admin_phone non configurato — skip notify');
+                return;
+            }
+
+            $opponentName = $b->player2_id
+                ? optional($b->player2()->first())->name
+                : $b->player2_name_text;
+
+            $players = $opponentName ? "{$challenger->name} vs {$opponentName}" : $challenger->name;
+            $dateStr = $start->locale('it')->isoFormat('ddd D MMM');
+            $timeStr = "{$start->format('H:i')}-{$end->format('H:i')}";
+
+            $this->wa->sendTemplate((string) $adminPhone, 'admin_prenotazione', [$players, $dateStr, $timeStr]);
+            Log::info('📢 Admin notificato (app)', ['booking' => $b->id]);
+        } catch (\Throwable $e) {
+            Log::warning('📢 Admin notify failed', ['booking_id' => $b->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Notifica avversario via template `invito_avversario`.
+     * Solo se è user tesserato del circolo con phone.
+     */
+    private function notifyOpponent(Booking $b, User $challenger, Carbon $start): void
+    {
+        if (!$b->player2_id) return;
+
+        try {
+            $opponent = $b->player2()->first();
+            if (!$opponent || !$opponent->phone) return;
+
+            $slotFriendly = $start->locale('it')->isoFormat('dddd D MMMM') . ' alle ' . $start->format('H:i');
+
+            $this->wa->sendTemplate($opponent->phone, 'invito_avversario', [
+                $opponent->name,
+                $challenger->name,
+                $slotFriendly,
+            ]);
+            Log::info('📩 Avversario notificato (app)', ['phone' => $opponent->phone, 'booking' => $b->id]);
+        } catch (\Throwable $e) {
+            Log::warning('📩 Avversario notify failed', ['booking_id' => $b->id, 'error' => $e->getMessage()]);
+        }
     }
 
     /**
