@@ -130,6 +130,31 @@ class OtpService
 
     private function dispatch(string $phone, string $code): void
     {
+        // Whitelist test phones: invio via sendText (no template).
+        // Funziona solo se il numero è in finestra 24h col bot.
+        $testPhones = collect(explode(',', (string) config('services.otp.test_phones', '')))
+            ->map(fn($p) => trim($p))
+            ->filter()
+            ->all();
+
+        if (in_array($phone, $testPhones, true)) {
+            try {
+                $this->wa->sendText(
+                    $phone,
+                    "🔐 Codice di accesso Le Cercle Club: *{$code}*\n\nScade tra 5 minuti."
+                );
+                Log::info('[OTP-TEST] Codice inviato via WA text', ['phone' => $phone, 'code' => $code]);
+                return;
+            } catch (\Throwable $e) {
+                Log::warning('[OTP-TEST] WA text failed, fallback to log', [
+                    'phone' => $phone,
+                    'code'  => $code,
+                    'error' => $e->getMessage(),
+                ]);
+                return;
+            }
+        }
+
         $driver = config('services.otp.driver', 'whatsapp');
 
         if ($driver === 'log') {

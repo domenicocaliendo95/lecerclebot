@@ -60,6 +60,10 @@ return [
         'driver'        => env('OTP_DRIVER', 'whatsapp'),              // 'whatsapp' | 'log'
         'template_name' => env('OTP_TEMPLATE_NAME', 'lecercle_auth_otp'),
         'template_lang' => env('OTP_TEMPLATE_LANG', 'it'),
+        // Numeri whitelist per dev/test: ricevono OTP via sendText (no template).
+        // Funziona SOLO se quel numero è in finestra 24h col bot.
+        // Formato: comma-separated E.164. Es: "+393392567686,+393331112233"
+        'test_phones'   => env('OTP_TEST_PHONES', ''),
     ],
 
 ];
