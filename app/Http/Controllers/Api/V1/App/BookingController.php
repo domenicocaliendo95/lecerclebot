@@ -365,11 +365,20 @@ class BookingController extends Controller
         $opponent = $isP1 ? $b->player2 : $b->player1;
         $opponentName = $opponent?->name ?? $b->player2_name_text;
 
+        // booking_date è cast a Carbon dall'Eloquent — devo formattarlo come
+        // 'Y-m-d' altrimenti viene serializzato con tempo+microsecondi e
+        // l'ISO concatenato risulta invalido per Date() in JS (→ NaN).
+        $dateStr = $b->booking_date instanceof \Illuminate\Support\Carbon
+            ? $b->booking_date->format('Y-m-d')
+            : (string) $b->booking_date;
+        $timeStr = substr((string) $b->start_time, 0, 5);
+        $startsAtIso = Carbon::parse("{$dateStr} {$timeStr}", 'Europe/Rome')->toIso8601String();
+
         return [
             'id'                => $b->id,
-            'date'              => $b->booking_date,
-            'start_time'        => substr($b->start_time, 0, 5),
-            'end_time'          => substr($b->end_time, 0, 5),
+            'date'              => $dateStr,
+            'start_time'        => $timeStr,
+            'end_time'          => substr((string) $b->end_time, 0, 5),
             'duration_minutes'  => $this->durationMinutes($b->start_time, $b->end_time),
             'price'             => (float) $b->price,
             'is_peak'           => (bool) $b->is_peak,
@@ -385,7 +394,7 @@ class BookingController extends Controller
             ] : null,
             'opponent_name_text' => $opponentName,
             'opponent_confirmed' => $b->player2_id !== null && $b->player2_confirmed_at !== null,
-            'starts_at_iso'      => $b->booking_date . 'T' . $b->start_time,
+            'starts_at_iso'      => $startsAtIso,
         ];
     }
 
