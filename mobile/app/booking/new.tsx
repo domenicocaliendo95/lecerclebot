@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -122,7 +122,12 @@ export default function NewBooking() {
         <View className="w-10" />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 160 }} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+      >
+      <ScrollView contentContainerStyle={{ paddingBottom: 200 }} keyboardShouldPersistTaps="handled">
         {/* Date strip */}
         <Section eyebrow="Quando?" title="Scegli il giorno">
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4, gap: 8 }}>
@@ -276,6 +281,7 @@ export default function NewBooking() {
           </View>
         </Section>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Bottom bar */}
       <View className="absolute left-0 right-0 bottom-0 px-5 pt-3 pb-7 bg-cream-light dark:bg-dark-bg border-t border-divider" style={{ borderColor: 'rgba(31,36,25,0.06)' }}>

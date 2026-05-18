@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -162,7 +162,15 @@ function StepName({
 
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg" edges={['top']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1"
+      >
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Top bar — esci (siamo già autenticati, ma può uscire) */}
         <View className="flex-row justify-between items-center px-5 pt-2">
           <View className="w-11" />
@@ -176,13 +184,15 @@ function StepName({
         </View>
 
         {/* Hero */}
-        <View className="items-center px-7 pt-12 pb-6">
+        <View className="items-center px-7 pt-10 pb-6">
           <Text className="font-body-bold text-[10px] tracking-widest uppercase text-ink-muted">
             Passo 1 di 2
           </Text>
-          <Text className="font-display-italic text-[34px] text-ink dark:text-cream text-center mt-3 leading-[38px]">
-            Iniziamo dal{' '}
-            <Text className="font-script text-[44px] text-sage-dark dark:text-sage">tuo nome</Text>
+          <Text className="font-display-italic text-[26px] text-ink dark:text-cream text-center mt-4">
+            Iniziamo dal
+          </Text>
+          <Text className="font-script text-[56px] text-sage-dark dark:text-sage leading-[58px] -mt-1">
+            tuo nome
           </Text>
           <Text className="font-body-medium text-[13px] text-ink-muted text-center mt-3 leading-relaxed">
             È quello che gli altri soci vedranno{'\n'}sulle prenotazioni e in classifica.
@@ -239,7 +249,7 @@ function StepName({
         </View>
 
         {/* CTA */}
-        <View className="px-6 mt-10">
+        <View className="px-6 mt-8">
           <Pressable
             disabled={!canContinue}
             onPress={onNext}
@@ -259,6 +269,7 @@ function StepName({
           </Pressable>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -274,7 +285,15 @@ function StepPrefs({
 
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg" edges={['top']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1"
+      >
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Top bar with back button + dots */}
         <View className="flex-row justify-between items-center px-5 pt-2">
           <Pressable
@@ -291,14 +310,16 @@ function StepPrefs({
           <View className="w-11" />
         </View>
 
-        {/* Hero */}
+        {/* Hero — titolo + script su righe separate per evitare clipping */}
         <View className="items-center px-7 pt-10 pb-6">
           <Text className="font-body-bold text-[10px] tracking-widest uppercase text-ink-muted">
             Passo 2 di 2
           </Text>
-          <Text className="font-display-italic text-[28px] text-ink dark:text-cream text-center mt-3 leading-[34px]">
-            Benvenuto,{' '}
-            <Text className="font-script text-[44px] text-sage-dark dark:text-sage">{firstName}</Text>
+          <Text className="font-display-italic text-[26px] text-ink dark:text-cream text-center mt-4">
+            Benvenuto,
+          </Text>
+          <Text className="font-script text-[60px] text-sage-dark dark:text-sage leading-[62px] -mt-1">
+            {firstName}
           </Text>
           <Text className="font-body-medium text-[13px] text-ink-muted text-center mt-2 leading-relaxed">
             Due ultimi dettagli e sei dentro.
@@ -368,6 +389,7 @@ function StepPrefs({
           </Pressable>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

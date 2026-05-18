@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import axios from 'axios';
@@ -39,6 +39,15 @@ export default function Login() {
 
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        className="flex-1"
+      >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
       <View className="flex-1 px-7 pt-6">
         {/* Brand */}
         <View className="items-center mt-12 mb-14">
@@ -109,7 +118,7 @@ export default function Login() {
           <Text className="text-sage-dark dark:text-sage underline">Privacy</Text>
         </Text>
 
-        <View className="mt-auto items-center mb-4">
+        <View className="mt-auto items-center mb-4 pt-10">
           <Text className="text-[12px] text-ink-muted">
             Problemi?{' '}
             <Text className="text-ocra-dark dark:text-ocra font-body-bold">
@@ -118,6 +127,8 @@ export default function Login() {
           </Text>
         </View>
       </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
