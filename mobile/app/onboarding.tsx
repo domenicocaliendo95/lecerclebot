@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Bell, Camera, Lock, Sparkles } from 'lucide-react-native';
+import { Bell, Camera, ChevronLeft, Lock, Sparkles } from 'lucide-react-native';
 
 import { me } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth-store';
@@ -117,6 +117,13 @@ export default function Onboarding() {
 
   // ── Render ──
 
+  const handleSignOut = () => {
+    Alert.alert('Esci?', "Tornerai alla schermata di login.", [
+      { text: 'Annulla', style: 'cancel' },
+      { text: 'Esci', style: 'destructive', onPress: () => useAuthStore.getState().signOut() },
+    ]);
+  };
+
   if (step === 'name') {
     return <StepName
       user={user}
@@ -125,6 +132,7 @@ export default function Onboarding() {
       uploading={uploading}
       onPickAvatar={pickAvatar}
       onNext={goToPrefs}
+      onSignOut={handleSignOut}
       saving={saving}
     />;
   }
@@ -148,17 +156,23 @@ export default function Onboarding() {
 // ════════════════════════════════════════════════════════════════════════
 
 function StepName({
-  user, name, setName, uploading, onPickAvatar, onNext, saving,
+  user, name, setName, uploading, onPickAvatar, onNext, onSignOut, saving,
 }: any) {
   const canContinue = name.trim().length >= 2 && !saving;
 
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg" edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Progress dots */}
-        <View className="flex-row justify-center gap-2 pt-3">
-          <View className="w-8 h-1.5 rounded-full bg-sage" />
-          <View className="w-8 h-1.5 rounded-full bg-divider" style={{ backgroundColor: 'rgba(31,36,25,0.12)' }} />
+        {/* Top bar — esci (siamo già autenticati, ma può uscire) */}
+        <View className="flex-row justify-between items-center px-5 pt-2">
+          <View className="w-11" />
+          <View className="flex-row gap-2">
+            <View className="w-8 h-1.5 rounded-full bg-sage" />
+            <View className="w-8 h-1.5 rounded-full" style={{ backgroundColor: 'rgba(31,36,25,0.12)' }} />
+          </View>
+          <Pressable onPress={onSignOut} className="w-11 h-11 items-end justify-center">
+            <Text className="font-body-medium text-[12px] text-ink-muted">Esci</Text>
+          </Pressable>
         </View>
 
         {/* Hero */}
@@ -261,12 +275,20 @@ function StepPrefs({
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg" edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Progress dots */}
-        <View className="flex-row justify-center gap-2 pt-3">
-          <Pressable onPress={onBack}>
-            <View className="w-8 h-1.5 rounded-full bg-sage/40" />
+        {/* Top bar with back button + dots */}
+        <View className="flex-row justify-between items-center px-5 pt-2">
+          <Pressable
+            onPress={onBack}
+            className="w-11 h-11 rounded-full bg-white dark:bg-dark-surface items-center justify-center"
+            style={{ shadowColor: '#6B8068', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
+          >
+            <ChevronLeft size={22} color="#1F2419" strokeWidth={1.5} />
           </Pressable>
-          <View className="w-8 h-1.5 rounded-full bg-sage" />
+          <View className="flex-row gap-2">
+            <View className="w-8 h-1.5 rounded-full bg-sage/40" />
+            <View className="w-8 h-1.5 rounded-full bg-sage" />
+          </View>
+          <View className="w-11" />
         </View>
 
         {/* Hero */}
@@ -343,10 +365,6 @@ function StepPrefs({
                 <Text className="font-body-bold text-[15px] text-cream tracking-wide">Inizia</Text>
               </>
             )}
-          </Pressable>
-
-          <Pressable onPress={onBack} className="items-center mt-3">
-            <Text className="font-body-medium text-[12px] text-ink-muted">‹ Indietro</Text>
           </Pressable>
         </View>
       </ScrollView>

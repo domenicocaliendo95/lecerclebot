@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { ChevronLeft } from 'lucide-react-native';
 import axios from 'axios';
 
 import { auth } from '@/lib/api';
@@ -71,9 +72,13 @@ export default function Verify() {
 
   return (
     <SafeAreaView className="flex-1 bg-cream-light dark:bg-dark-bg">
-      <View className="flex-1 px-7 pt-6">
-        <Pressable onPress={() => router.back()} className="self-start mt-2">
-          <Text className="font-body-medium text-sage-dark dark:text-sage text-[14px]">‹ Indietro</Text>
+      <View className="flex-1 px-7 pt-2">
+        <Pressable
+          onPress={() => router.back()}
+          className="w-11 h-11 rounded-full bg-white dark:bg-dark-surface items-center justify-center self-start"
+          style={{ shadowColor: '#6B8068', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
+        >
+          <ChevronLeft size={22} color="#1F2419" strokeWidth={1.5} />
         </Pressable>
 
         <View className="mt-8 mb-9">
