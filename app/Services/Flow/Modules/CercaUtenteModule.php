@@ -114,8 +114,11 @@ class CercaUtenteModule extends Module
             ]]);
         }
 
-        // 2-3 risultati → mostra come bottoni
-        $labels = array_map(fn($c) => mb_substr($c['name'], 0, 20), $candidates);
+        // 2-3 risultati → mostra come bottoni.
+        // IMPORTANTE: Meta rifiuta i template con button title duplicati
+        // (errore #131009). Disambiguiamo coi numeri di cellulare quando
+        // i nomi collidono (es. due "Marco Rossi" nel circolo).
+        $labels = $this->uniqueLabels($candidates);
         $labels[] = 'Nessuno di questi';
 
         return ModuleResult::wait(send: [[
@@ -123,6 +126,44 @@ class CercaUtenteModule extends Module
             'text'    => 'Quale di questi è il tuo avversario?',
             'buttons' => array_slice($labels, 0, 3), // max 3 bottoni WA
         ]]);
+    }
+
+    /**
+     * Genera label uniche entro il limite WhatsApp di 20 char.
+     *
+     * Strategia:
+     * - Se i nomi (truncated a 20) sono già tutti unici → li lascia così
+     * - Altrimenti SOLO ai candidati in collisione aggiunge " ••XXXX"
+     *   (ultime 4 cifre del telefono) come disambiguatore.
+     *
+     * @param  array<array{name:string, phone:?string}>  $candidates
+     * @return string[]
+     */
+    private function uniqueLabels(array $candidates): array
+    {
+        $truncated = array_map(fn($c) => mb_substr(trim($c['name']), 0, 20), $candidates);
+        $counts    = array_count_values($truncated);
+
+        $out = [];
+        foreach ($candidates as $i => $c) {
+            $base = $truncated[$i];
+
+            if (($counts[$base] ?? 0) <= 1) {
+                $out[] = $base;
+                continue;
+            }
+
+            // Collisione: appendi gli ultimi 4 digit del telefono
+            $phone   = (string) ($c['phone'] ?? '');
+            $digits  = preg_replace('/\D/', '', $phone);
+            $last4   = $digits !== '' ? mb_substr($digits, -4) : '';
+            $suffix  = $last4 !== '' ? ' ••' . $last4 : ' (' . ($i + 1) . ')';
+
+            // Tronca il nome per fare spazio al suffisso
+            $maxBaseLen = 20 - mb_strlen($suffix);
+            $out[] = mb_substr($base, 0, max(0, $maxBaseLen)) . $suffix;
+        }
+        return $out;
     }
 
     private function handleSelection(FlowContext $ctx): ModuleResult
