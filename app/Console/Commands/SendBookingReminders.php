@@ -109,6 +109,14 @@ class SendBookingReminders extends Command
                     continue;
                 }
 
+                // Skip se uno dei giocatori è già in conversazione attiva col bot
+                // (entro 10 min) → eviterebbe di sovrascrivere il cursore di un flusso
+                // in corso (es. risposta risultato). Riproviamo al prossimo tick.
+                if ($this->anyPlayerInActiveFlow($players)) {
+                    Log::info("🔔 Skip reminder #{$booking->id}: utente in conversazione attiva, riprovo dopo");
+                    continue;
+                }
+
                 foreach ($players as $player) {
                     $msg = str_replace(
                         ['{name}', '{slot}', '{hours}'],
@@ -162,6 +170,25 @@ class SendBookingReminders extends Command
         $session = BotSession::where('channel', 'whatsapp')
             ->where('external_id', $phone)->first();
         $session?->appendHistory('bot', $message);
+    }
+
+    /**
+     * Ritorna true se almeno uno dei giocatori ha una sessione bot attiva
+     * (cursore settato + ultima attività entro 10 min). Lo scheduler salta
+     * quei booking per non sovrascrivere il flusso in corso.
+     */
+    private function anyPlayerInActiveFlow(array $players): bool
+    {
+        $cutoff = now()->subMinutes(10);
+        foreach ($players as $player) {
+            $session = BotSession::where('channel', 'whatsapp')
+                ->where('external_id', $player->phone)
+                ->first();
+            if ($session && $session->current_node_id && $session->updated_at->gt($cutoff)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function setCursorForResponse(string $phone, int $bookingId, int $nodeId): void

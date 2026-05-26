@@ -86,6 +86,14 @@ class SendMatchResultRequests extends Command
                     $booking->player2 && $booking->player2->phone ? $booking->player2 : null,
                 ]);
 
+                // Skip se un giocatore è già in flusso attivo col bot (entro 10 min):
+                // eviterebbe di sovrascrivere il cursore (es. utente sta rispondendo
+                // a un reminder o a una conferma avversario). Riproveremo al prossimo tick.
+                if ($this->anyPlayerInActiveFlow($players)) {
+                    Log::info("🏆 Skip result request #{$booking->id}: utente in conversazione attiva");
+                    continue;
+                }
+
                 foreach ($players as $player) {
                     $msg = str_replace('{slot}', $slot, $text);
 
@@ -141,5 +149,25 @@ class SendMatchResultRequests extends Command
             'result_booking_id'   => $bookingId,
             'selected_booking_id' => $bookingId,
         ]);
+    }
+
+    /**
+     * True se almeno un giocatore ha una sessione bot attiva (cursore settato
+     * + ultima attività entro 10 min). Lo scheduler salta quei booking per
+     * non sovrascrivere il flusso in corso (es. utente che sta rispondendo
+     * a un reminder o conferma avversario).
+     */
+    private function anyPlayerInActiveFlow(array $players): bool
+    {
+        $cutoff = now()->subMinutes(10);
+        foreach ($players as $player) {
+            $session = BotSession::where('channel', 'whatsapp')
+                ->where('external_id', $player->phone)
+                ->first();
+            if ($session && $session->current_node_id && $session->updated_at->gt($cutoff)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
