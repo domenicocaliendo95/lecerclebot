@@ -93,6 +93,21 @@ class ChiediCampoModule extends Module
         }
 
         $input = trim($ctx->input);
+
+        // Skip keyword(s) — se matcha, NON salva nulla e va avanti.
+        // Config supporta sia stringa singola che array.
+        // Es. {"skip_keyword": "salta"} oppure {"skip_keyword": ["salta", "skip", "no"]}
+        $skipKeywords = $this->cfg('skip_keyword');
+        if ($skipKeywords) {
+            $list = is_array($skipKeywords) ? $skipKeywords : [$skipKeywords];
+            $normalized = mb_strtolower($input);
+            foreach ($list as $kw) {
+                if (mb_strtolower(trim((string) $kw)) === $normalized) {
+                    return ModuleResult::next('ok');
+                }
+            }
+        }
+
         $validated = $this->validate($input);
 
         if ($validated === null) {
