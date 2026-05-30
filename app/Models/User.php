@@ -2,15 +2,13 @@
 
 namespace App\Models;
 
-use Filament\Models\Contracts\FilamentUser;
-use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable implements FilamentUser
+class User extends Authenticatable
 {
     use HasFactory, Notifiable, HasApiTokens, SoftDeletes;
 
@@ -41,11 +39,6 @@ class User extends Authenticatable implements FilamentUser
         'notification_preferences' => 'array',
         'show_in_matchmaking'      => 'boolean',
     ];
-
-    public function canAccessPanel(Panel $panel): bool
-    {
-        return (bool) $this->is_admin;
-    }
 
     // ── Relazioni esistenti (bot) ────────────────────────────────────────
     public function bookingsAsPlayer1() {

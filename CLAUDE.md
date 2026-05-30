@@ -505,50 +505,6 @@ APP_TIMEZONE=Europe/Rome
 ```
 `.env` letto SOLO in `config/*.php`. Nel codice usare `config('services.x.y')`, mai `env()`.
 
-## Filament Admin (legacy `/admin`)
-Primary Amber. Auto-discovery `app/Filament/{Resources,Pages,Widgets}`. Auth: `is_admin=true`.
-
-### Pagina `CalendarBookings` (`/admin/calendar-bookings`)
-Pagina Livewire centro gestione prenotazioni.
-- Vista giorno (08-22, 80px/h) + vista settimana (7 col, scroll mobile)
-- Toggle Giorno/Settimana, navigazione prev/next/oggi, strip settimanale
-- Stats: tot/confermate/in attesa/incasso (per contesto)
-- Blocchi colorati: emerald=conf, amber=pending, sky=completata
-- Linea rossa "adesso", auto-scroll
-- Click slot vuoto → BookingResource/create con `?date=&time=` (snap 30min)
-- Drag&drop: aggiorna DB+gcal+prezzo (PricingRule), ghost indicator, notifica
-- Filtri: ricerca giocatore (debounce 300ms) + toggle stato
-- Slide-over dettaglio (overlay/Esc/X)
-- Badge nav con conteggio prenotazioni del giorno
-- URL `selectedDate` via `#[Url]`
-
-**Props**: `selectedDate` #[Url], `viewMode` (day/week), `filterPlayer`, `filterStatuses[]`, `selectedBooking?`.
-**Computed**: `bookings`, `weekBookings`, `weekDays`, `formattedDate`, `stats`, `currentTimePosition`, `todayColumnIndex`.
-**Metodi**: `moveBooking(id,date,time)`, `createAtSlot(date,time)`, `selectBooking(id)`, `closeDetail()`, `toggleStatus(s)`, `switchToDay(date)`.
-**Alpine `calendarApp()`**: `scrollToNow`, `clickToCreate`, `dragStart/Over/Leave/End/drop`, ghost custom, blocchi non-dragged `opacity-40 pointer-events-none`.
-
-File: `app/Filament/Pages/CalendarBookings.php`, `resources/views/filament/pages/calendar-bookings.blade.php`.
-
-### Dashboard `/admin` widgets
-| Widget | Tipo | Note |
-|---|---|---|
-| `StatsOverview` | StatsOverviewWidget | 4 card: prenotazioni oggi (sparkline+trend%), incasso, giocatori (+nuovi sett), match in attesa |
-| `WeeklyBookingsChart` | ChartWidget bar stacked | 7gg per stato (emerald/amber/sky) |
-| `TodaySchedule` | TableWidget | Oggi: orario, giocatori, badge, prezzo, peak |
-| `LatestUsers` | TableWidget | Ultimi 8: nome, tel, FIT, livello, ELO, data |
-
-Rimosso `FilamentInfoWidget`, mantenuto `AccountWidget`.
-
-### Resources
-| Resource | Modello | Tipo | Sort |
-|---|---|---|---|
-| UserResource | User | CRUD | 1 |
-| BookingResource | Booking | CRUD (prefill `?date=&time=`) | 3 |
-| BotSessionResource | BotSession | Read (Infolist) | 2 |
-| MatchResultResource | MatchResult | List+Edit | 4 |
-| FeedbackResource | Feedback | List+View | 5 |
-| PricingRuleResource | PricingRule | CRUD reorderable | 6 |
-
 ## React SPA `/panel`
 Vite + React 19 + TS, Tailwind v4 + Shadcn (base-ui), Recharts, Lucide, **@xyflow/react** + **@dagrejs/dagre** (per il flow editor visuale). Build → `public/panel/` + `.htaccess` SPA. URL `https://bot.lecercleclub.it/panel/`.
 

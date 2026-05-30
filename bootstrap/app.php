@@ -16,7 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\EnsureIsAdmin::class,
         ]);
 
-        // Le route API admin usano sessione (stessa auth di Filament)
+        // Le route API admin usano sessione (cookie-based, condivisa col pannello React)
         $middleware->api(prepend: [
             \Illuminate\Cookie\Middleware\EncryptCookies::class,
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
