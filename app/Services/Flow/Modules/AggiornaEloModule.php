@@ -98,7 +98,19 @@ class AggiornaEloModule extends Module
             $isTracked = $booking->player2_id !== null
                 && $booking->player2_confirmed_at !== null;
 
-            if (!$isTracked || !$winnerId) {
+            // ── Caso untracked (avversario esterno o link non confermato) ──
+            // Basta una conferma per chiudere: finalize subito senza ELO.
+            // Senza questa chiusura il MatchResult restava in limbo
+            // (confirmed_at NULL, booking status=confirmed) per sempre.
+            if (!$isTracked) {
+                if ($winnerId) {
+                    $matchResult->update(['confirmed_at' => now()]);
+                    $booking->update(['status' => 'completed']);
+                }
+                return ModuleResult::next('skip');
+            }
+
+            if (!$winnerId) {
                 return ModuleResult::next('skip');
             }
 
