@@ -9,6 +9,7 @@ use App\Models\FlowNode;
 use App\Services\Channel\ChannelRegistry;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -91,13 +92,25 @@ class SendFeedbackRequests extends Command
 
             if (empty($players)) continue;
 
+            // Dry-run: log e basta, niente claim, niente invio
+            if ($isDry) {
+                foreach ($players as $player) {
+                    $msg = str_replace(['{name}', '{slot}'], [$player->name, $slot], $text);
+                    $this->line("  [DRY] {$player->phone}: {$msg}");
+                }
+                $sent++;
+                continue;
+            }
+
+            // Claim atomico dello slot feedback: UPDATE...WHERE non ancora marcato.
+            // Evita duplicati se due processi scheduler girano in parallelo.
+            if (!$this->claimFeedbackSlot($booking->id)) {
+                Log::info("⭐ Skip feedback #{$booking->id}: già claimato da altro processo");
+                continue;
+            }
+
             foreach ($players as $player) {
                 $msg = str_replace(['{name}', '{slot}'], [$player->name, $slot], $text);
-
-                if ($isDry) {
-                    $this->line("  [DRY] {$player->phone}: {$msg}");
-                    continue;
-                }
 
                 try {
                     if ($adapter && !empty($buttons)) {
@@ -119,10 +132,6 @@ class SendFeedbackRequests extends Command
                 }
             }
 
-            // Marca come inviato
-            $existing = $booking->reminders_sent ?? [];
-            $existing['feedback'] = now()->toIso8601String();
-            $booking->update(['reminders_sent' => $existing]);
             $sent++;
         }
 
@@ -131,6 +140,27 @@ class SendFeedbackRequests extends Command
         }
         $this->info(($isDry ? '[DRY] ' : '') . "Feedback richiesti: {$sent}");
         return self::SUCCESS;
+    }
+
+    /**
+     * Marca atomicamente reminders_sent.feedback come inviato.
+     * Ritorna true solo se la riga è stata aggiornata in questo tick.
+     */
+    private function claimFeedbackSlot(int $bookingId): bool
+    {
+        $path = '$."feedback"';
+        $ts   = now()->toIso8601String();
+
+        $affected = DB::update(
+            "UPDATE bookings
+             SET reminders_sent = JSON_SET(COALESCE(reminders_sent, JSON_OBJECT()), ?, ?),
+                 updated_at = NOW()
+             WHERE id = ?
+               AND (reminders_sent IS NULL OR JSON_EXTRACT(reminders_sent, ?) IS NULL)",
+            [$path, $ts, $bookingId, $path]
+        );
+
+        return $affected > 0;
     }
 
     private function setCursor(string $phone, int $bookingId, int $nodeId): void

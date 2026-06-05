@@ -9,6 +9,7 @@ use App\Models\FlowNode;
 use App\Services\Channel\ChannelRegistry;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SendBookingReminders extends Command
@@ -117,6 +118,13 @@ class SendBookingReminders extends Command
                     continue;
                 }
 
+                // Claim atomico dello slot reminder: UPDATE...WHERE non ancora marcato.
+                // Se due processi girano in parallelo, solo uno ottiene affected=1.
+                if (!$this->claimReminderSlot($booking->id, $slotKey)) {
+                    Log::info("🔔 Skip reminder #{$booking->id} slot {$slotKey}h: già claimato da altro processo");
+                    continue;
+                }
+
                 foreach ($players as $player) {
                     $msg = str_replace(
                         ['{name}', '{slot}', '{hours}'],
@@ -151,9 +159,6 @@ class SendBookingReminders extends Command
                     }
                 }
 
-                $existing = $booking->reminders_sent ?? [];
-                $existing[$slotKey] = now()->toIso8601String();
-                $booking->update(['reminders_sent' => $existing]);
                 $sent++;
             }
         }
@@ -189,6 +194,28 @@ class SendBookingReminders extends Command
             }
         }
         return false;
+    }
+
+    /**
+     * Marca atomicamente lo slot reminder come inviato.
+     * Ritorna true solo se la riga è stata effettivamente aggiornata
+     * (cioè: nessun altro processo l'aveva già marcata).
+     */
+    private function claimReminderSlot(int $bookingId, string $slotKey): bool
+    {
+        $path = '$."' . $slotKey . '"';
+        $ts   = now()->toIso8601String();
+
+        $affected = DB::update(
+            "UPDATE bookings
+             SET reminders_sent = JSON_SET(COALESCE(reminders_sent, JSON_OBJECT()), ?, ?),
+                 updated_at = NOW()
+             WHERE id = ?
+               AND (reminders_sent IS NULL OR JSON_EXTRACT(reminders_sent, ?) IS NULL)",
+            [$path, $ts, $bookingId, $path]
+        );
+
+        return $affected > 0;
     }
 
     private function setCursorForResponse(string $phone, int $bookingId, int $nodeId): void

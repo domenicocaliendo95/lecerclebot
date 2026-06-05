@@ -74,13 +74,6 @@ class SendMatchResultRequests extends Command
             }
 
             try {
-                if ($isTracked) {
-                    MatchResult::firstOrCreate(
-                        ['booking_id' => $booking->id],
-                        ['winner_id' => null, 'score' => null, 'player1_confirmed' => false, 'player2_confirmed' => false],
-                    );
-                }
-
                 $players = array_filter([
                     $player1->phone ? $player1 : null,
                     $booking->player2 && $booking->player2->phone ? $booking->player2 : null,
@@ -92,6 +85,25 @@ class SendMatchResultRequests extends Command
                 if ($this->anyPlayerInActiveFlow($players)) {
                     Log::info("🏆 Skip result request #{$booking->id}: utente in conversazione attiva");
                     continue;
+                }
+
+                // Claim atomico: UPDATE...WHERE result_requested_at IS NULL.
+                // Se due processi girano in parallelo, solo uno ottiene affected=1.
+                $claimed = \Illuminate\Support\Facades\DB::update(
+                    "UPDATE bookings SET result_requested_at = NOW(), updated_at = NOW()
+                     WHERE id = ? AND result_requested_at IS NULL",
+                    [$booking->id]
+                );
+                if ($claimed === 0) {
+                    Log::info("🏆 Skip result request #{$booking->id}: già claimata da altro processo");
+                    continue;
+                }
+
+                if ($isTracked) {
+                    MatchResult::firstOrCreate(
+                        ['booking_id' => $booking->id],
+                        ['winner_id' => null, 'score' => null, 'player1_confirmed' => false, 'player2_confirmed' => false],
+                    );
                 }
 
                 foreach ($players as $player) {
@@ -114,8 +126,6 @@ class SendMatchResultRequests extends Command
                         'phone'   => $player->phone,
                     ]);
                 }
-
-                $booking->update(['result_requested_at' => now()]);
             } catch (\Throwable $e) {
                 Log::error("🏆 ❌ Result request FALLITA", [
                     'booking' => $booking->id,
